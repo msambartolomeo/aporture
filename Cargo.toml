@@ -1,0 +1,4 @@
+[workspace]
+resolver = "2"
+
+members = ["aporture_lib", "aporture_cli", "aporture_server"]
