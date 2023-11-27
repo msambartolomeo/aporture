@@ -157,7 +157,7 @@ pub enum PairKind {
 
 #[derive(Debug, Deserialize_repr, Serialize_repr)]
 #[repr(u8)]
-enum ResponseCode {
+pub enum ResponseCode {
     Ok = 0,
     UnsupportedVersion = 1,
 }

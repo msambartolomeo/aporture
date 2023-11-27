@@ -11,7 +11,7 @@ pub struct AportureArgs {
 pub enum Commands {
     /// Send a file
     Send {
-        file_name: String,
+        path: String,
 
         #[command(flatten)]
         method: SendMethod,
@@ -21,6 +21,9 @@ pub enum Commands {
     },
     /// Recieve a file
     Recieve {
+        #[arg(short, long, value_names(["PATH"]))]
+        destination: Option<String>,
+
         #[command(flatten)]
         method: RecieveMethod,
 

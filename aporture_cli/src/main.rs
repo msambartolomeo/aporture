@@ -1,4 +1,5 @@
 use aporture_lib::pairing::{AporturePairingProtocol, PairKind};
+use aporture_lib::transfer;
 use args::{AportureArgs, Commands, SendMethod};
 
 use anyhow::Result;
@@ -9,11 +10,9 @@ mod args;
 fn main() -> Result<()> {
     let args = AportureArgs::parse();
 
-    dbg!(&args);
-
     match args.command {
         Commands::Send {
-            file_name,
+            path,
             method,
             save: _,
         } => {
@@ -22,9 +21,13 @@ fn main() -> Result<()> {
 
             let pair_info = app.pair();
 
-            dbg!(pair_info);
+            transfer::send_file(&path, pair_info);
         }
-        Commands::Recieve { method, save: _ } => {
+        Commands::Recieve {
+            destination,
+            method,
+            save: _,
+        } => {
             let passphrase = method
                 .passphrase
                 .expect("For now providing passphrase is required")
@@ -34,7 +37,11 @@ fn main() -> Result<()> {
 
             let pair_info = app.pair();
 
-            dbg!(pair_info);
+            let dest = match destination {
+                Some(dest) => dest,
+                None => "~/Downloads/".to_owned(),
+            };
+            transfer::recieve_file(&dest, pair_info);
         }
         Commands::Contacts => todo!("Add contacts"),
         Commands::Pair { command: _ } => todo!("Add pair module"),
