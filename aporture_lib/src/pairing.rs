@@ -2,6 +2,7 @@ use std::io::{Read, Write};
 use std::net::{IpAddr, TcpStream};
 
 use blake3::Hash;
+use local_ip_address::local_ip;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use serde_with::{serde_as, Bytes, DisplayFromStr};
@@ -75,7 +76,7 @@ impl AporturePairingProtocol {
         };
 
         let self_transfer_info = TransferType::LAN {
-            ip: [127, 0, 0, 1].into(),
+            ip: local_ip().expect("get local ip"),
             port,
         };
 
