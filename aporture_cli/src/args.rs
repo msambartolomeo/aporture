@@ -14,7 +14,7 @@ pub enum Commands {
         file_name: String,
 
         #[command(flatten)]
-        method: Option<SendMethod>,
+        method: SendMethod,
 
         #[arg(short, long, value_names(["NAME"]))]
         save: Option<String>,

@@ -91,6 +91,7 @@ name = "aporture_cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "aporture_lib",
  "clap",
 ]
 
