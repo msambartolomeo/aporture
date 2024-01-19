@@ -142,7 +142,6 @@ dependencies = [
  "serde_bencode",
  "serde_repr",
  "serde_with",
- "sha2",
  "spake2",
 ]
 

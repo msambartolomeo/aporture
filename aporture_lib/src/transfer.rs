@@ -32,6 +32,7 @@ pub fn send_file(file: &str, pair_info: PairInfo) {
     let buf = serde_bencode::to_bytes(&file_data).expect("Correct serde parse");
     let mut peer = match pair_info.other_transfer_info {
         TransferType::LAN { ip, port } => {
+            println!("connecting to {} on port {}", ip, port);
             TcpStream::connect((ip, port)).expect("Connect to server")
         }
     };

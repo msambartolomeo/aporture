@@ -8,7 +8,7 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 use serde_with::{serde_as, Bytes, DisplayFromStr};
 use spake2::{Ed25519Group, Identity, Password, Spake2};
 
-const SERVER_ADDRESS: &str = "127.0.0.1:8080";
+const SERVER_ADDRESS: &str = "10.0.0.1:8080";
 const DEFAULT_SENDER_PORT: u16 = 8081;
 const DEFAULT_RECIEVER_PORT: u16 = 8082;
 

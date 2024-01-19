@@ -21,6 +21,9 @@ fn main() -> Result<()> {
 
             let pair_info = app.pair();
 
+            dbg!(&pair_info.self_transfer_info);
+            dbg!(&pair_info.other_transfer_info);
+
             transfer::send_file(&path, pair_info);
         }
         Commands::Recieve {
@@ -36,6 +39,9 @@ fn main() -> Result<()> {
             let app = AporturePairingProtocol::new(PairKind::Reciever, passphrase);
 
             let pair_info = app.pair();
+
+            dbg!(&pair_info.self_transfer_info);
+            dbg!(&pair_info.other_transfer_info);
 
             let dest = match destination {
                 Some(dest) => dest,

@@ -37,7 +37,7 @@ enum ResponseCode {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let listener = TcpListener::bind("127.0.0.1:8080").await?;
+    let listener = TcpListener::bind("0.0.0.0:8080").await?;
 
     let map: Arc<Mutex<HashMap<[u8; 64], TcpStream>>> = Arc::new(Mutex::new(HashMap::new()));
 
