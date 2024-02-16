@@ -60,7 +60,7 @@ impl SimpleComponent for App {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let model = App { counter };
+        let model = Self { counter };
 
         // Insert the code generation of the view! macro here
         let widgets = view_output!();
