@@ -1,4 +1,9 @@
 [workspace]
 resolver = "2"
 
-members = ["aporture_lib", "aporture_cli", "aporture_server"]
+members = ["aporture_lib", "aporture_cli", "aporture_server", "aporture_gtk"]
+
+[workspace.lints.clippy]
+pedantic = "deny"
+nursery = "deny"
+unwrap_used = "deny"
