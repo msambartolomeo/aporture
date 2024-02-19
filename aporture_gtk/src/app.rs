@@ -25,9 +25,14 @@ impl SimpleComponent for App {
 
                 add_top_bar = &adw::HeaderBar {},
 
-                #[name = "navigation"]
-                add_bottom_bar = &adw::ViewSwitcherBar {
-                    set_reveal: true,
+                add_bottom_bar = &adw::HeaderBar {
+                    set_show_end_title_buttons: false,
+
+                    #[wrap(Some)]
+                    #[name = "navigation"]
+                    set_title_widget = &adw::ViewSwitcher {
+                        set_policy: adw::ViewSwitcherPolicy::Wide,
+                    },
                 },
 
                 #[name = "stack"]
