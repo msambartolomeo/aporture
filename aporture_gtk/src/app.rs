@@ -32,12 +32,12 @@ impl SimpleComponent for App {
 
                 #[name = "stack"]
                 adw::ViewStack {
-                    add_titled[None, "Send"] = &adw::StatusPage {
+                    add_titled_with_icon[None, "Send", "send"] = &adw::StatusPage {
                         set_title: "Send",
                     },
 
 
-                    add_titled[None, "Recieve"] = &gtk::Label {
+                    add_titled_with_icon[None, "Recieve", "inbox"] = &gtk::Label {
                         set_label: "Recieve",
                     }
                 },

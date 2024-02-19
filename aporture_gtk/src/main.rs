@@ -29,6 +29,8 @@ fn main() {
 
     let app = RelmApp::new("dev.msambartolomeo.aporture");
 
+    relm4_icons::initialize_icons();
+
     log::info!("Application starting");
 
     app.run::<App>(());
