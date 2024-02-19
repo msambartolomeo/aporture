@@ -2,19 +2,14 @@ use adw::prelude::*;
 use relm4::prelude::*;
 
 #[derive(Debug)]
-pub struct App {
-    counter: u8,
-}
+pub struct App;
 
 #[derive(Debug)]
-pub enum Msg {
-    Increment,
-    Decrement,
-}
+pub enum Msg {}
 
 #[relm4::component(pub)]
 impl SimpleComponent for App {
-    type Init = u8;
+    type Init = ();
     type Input = Msg;
     type Output = ();
 
@@ -24,58 +19,54 @@ impl SimpleComponent for App {
             set_title: Some("Aporture"),
             set_default_width: 300,
 
-            gtk::Box {
-                set_orientation: gtk::Orientation::Vertical,
+            adw::ToolbarView {
+                set_top_bar_style: adw::ToolbarStyle::Raised,
+                set_bottom_bar_style: adw::ToolbarStyle::Raised,
 
-                adw::HeaderBar {},
+                add_top_bar = &adw::HeaderBar {},
 
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Vertical,
-                    set_spacing: 5,
-                    set_margin_all: 5,
+                #[name = "navigation"]
+                add_bottom_bar = &adw::ViewSwitcherBar {
+                    set_reveal: true,
+                },
 
-                    gtk::Button {
-                        set_label: "Increment",
-                        connect_clicked => Msg::Increment,
+                #[name = "stack"]
+                adw::ViewStack {
+                    add_titled[None, "Send"] = &adw::StatusPage {
+                        set_title: "Send",
                     },
 
-                    gtk::Button {
-                        set_label: "Decrement",
-                        connect_clicked => Msg::Decrement,
-                    },
 
-                    gtk::Label {
-                        #[watch]
-                        set_label: &format!("Counter: {}", model.counter),
-                        set_margin_all: 5,
+                    add_titled[None, "Recieve"] = &gtk::Label {
+                        set_label: "Recieve",
                     }
-                }
+                },
             }
         }
     }
 
-    // Initialize the component.
     fn init(
-        counter: Self::Init,
+        _init: Self::Init,
         root: Self::Root,
-        sender: ComponentSender<Self>,
+        _sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let model = Self { counter };
+        let model = Self {};
 
-        // Insert the code generation of the view! macro here
         let widgets = view_output!();
+
+        widgets.navigation.set_stack(Some(&widgets.stack));
 
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, msg: Self::Input, _sender: ComponentSender<Self>) {
-        match msg {
-            Msg::Increment => {
-                self.counter = self.counter.wrapping_add(1);
-            }
-            Msg::Decrement => {
-                self.counter = self.counter.wrapping_sub(1);
-            }
-        }
+    fn update(&mut self, _msg: Self::Input, _sender: ComponentSender<Self>) {
+        // match msg {
+        //     Msg::Increment => {
+        //         self.counter = self.counter.wrapping_add(1);
+        //     }
+        //     Msg::Decrement => {
+        //         self.counter = self.counter.wrapping_sub(1);
+        //     }
+        // }
     }
 }

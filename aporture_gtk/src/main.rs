@@ -31,7 +31,7 @@ fn main() {
 
     log::info!("Application starting");
 
-    app.run::<App>(0);
+    app.run::<App>(());
 
     log::info!("Aplication Closing");
 }
