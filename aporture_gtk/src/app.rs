@@ -1,12 +1,12 @@
 use adw::prelude::*;
 use relm4::prelude::*;
 
-use crate::components::recieve::RecieverPage;
+use crate::components::receive::ReceiverPage;
 use crate::components::send::SenderPage;
 
 #[derive(Debug)]
 pub struct App {
-    recieve_page: Controller<RecieverPage>,
+    receive_page: Controller<ReceiverPage>,
     // send_page: Controller<Sender>,
 }
 
@@ -48,7 +48,7 @@ impl SimpleComponent for App {
                         set_title: "Send",
                     },
 
-                    add_titled_with_icon[None, "Recieve", "inbox"] = model.recieve_page.widget(),
+                    add_titled_with_icon[None, "Receive", "inbox"] = model.receive_page.widget(),
                 },
             }
         }
@@ -59,9 +59,9 @@ impl SimpleComponent for App {
         root: Self::Root,
         _sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let recieve_page: Controller<RecieverPage> = RecieverPage::builder().launch(()).detach();
+        let receive_page: Controller<ReceiverPage> = ReceiverPage::builder().launch(()).detach();
 
-        let model = Self { recieve_page };
+        let model = Self { receive_page };
 
         let widgets = view_output!();
 

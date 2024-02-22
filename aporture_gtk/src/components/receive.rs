@@ -2,7 +2,7 @@ use adw::prelude::*;
 use relm4::prelude::*;
 
 #[derive(Debug)]
-pub struct RecieverPage {
+pub struct ReceiverPage {
     passphrase: gtk::EntryBuffer,
     passphrase_empty: bool,
 }
@@ -15,7 +15,7 @@ pub enum Msg {
 }
 
 #[relm4::component(pub)]
-impl SimpleComponent for RecieverPage {
+impl SimpleComponent for ReceiverPage {
     type Init = ();
     type Input = Msg;
     type Output = ();
