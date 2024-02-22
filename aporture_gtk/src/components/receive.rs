@@ -10,7 +10,6 @@ pub struct ReceiverPage {
 #[derive(Debug)]
 pub enum Msg {
     PassphraseChanged,
-    GeneratePassphrase,
     RecieveFile,
 }
 
@@ -42,15 +41,9 @@ impl SimpleComponent for ReceiverPage {
                 set_tooltip_text: Some("Passphrase"),
                 set_buffer: &model.passphrase,
 
-                set_icon_from_icon_name: (gtk::EntryIconPosition::Secondary, Some("update")),
-
                 connect_changed[sender] => move |_| {
                     sender.input(Msg::PassphraseChanged);
                 },
-
-                connect_icon_press[sender] => move |_, _| {
-                    sender.input(Msg::GeneratePassphrase);
-                }
             },
         }
     }
@@ -73,7 +66,6 @@ impl SimpleComponent for ReceiverPage {
     fn update(&mut self, msg: Self::Input, _sender: ComponentSender<Self>) {
         match msg {
             Msg::PassphraseChanged => self.passphrase_empty = self.passphrase.length() == 0,
-            Msg::GeneratePassphrase => todo!("Generate random passphrase"),
             Msg::RecieveFile => {
                 log::info!("Selected passphrase is {}", self.passphrase);
 

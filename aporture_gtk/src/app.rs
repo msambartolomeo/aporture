@@ -7,7 +7,7 @@ use crate::components::send::SenderPage;
 #[derive(Debug)]
 pub struct App {
     receive_page: Controller<ReceiverPage>,
-    // send_page: Controller<Sender>,
+    sender_page: Controller<SenderPage>,
 }
 
 #[derive(Debug)]
@@ -44,9 +44,7 @@ impl SimpleComponent for App {
 
                 #[name = "stack"]
                 adw::ViewStack {
-                    add_titled_with_icon[None, "Send", "send"] = &adw::StatusPage {
-                        set_title: "Send",
-                    },
+                    add_titled_with_icon[None, "Send", "send"] = model.sender_page.widget(),
 
                     add_titled_with_icon[None, "Receive", "inbox"] = model.receive_page.widget(),
                 },
@@ -59,9 +57,13 @@ impl SimpleComponent for App {
         root: Self::Root,
         _sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let receive_page: Controller<ReceiverPage> = ReceiverPage::builder().launch(()).detach();
+        let receive_page = ReceiverPage::builder().launch(()).detach();
+        let sender_page = SenderPage::builder().launch(()).detach();
 
-        let model = Self { receive_page };
+        let model = Self {
+            receive_page,
+            sender_page,
+        };
 
         let widgets = view_output!();
 
