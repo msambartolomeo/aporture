@@ -3,7 +3,6 @@
 use adw::prelude::*;
 use relm4::prelude::*;
 
-#[tracker::track]
 #[derive(Debug)]
 pub struct RecieverPage {
     passphrase: gtk::EntryBuffer,
@@ -30,8 +29,8 @@ impl SimpleComponent for RecieverPage {
             #[wrap(Some)]
             set_header_suffix = &gtk::Button {
                 set_label: "Connect",
-                #[track = "model.changed(Self::passphrase_empty())"]
-                set_sensitive: !model.passphrase.text().is_empty(),
+                #[watch]
+                set_sensitive: !model.passphrase_empty,
             },
             set_description: Some("Enter the passphrase shared by the sender"),
 
@@ -53,7 +52,6 @@ impl SimpleComponent for RecieverPage {
         let model = Self {
             passphrase: gtk::EntryBuffer::default(),
             passphrase_empty: true,
-            tracker: 0,
         };
 
         let widgets = view_output!();
@@ -62,10 +60,8 @@ impl SimpleComponent for RecieverPage {
     }
 
     fn update(&mut self, msg: Self::Input, _sender: ComponentSender<Self>) {
-        self.reset();
-
         match msg {
-            Msg::PassphraseChanged => self.set_passphrase_empty(self.passphrase.text().is_empty()),
+            Msg::PassphraseChanged => self.passphrase_empty = self.passphrase.text().is_empty(),
         }
     }
 }
