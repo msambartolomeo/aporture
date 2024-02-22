@@ -1,6 +1,9 @@
 use adw::prelude::*;
 use relm4::prelude::*;
 
+use crate::components::recieve::RecieverPage;
+use crate::components::send::SenderPage;
+
 #[derive(Debug)]
 pub struct App;
 
