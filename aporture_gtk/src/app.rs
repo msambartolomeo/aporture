@@ -1,5 +1,6 @@
 use adw::prelude::*;
 use relm4::prelude::*;
+use relm4_icons::icon_name;
 
 use crate::components::receive::ReceiverPage;
 use crate::components::send::SenderPage;
@@ -44,9 +45,9 @@ impl SimpleComponent for App {
 
                 #[name = "stack"]
                 adw::ViewStack {
-                    add_titled_with_icon[None, "Send", "send"] = model.sender_page.widget(),
+                    add_titled_with_icon[None, "Send", icon_name::SEND] = model.sender_page.widget(),
 
-                    add_titled_with_icon[None, "Receive", "inbox"] = model.receive_page.widget(),
+                    add_titled_with_icon[None, "Receive", icon_name::INBOX] = model.receive_page.widget(),
                 },
             }
         }

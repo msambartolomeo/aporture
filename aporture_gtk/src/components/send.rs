@@ -1,5 +1,6 @@
 use adw::prelude::*;
 use relm4::prelude::*;
+use relm4_icons::icon_name;
 
 #[derive(Debug)]
 pub struct SenderPage {
@@ -42,7 +43,7 @@ impl SimpleComponent for SenderPage {
                 set_tooltip_text: Some("Passphrase"),
                 set_buffer: &model.passphrase,
 
-                set_icon_from_icon_name: (gtk::EntryIconPosition::Secondary, Some("update")),
+                set_icon_from_icon_name: (gtk::EntryIconPosition::Secondary, Some(icon_name::UPDATE)),
 
                 connect_changed[sender] => move |_| {
                     sender.input(Msg::PassphraseChanged);
