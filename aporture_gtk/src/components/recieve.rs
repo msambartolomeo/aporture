@@ -1,5 +1,3 @@
-#![allow(clippy::missing_const_for_fn)]
-
 use adw::prelude::*;
 use relm4::prelude::*;
 
@@ -12,6 +10,8 @@ pub struct RecieverPage {
 #[derive(Debug)]
 pub enum Msg {
     PassphraseChanged,
+    GeneratePassphrase,
+    RecieveFile,
 }
 
 #[relm4::component(pub)]
@@ -31,15 +31,26 @@ impl SimpleComponent for RecieverPage {
                 set_label: "Connect",
                 #[watch]
                 set_sensitive: !model.passphrase_empty,
+
+                connect_clicked[sender] => move |_| {
+                    sender.input(Msg::RecieveFile);
+                },
             },
             set_description: Some("Enter the passphrase shared by the sender"),
 
             gtk::Entry {
                 set_tooltip_text: Some("Passphrase"),
                 set_buffer: &model.passphrase,
+
+                set_icon_from_icon_name: (gtk::EntryIconPosition::Secondary, Some("update")),
+
                 connect_changed[sender] => move |_| {
                     sender.input(Msg::PassphraseChanged);
                 },
+
+                connect_icon_press[sender] => move |_, _| {
+                    sender.input(Msg::GeneratePassphrase);
+                }
             },
         }
     }
@@ -61,7 +72,15 @@ impl SimpleComponent for RecieverPage {
 
     fn update(&mut self, msg: Self::Input, _sender: ComponentSender<Self>) {
         match msg {
-            Msg::PassphraseChanged => self.passphrase_empty = self.passphrase.text().is_empty(),
+            Msg::PassphraseChanged => self.passphrase_empty = self.passphrase.length() == 0,
+            Msg::GeneratePassphrase => todo!("Generate random passphrase"),
+            Msg::RecieveFile => {
+                log::info!("Selected passphrase is {}", self.passphrase);
+
+                let _passphrase = self.passphrase.text().into_bytes();
+
+                todo!("Start receiving process")
+            }
         }
     }
 }

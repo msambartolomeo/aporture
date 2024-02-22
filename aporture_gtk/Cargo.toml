@@ -12,7 +12,11 @@ workspace = true
 [dependencies]
 relm4 = { version = "0.7.0-rc.1", features = ["libadwaita", "gnome_45"] }
 relm4-components = "0.7.0-rc.1"
-relm4-icons = { version = "0.7.0-alpha.2", features = ["send", "inbox"] }
+relm4-icons = { version = "0.7.0-alpha.2", features = [
+    "send",
+    "inbox",
+    "update",
+] }
 log = "0.4.20"
 env_logger = "0.11.2"
 tracker = "0.2.1"
