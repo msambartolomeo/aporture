@@ -32,6 +32,7 @@ impl SimpleComponent for App {
                     #[name = "navigation"]
                     set_title_widget = &adw::ViewSwitcher {
                         set_policy: adw::ViewSwitcherPolicy::Wide,
+                        set_stack: Some(&stack),
                     },
                 },
 
@@ -59,7 +60,6 @@ impl SimpleComponent for App {
 
         let widgets = view_output!();
 
-        widgets.navigation.set_stack(Some(&widgets.stack));
 
         ComponentParts { model, widgets }
     }
