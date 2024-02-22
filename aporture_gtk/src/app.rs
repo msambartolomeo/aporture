@@ -5,7 +5,10 @@ use crate::components::recieve::RecieverPage;
 use crate::components::send::SenderPage;
 
 #[derive(Debug)]
-pub struct App;
+pub struct App {
+    recieve_page: Controller<RecieverPage>,
+    // send_page: Controller<Sender>,
+}
 
 #[derive(Debug)]
 pub enum Msg {}
@@ -45,10 +48,7 @@ impl SimpleComponent for App {
                         set_title: "Send",
                     },
 
-
-                    add_titled_with_icon[None, "Recieve", "inbox"] = &gtk::Label {
-                        set_label: "Recieve",
-                    }
+                    add_titled_with_icon[None, "Recieve", "inbox"] = model.recieve_page.widget(),
                 },
             }
         }
@@ -59,10 +59,11 @@ impl SimpleComponent for App {
         root: Self::Root,
         _sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let model = Self {};
+        let recieve_page: Controller<RecieverPage> = RecieverPage::builder().launch(()).detach();
+
+        let model = Self { recieve_page };
 
         let widgets = view_output!();
-
 
         ComponentParts { model, widgets }
     }
