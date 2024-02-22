@@ -1,3 +1,5 @@
+#![allow(clippy::missing_const_for_fn)]
+
 use adw::prelude::*;
 use relm4::prelude::*;
 
@@ -28,7 +30,7 @@ impl SimpleComponent for RecieverPage {
             #[wrap(Some)]
             set_header_suffix = &gtk::Button {
                 set_label: "Connect",
-                #[track = "model.changed(RecieverPage::passphrase_empty())"]
+                #[track = "model.changed(Self::passphrase_empty())"]
                 set_sensitive: !model.passphrase.text().is_empty(),
             },
             set_description: Some("Enter the passphrase shared by the sender"),
@@ -37,8 +39,8 @@ impl SimpleComponent for RecieverPage {
                 set_tooltip_text: Some("Passphrase"),
                 set_buffer: &model.passphrase,
                 connect_changed[sender] => move |_| {
-                    sender.input(Msg::PassphraseChanged)
-                } ,
+                    sender.input(Msg::PassphraseChanged);
+                },
             },
         }
     }
