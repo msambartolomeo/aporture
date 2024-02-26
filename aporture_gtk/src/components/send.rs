@@ -17,6 +17,7 @@ pub struct SenderPage {
     file_name: Option<String>,
     file_picker_dialog: Controller<OpenDialog>,
     aporture_worker: WorkerController<AportureWorker>,
+    form_disabled: bool,
 }
 
 #[derive(Debug)]
@@ -26,7 +27,7 @@ pub enum Msg {
     FilePickerOpen,
     FilePickerResponse(PathBuf),
     SendFile,
-    SendingSuccess,
+    SendFileFinished,
     Ignore,
 }
 
@@ -42,17 +43,17 @@ impl SimpleComponent for SenderPage {
             set_margin_vertical: 50,
 
             set_title: "Send",
+            set_description: Some("Enter a passphrase or generate a random one"),
             #[wrap(Some)]
             set_header_suffix = &gtk::Button {
                 set_label: "Connect",
                 #[watch]
-                set_sensitive: !model.passphrase_empty && model.file_path.is_some(),
+                set_sensitive: !model.form_disabled && !model.passphrase_empty && model.file_path.is_some(),
 
                 connect_clicked[sender] => move |_| {
                     sender.input(Msg::SendFile);
                 },
             },
-            set_description: Some("Enter a passphrase or generate a random one"),
 
             gtk::Entry {
                 set_margin_vertical: 10,
@@ -60,6 +61,8 @@ impl SimpleComponent for SenderPage {
                 set_tooltip_text: Some("Passphrase"),
                 set_buffer: &model.passphrase,
                 set_icon_from_icon_name: (gtk::EntryIconPosition::Secondary, Some(icon_name::UPDATE)),
+                #[watch]
+                set_sensitive: !model.form_disabled,
 
                 connect_changed[sender] => move |_| {
                     sender.input(Msg::PassphraseChanged);
@@ -74,6 +77,9 @@ impl SimpleComponent for SenderPage {
                 set_margin_vertical: 10,
 
                 set_label: "Choose file",
+                #[watch]
+                set_sensitive: !model.form_disabled,
+
                 connect_clicked => Msg::FilePickerOpen
             },
 
@@ -84,6 +90,8 @@ impl SimpleComponent for SenderPage {
 
                 #[watch]
                 set_label: &format!("Selected file:\n{}", model.file_name.as_ref().unwrap_or(&"None".to_owned())),
+                #[watch]
+                set_sensitive: !model.form_disabled,
             },
         }
     }
@@ -103,7 +111,7 @@ impl SimpleComponent for SenderPage {
 
         let aporture_worker = AportureWorker::builder()
             .detach_worker(())
-            .forward(sender.input_sender(), |_| Msg::SendingSuccess); // TODO: Handle Errors
+            .forward(sender.input_sender(), |_| Msg::SendFileFinished); // TODO: Handle Errors
 
         let model = Self {
             passphrase: gtk::EntryBuffer::default(),
@@ -112,6 +120,7 @@ impl SimpleComponent for SenderPage {
             file_name: None,
             file_picker_dialog,
             aporture_worker,
+            form_disabled: false,
         };
 
         let widgets = view_output!();
@@ -134,16 +143,24 @@ impl SimpleComponent for SenderPage {
                 self.file_path = Some(path);
             }
             Msg::SendFile => {
+                self.form_disabled = true;
+
                 log::info!("Selected passphrase is {}", self.passphrase);
 
                 let passphrase = self.passphrase.text().into_bytes();
 
+                log::info!("Starting sender worker");
                 self.aporture_worker.sender().emit(AportureInput::SendFile {
                     passphrase,
                     path: self.file_path.clone().expect("Button disabled if None"),
                 });
             }
-            Msg::Ignore | Msg::SendingSuccess => (),
+            Msg::SendFileFinished => {
+                log::info!("Finished sender worker");
+
+                self.form_disabled = false;
+            }
+            Msg::Ignore => (),
         }
     }
 }
