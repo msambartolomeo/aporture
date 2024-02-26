@@ -3,10 +3,12 @@ use crate::pairing::{PairInfo, ResponseCode, TransferType};
 use std::fs;
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
+use std::path::{Path, PathBuf};
 
 use aes_gcm_siv::aead::{Aead, KeyInit};
 use aes_gcm_siv::Aes256GcmSiv;
 use blake3::Hash;
+use directories::UserDirs;
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, Bytes, DisplayFromStr};
 
@@ -20,7 +22,7 @@ struct FileData {
     file: Vec<u8>,
 }
 
-pub fn send_file(file: &str, pair_info: PairInfo) {
+pub fn send_file(file: &Path, pair_info: PairInfo) {
     let file = fs::read(file).expect("File exists");
 
     let hash = blake3::hash(&file);
@@ -60,7 +62,14 @@ pub fn send_file(file: &str, pair_info: PairInfo) {
     peer.shutdown(Shutdown::Both).expect("Shutdown works");
 }
 
-pub fn recieve_file(dest: &str, pair_info: PairInfo) {
+pub fn recieve_file(dest: Option<PathBuf>, pair_info: PairInfo) {
+    let dest = dest.unwrap_or_else(|| {
+        UserDirs::new()
+            .map(|dirs| dirs.download_dir().map(|path| path.to_path_buf()))
+            .flatten()
+            .expect("Valid Download Directory")
+    });
+
     let listener = match pair_info.self_transfer_info {
         TransferType::LAN { ip, port } => TcpListener::bind((ip, port)).expect("bind correct"),
     };

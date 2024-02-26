@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use clap::{Args, Parser, Subcommand};
 
 #[derive(Debug, Parser)]
@@ -11,7 +13,7 @@ pub struct AportureArgs {
 pub enum Commands {
     /// Send a file
     Send {
-        path: String,
+        path: PathBuf,
 
         #[command(flatten)]
         method: SendMethod,
@@ -22,7 +24,7 @@ pub enum Commands {
     /// Recieve a file
     Recieve {
         #[arg(short, long, value_names(["PATH"]))]
-        destination: Option<String>,
+        destination: Option<PathBuf>,
 
         #[command(flatten)]
         method: RecieveMethod,
