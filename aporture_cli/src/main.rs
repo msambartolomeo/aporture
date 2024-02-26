@@ -24,7 +24,7 @@ fn main() -> Result<()> {
             dbg!(&pair_info.self_transfer_info);
             dbg!(&pair_info.other_transfer_info);
 
-            transfer::send_file(&path, pair_info);
+            transfer::send_file(path, pair_info);
         }
         Commands::Recieve {
             destination,
@@ -45,9 +45,10 @@ fn main() -> Result<()> {
 
             let dest = match destination {
                 Some(dest) => dest,
-                None => "~/Downloads/".to_owned(),
+                // TODO: Change path on windows
+                None => "~/Downloads/".into(),
             };
-            transfer::recieve_file(&dest, pair_info);
+            transfer::recieve_file(dest, pair_info);
         }
         Commands::Contacts => todo!("Add contacts"),
         Commands::Pair { command: _ } => todo!("Add pair module"),
