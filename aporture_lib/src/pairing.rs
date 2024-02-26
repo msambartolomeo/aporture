@@ -8,7 +8,7 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 use serde_with::{serde_as, Bytes, DisplayFromStr};
 use spake2::{Ed25519Group, Identity, Password, Spake2};
 
-const SERVER_ADDRESS: &str = "10.0.0.1:8080";
+const SERVER_ADDRESS: &str = "127.0.0.1:8080";
 const DEFAULT_SENDER_PORT: u16 = 8081;
 const DEFAULT_RECIEVER_PORT: u16 = 8082;
 
@@ -19,14 +19,16 @@ pub struct AporturePairingProtocol {
 }
 
 impl AporturePairingProtocol {
+    #[must_use]
     pub fn new(kind: PairKind, passphrase: Vec<u8>) -> Self {
-        AporturePairingProtocol {
+        Self {
             protocol_version: 1,
             kind,
             passphrase,
         }
     }
 
+    #[must_use]
     pub fn pair(&self) -> PairInfo {
         let mut client_buffer = [0u8; 1024];
 
@@ -45,7 +47,7 @@ impl AporturePairingProtocol {
         let response: ResponseCode =
             serde_bencode::from_bytes(&client_buffer).expect("server responds correctly");
 
-        if let ResponseCode::Ok = response {
+        if matches!(response, ResponseCode::Ok) {
         } else {
             panic!("Server error");
         }
@@ -119,17 +121,13 @@ fn tcp_send_recieve<S: Serialize>(stream: &mut TcpStream, input: &S, out_buf: &m
 
     let read = stream.read(out_buf).expect("Read buffer");
 
-    if read == 0 {
-        panic!("Closed fron server");
-    }
+    assert_eq!(read, 0, "Closed from server");
 }
 
 fn tcp_recieve_send<S: Serialize>(stream: &mut TcpStream, input: &S, out_buf: &mut [u8]) {
     let read = stream.read(out_buf).expect("Read buffer");
 
-    if read == 0 {
-        panic!("Closed fron server");
-    }
+    assert_eq!(read, 0, "Closed from server");
 
     let in_buf = serde_bencode::to_bytes(input).expect("Correct serde parse");
     stream.write_all(&in_buf).expect("write hello");

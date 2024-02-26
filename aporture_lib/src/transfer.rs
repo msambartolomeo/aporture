@@ -22,7 +22,7 @@ struct FileData {
     file: Vec<u8>,
 }
 
-pub fn send_file(file: &Path, pair_info: PairInfo) {
+pub fn send_file(file: &Path, pair_info: &PairInfo) {
     let file = fs::read(file).expect("File exists");
 
     let hash = blake3::hash(&file);
@@ -34,7 +34,7 @@ pub fn send_file(file: &Path, pair_info: PairInfo) {
     let buf = serde_bencode::to_bytes(&file_data).expect("Correct serde parse");
     let mut peer = match pair_info.other_transfer_info {
         TransferType::LAN { ip, port } => {
-            println!("connecting to {} on port {}", ip, port);
+            log::info!("connecting to {ip} on port {port}");
             TcpStream::connect((ip, port)).expect("Connect to server")
         }
     };
@@ -45,28 +45,26 @@ pub fn send_file(file: &Path, pair_info: PairInfo) {
 
     let read = peer.read(&mut buf).expect("Read buffer");
 
-    if read == 0 {
-        panic!("Closed from reciever");
-    }
+    assert_eq!(read, 0, "Closed from reciever");
 
     let response: ResponseCode =
         serde_bencode::from_bytes(&buf).expect("server responds correctly");
 
-    if let ResponseCode::Ok = response {
+    if matches!(response, ResponseCode::Ok) {
     } else {
         panic!("Server error");
     }
 
-    peer.write_all(b"jwdoaiwdjoawjdawijdoawd").unwrap();
+    peer.write_all(b"jwdoaiwdjoawjdawijdoawd")
+        .expect("Remove this after testing");
 
     peer.shutdown(Shutdown::Both).expect("Shutdown works");
 }
 
-pub fn recieve_file(dest: Option<PathBuf>, pair_info: PairInfo) {
+pub fn recieve_file(dest: Option<PathBuf>, pair_info: &PairInfo) {
     let dest = dest.unwrap_or_else(|| {
         UserDirs::new()
-            .map(|dirs| dirs.download_dir().map(|path| path.to_path_buf()))
-            .flatten()
+            .and_then(|dirs| dirs.download_dir().map(Path::to_path_buf))
             .expect("Valid Download Directory")
     });
 
@@ -80,13 +78,11 @@ pub fn recieve_file(dest: Option<PathBuf>, pair_info: PairInfo) {
 
     let read = peer.read(&mut buf).expect("Read buffer");
 
-    if read == 0 {
-        panic!("Closed from sender");
-    }
+    assert_eq!(read, 0, "Closed from sender");
 
     let file_data: FileData = serde_bencode::from_bytes(&buf).expect("serde works");
 
-    let buf = serde_bencode::to_bytes(&ResponseCode::Ok).unwrap();
+    let buf = serde_bencode::to_bytes(&ResponseCode::Ok).expect("Translation to bencode");
 
     peer.write_all(&buf).expect("Write all");
 
@@ -95,21 +91,22 @@ pub fn recieve_file(dest: Option<PathBuf>, pair_info: PairInfo) {
 
     let read = peer.read(&mut file).expect("Read buffer");
 
-    if read == 0 {
-        panic!("Closed from sender");
-    }
+    assert_eq!(read, 0, "Closed from sender");
 
     peer.shutdown(Shutdown::Both).expect("Shutdown works");
 
     let file = decrypt(&file_data.file, &pair_info.key);
 
-    if blake3::hash(&file) != file_data.hash {
-        panic!("Error in file transfer, hashes are not the same");
-    }
+    assert_ne!(
+        blake3::hash(&file),
+        file_data.hash,
+        "Error in file transfer, hashes are not the same"
+    );
 
     fs::write(dest, file).expect("Can write file");
 }
 
+#[must_use]
 pub fn encrypt(plain: &[u8], key: &[u8]) -> Vec<u8> {
     let key = key.into();
     // TODO: Get a real nonce
@@ -119,6 +116,7 @@ pub fn encrypt(plain: &[u8], key: &[u8]) -> Vec<u8> {
     aes.encrypt(nonce, plain).expect("Encryption failure")
 }
 
+#[must_use]
 pub fn decrypt(cipher: &[u8], key: &[u8]) -> Vec<u8> {
     let key = key.into();
     // TODO: Get a real nonce
