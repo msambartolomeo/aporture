@@ -3,7 +3,7 @@ use crate::pairing::{PairInfo, ResponseCode, TransferType};
 use std::fs;
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
-use std::path::PathBuf;
+use std::path::Path;
 
 use aes_gcm_siv::aead::{Aead, KeyInit};
 use aes_gcm_siv::Aes256GcmSiv;
@@ -21,7 +21,7 @@ struct FileData {
     file: Vec<u8>,
 }
 
-pub fn send_file(file: PathBuf, pair_info: PairInfo) {
+pub fn send_file(file: &Path, pair_info: PairInfo) {
     let file = fs::read(file).expect("File exists");
 
     let hash = blake3::hash(&file);
@@ -61,7 +61,7 @@ pub fn send_file(file: PathBuf, pair_info: PairInfo) {
     peer.shutdown(Shutdown::Both).expect("Shutdown works");
 }
 
-pub fn recieve_file(dest: PathBuf, pair_info: PairInfo) {
+pub fn recieve_file(dest: &Path, pair_info: PairInfo) {
     let listener = match pair_info.self_transfer_info {
         TransferType::LAN { ip, port } => TcpListener::bind((ip, port)).expect("bind correct"),
     };
