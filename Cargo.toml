@@ -7,3 +7,12 @@ members = ["aporture_lib", "aporture_cli", "aporture_server", "aporture_gtk"]
 pedantic = "deny"
 nursery = "deny"
 unwrap_used = "deny"
+
+[workspace.dependencies]
+aporture = { path = "./aporture_lib", package = "aporture_lib" }
+serde = { version = "1.0.193", features = ["derive"] }
+serde_bencode = "0.2.4"
+serde_with = "3.4.0"
+serde_repr = "0.1.17"
+log = "0.4.20"
+env_logger = "0.11.2"

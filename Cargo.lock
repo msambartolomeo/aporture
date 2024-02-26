@@ -138,6 +138,8 @@ dependencies = [
  "anyhow",
  "aporture_lib",
  "clap",
+ "env_logger",
+ "log",
 ]
 
 [[package]]
@@ -150,7 +152,6 @@ dependencies = [
  "relm4",
  "relm4-components",
  "relm4-icons",
- "tracker",
 ]
 
 [[package]]
@@ -160,7 +161,9 @@ dependencies = [
  "aes-gcm-siv",
  "blake3",
  "directories",
+ "env_logger",
  "local-ip-address",
+ "log",
  "serde",
  "serde_bencode",
  "serde_repr",
@@ -172,6 +175,8 @@ dependencies = [
 name = "aporture_server"
 version = "0.1.0"
 dependencies = [
+ "env_logger",
+ "log",
  "serde",
  "serde_bencode",
  "serde_repr",

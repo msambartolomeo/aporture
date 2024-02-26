@@ -8,9 +8,7 @@ edition = "2021"
 [lints]
 workspace = true
 
-
 [dependencies]
-aporture = { path = "../aporture_lib", package = "aporture_lib" }
 relm4 = { version = "0.7.0-rc.1", features = ["libadwaita", "gnome_45"] }
 relm4-components = "0.7.0-rc.1"
 relm4-icons = { version = "0.7.0-alpha.2", features = [
@@ -18,6 +16,7 @@ relm4-icons = { version = "0.7.0-alpha.2", features = [
     "inbox",
     "update",
 ] }
-log = "0.4.20"
-env_logger = "0.11.2"
-tracker = "0.2.1"
+# NOTE: Shared dependencies
+aporture = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
