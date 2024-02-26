@@ -144,6 +144,7 @@ dependencies = [
 name = "aporture_gtk"
 version = "0.1.0"
 dependencies = [
+ "aporture_lib",
  "env_logger",
  "log",
  "relm4",

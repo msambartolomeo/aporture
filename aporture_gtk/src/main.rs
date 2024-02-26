@@ -1,5 +1,6 @@
 mod app;
 mod components;
+mod workers;
 
 use relm4::RelmApp;
 
