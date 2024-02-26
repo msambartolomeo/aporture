@@ -47,11 +47,11 @@ impl Worker for AportureWorker {
             }
             AportureInput::RecieveFile {
                 passphrase,
-                destination: _,
+                destination,
             } => {
                 let pair_info = AporturePairingProtocol::new(PairKind::Reciever, passphrase).pair();
 
-                aporture::transfer::recieve_file(&PathBuf::from("~/downloads/"), pair_info);
+                aporture::transfer::recieve_file(destination, pair_info);
 
                 sender
                     .output(Output::Success)
