@@ -7,7 +7,7 @@ use relm4_components::open_dialog::{
 };
 use relm4_icons::icon_name;
 
-use crate::workers::AportureWorker;
+use crate::workers::{AportureInput, AportureWorker};
 
 #[derive(Debug)]
 pub struct SenderPage {
@@ -138,12 +138,10 @@ impl SimpleComponent for SenderPage {
 
                 let passphrase = self.passphrase.text().into_bytes();
 
-                self.aporture_worker
-                    .sender()
-                    .emit(crate::workers::Input::SendFile {
-                        passphrase,
-                        path: self.file_path.clone().expect("Button disabled if None"),
-                    });
+                self.aporture_worker.sender().emit(AportureInput::SendFile {
+                    passphrase,
+                    path: self.file_path.clone().expect("Button disabled if None"),
+                });
             }
             Msg::Ignore | Msg::SendingSuccess => (),
         }

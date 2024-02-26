@@ -1,16 +1,20 @@
 use adw::prelude::*;
-use relm4::prelude::*;
+use relm4::{prelude::*, WorkerController};
+
+use crate::workers::{AportureInput, AportureWorker};
 
 #[derive(Debug)]
 pub struct ReceiverPage {
     passphrase: gtk::EntryBuffer,
     passphrase_empty: bool,
+    aporture_worker: WorkerController<AportureWorker>,
 }
 
 #[derive(Debug)]
 pub enum Msg {
     PassphraseChanged,
     RecieveFile,
+    RecievingSuccess,
 }
 
 #[relm4::component(pub)]
@@ -53,9 +57,14 @@ impl SimpleComponent for ReceiverPage {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
+        let aporture_worker = AportureWorker::builder()
+            .detach_worker(())
+            .forward(sender.input_sender(), |_| Msg::RecievingSuccess); // TODO: Handle Errors
+
         let model = Self {
             passphrase: gtk::EntryBuffer::default(),
             passphrase_empty: true,
+            aporture_worker,
         };
 
         let widgets = view_output!();
@@ -69,10 +78,16 @@ impl SimpleComponent for ReceiverPage {
             Msg::RecieveFile => {
                 log::info!("Selected passphrase is {}", self.passphrase);
 
-                let _passphrase = self.passphrase.text().into_bytes();
+                let passphrase = self.passphrase.text().into_bytes();
 
-                todo!("Start receiving process")
+                self.aporture_worker
+                    .sender()
+                    .emit(AportureInput::RecieveFile {
+                        passphrase,
+                        destination: None,
+                    });
             }
+            Msg::RecievingSuccess => (),
         }
     }
 }
