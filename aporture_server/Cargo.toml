@@ -9,7 +9,7 @@ edition = "2021"
 workspace = true
 
 [dependencies]
-tokio = { version = "1.34.0", features = ["full"] }
+tokio = { version = "1.36.0", features = ["full"] }
 # NOTE: Shared dependencies
 serde = { workspace = true }
 serde_bencode = { workspace = true }
