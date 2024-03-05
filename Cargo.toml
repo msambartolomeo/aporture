@@ -9,7 +9,7 @@ nursery = "deny"
 unwrap_used = "deny"
 # TODO: Remove when adding docs
 missing_panics_doc = "allow"
-
+missing_errors_doc = "allow"
 
 [workspace.dependencies]
 aporture = { path = "./aporture_lib", package = "aporture_lib" }
@@ -17,5 +17,5 @@ serde = { version = "1.0.197", features = ["derive"] }
 serde_bencode = "0.2.4"
 serde_with = "3.6.1"
 serde_repr = "0.1.18"
-log = "0.4.20"
-env_logger = "0.11.2"
+log = "0.4.21"
+env_logger = "0.11.3"
