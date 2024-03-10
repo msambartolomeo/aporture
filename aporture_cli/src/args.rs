@@ -4,7 +4,7 @@ use clap::{Args, Parser, Subcommand};
 
 #[derive(Debug, Parser)]
 #[command(name = "Aporture", author, version, about)]
-pub struct AportureArgs {
+pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
 }

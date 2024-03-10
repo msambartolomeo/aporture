@@ -5,13 +5,19 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[lints]
+workspace = true
+
 [dependencies]
-serde = { version = "1.0.193", features = ["derive"] }
-serde_bencode = "0.2.4"
-serde_with = "3.4.0"
-serde_repr = "0.1.17"
 spake2 = "0.4.0"
 blake3 = "1.5.0"
 aes-gcm-siv = "0.11.1"
-local-ip-address = "0.5.6"
+local-ip-address = "0.6.1"
 directories = "5.0.1"
+# NOTE: Shared dependencies
+serde = { workspace = true }
+serde_bencode = { workspace = true }
+serde_with = { workspace = true }
+serde_repr = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }

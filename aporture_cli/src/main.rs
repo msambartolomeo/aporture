@@ -1,14 +1,13 @@
-use aporture_lib::pairing::{AporturePairingProtocol, PairKind};
-use aporture_lib::transfer;
-use args::{AportureArgs, Commands, SendMethod};
+use aporture::pairing::{AporturePairingProtocol, PairKind};
+use aporture::transfer;
+use args::{Cli, Commands, SendMethod};
 
-use anyhow::Result;
 use clap::Parser;
 
 mod args;
 
-fn main() -> Result<()> {
-    let args = AportureArgs::parse();
+fn main() {
+    let args = Cli::parse();
 
     match args.command {
         Commands::Send {
@@ -24,7 +23,7 @@ fn main() -> Result<()> {
             dbg!(&pair_info.self_transfer_info);
             dbg!(&pair_info.other_transfer_info);
 
-            transfer::send_file(&path, pair_info);
+            transfer::send_file(&path, &pair_info);
         }
         Commands::Recieve {
             destination,
@@ -43,13 +42,11 @@ fn main() -> Result<()> {
             dbg!(&pair_info.self_transfer_info);
             dbg!(&pair_info.other_transfer_info);
 
-            transfer::recieve_file(destination, pair_info);
+            transfer::recieve_file(destination, &pair_info);
         }
         Commands::Contacts => todo!("Add contacts"),
         Commands::Pair { command: _ } => todo!("Add pair module"),
     };
-
-    Ok(())
 }
 
 fn get_passphrase(method: SendMethod) -> Vec<u8> {
@@ -57,7 +54,7 @@ fn get_passphrase(method: SendMethod) -> Vec<u8> {
         return passphrase.into_bytes();
     }
 
-    if let Some(_) = method.contact {
+    if method.contact.is_some() {
         todo!("Add contacts")
     }
 

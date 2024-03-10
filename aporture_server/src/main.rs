@@ -51,15 +51,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             match socket.read(&mut buf).await {
                 // socket closed
-                Ok(n) if n == 0 => return,
+                Ok(0) => return,
                 Ok(n) => n,
                 Err(e) => {
-                    eprintln!("failed to read from socket; err = {:?}", e);
+                    log::error!("failed to read from socket; err = {e:?}");
                     return;
                 }
             };
 
-            let hello: AporturePairingProtocol = serde_bencode::de::from_bytes(&buf).unwrap();
+            let hello: AporturePairingProtocol =
+                serde_bencode::de::from_bytes(&buf).expect("Response is valid APP");
 
             let mut map = map.lock().await;
             match hello.kind {
@@ -67,18 +68,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     map.insert(hello.pair_id, socket);
                 }
                 PairKind::Reciever => {
-                    let sender_socket = map.get_mut(&hello.pair_id).unwrap();
+                    let mut sender_socket =
+                        map.remove(&hello.pair_id).expect("Sender already arrived");
+                    // NOTE: Drop map to allow other connections
+                    drop(map);
                     let mut reciever_socket = socket;
 
-                    let response = serde_bencode::to_bytes(&ResponseCode::Ok).unwrap();
+                    let response = serde_bencode::to_bytes(&ResponseCode::Ok)
+                        .expect("Response code can be turn into bencode");
 
-                    sender_socket.write_all(&response).await.unwrap();
-                    reciever_socket.write_all(&response).await.unwrap();
+                    sender_socket
+                        .write_all(&response)
+                        .await
+                        .expect("No network errors sending response");
+                    reciever_socket
+                        .write_all(&response)
+                        .await
+                        .expect("No network errors sending response");
 
                     // NOTE: Delegate talking between pairs, per protocol
-                    tokio::io::copy_bidirectional(sender_socket, &mut reciever_socket)
+                    tokio::io::copy_bidirectional(&mut sender_socket, &mut reciever_socket)
                         .await
-                        .unwrap();
+                        .expect("No network errors in pairing");
                 }
             }
         });
