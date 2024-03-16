@@ -20,8 +20,8 @@ fn main() {
 
             let pair_info = app.pair();
 
-            dbg!(&pair_info.self_transfer_info);
-            dbg!(&pair_info.other_transfer_info);
+            // dbg!(&pair_info.transfer_info);
+            // dbg!(&pair_info.other_transfer_info);
 
             transfer::send_file(&path, &pair_info);
         }
@@ -39,8 +39,8 @@ fn main() {
 
             let pair_info = app.pair();
 
-            dbg!(&pair_info.self_transfer_info);
-            dbg!(&pair_info.other_transfer_info);
+            // dbg!(&pair_info.transfer_info);
+            // dbg!(&pair_info.other_transfer_info);
 
             transfer::recieve_file(destination, &pair_info);
         }

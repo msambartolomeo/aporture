@@ -2,7 +2,7 @@ use crate::pairing::{PairInfo, ResponseCode, TransferType};
 
 use std::fs;
 use std::io::{Read, Write};
-use std::net::{Shutdown, TcpListener, TcpStream};
+use std::net::{IpAddr, Shutdown, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 
 use aes_gcm_siv::aead::{Aead, KeyInit};
@@ -32,10 +32,13 @@ pub fn send_file(file: &Path, pair_info: &PairInfo) {
     let file_data = FileData { hash, file };
 
     let buf = serde_bencode::to_bytes(&file_data).expect("Correct serde parse");
-    let mut peer = match pair_info.other_transfer_info {
-        TransferType::LAN { ip, port } => {
-            log::info!("connecting to {ip} on port {port}");
-            TcpStream::connect((ip, port)).expect("Connect to server")
+    let mut peer = match pair_info.transfer_info {
+        TransferType::Address(address) => {
+            log::info!("connecting to {} on port {}", address.ip(), address.port());
+            TcpStream::connect(address).expect("Connect to server")
+        }
+        _ => {
+            unreachable!("Incorrect transferType")
         }
     };
 
@@ -68,8 +71,13 @@ pub fn recieve_file(dest: Option<PathBuf>, pair_info: &PairInfo) {
             .expect("Valid Download Directory")
     });
 
-    let listener = match pair_info.self_transfer_info {
-        TransferType::LAN { ip, port } => TcpListener::bind((ip, port)).expect("bind correct"),
+    let listener = match pair_info.transfer_info {
+        TransferType::UPnP { local_port, .. } => {
+            TcpListener::bind((IpAddr::from([0, 0, 0, 0]), local_port)).expect("bind correct")
+        }
+        _ => {
+            unreachable!("Incorrect transferType")
+        }
     };
 
     let (mut peer, _) = listener.accept().expect("accept");

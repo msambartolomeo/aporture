@@ -4,6 +4,7 @@ use std::time::Duration;
 use igd::{PortMappingProtocol, SearchOptions};
 use thiserror::Error;
 
+#[derive(Debug)]
 pub struct Gateway {
     igd: igd::Gateway,
     ip: IpAddr,
@@ -29,11 +30,11 @@ impl Gateway {
     }
 
     pub fn open_port(&mut self, port: u16) -> Result<SocketAddr, OpenPortError> {
+        const PORT_DESCRIPTION: &str = "aporture";
+
         if self.port.is_some() {
             self.close_port().map_err(|_| OpenPortError)?;
         }
-
-        const PORT_DESCRIPTION: &str = "aporture";
 
         let local_address = (self.ip, port).into();
 
