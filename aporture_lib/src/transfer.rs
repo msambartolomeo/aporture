@@ -48,7 +48,7 @@ pub fn send_file(file: &Path, pair_info: &PairInfo) {
 
     let read = peer.read(&mut buf).expect("Read buffer");
 
-    assert_eq!(read, 0, "Closed from reciever");
+    assert_ne!(read, 0, "Closed from reciever");
 
     let response: ResponseCode =
         serde_bencode::from_bytes(&buf).expect("server responds correctly");
@@ -57,9 +57,6 @@ pub fn send_file(file: &Path, pair_info: &PairInfo) {
     } else {
         panic!("Server error");
     }
-
-    peer.write_all(b"jwdoaiwdjoawjdawijdoawd")
-        .expect("Remove this after testing");
 
     peer.shutdown(Shutdown::Both).expect("Shutdown works");
 }
@@ -90,7 +87,7 @@ pub fn recieve_file(dest: Option<PathBuf>, pair_info: &PairInfo) {
 
     let read = peer.read(&mut buf).expect("Read buffer");
 
-    assert_eq!(read, 0, "Closed from sender");
+    assert_ne!(read, 0, "Closed from sender");
 
     let file_data: FileData = serde_bencode::from_bytes(&buf).expect("serde works");
 
@@ -98,18 +95,18 @@ pub fn recieve_file(dest: Option<PathBuf>, pair_info: &PairInfo) {
 
     peer.write_all(&buf).expect("Write all");
 
-    // TODO: Check why normal vector does not work and fix
-    let mut file = [0u8; 4096];
+    // // TODO: Check why normal vector does not work and fix
+    // let mut file = [0u8; 4096];
 
-    let read = peer.read(&mut file).expect("Read buffer");
+    // let read = peer.read(&mut file).expect("Read buffer");
 
-    assert_eq!(read, 0, "Closed from sender");
+    // assert_ne!(read, 0, "Closed from sender");
 
     peer.shutdown(Shutdown::Both).expect("Shutdown works");
 
     let file = decrypt(&file_data.file, &pair_info.key);
 
-    assert_ne!(
+    assert_eq!(
         blake3::hash(&file),
         file_data.hash,
         "Error in file transfer, hashes are not the same"
