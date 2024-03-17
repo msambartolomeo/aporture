@@ -6,7 +6,29 @@ use clap::Parser;
 
 mod args;
 
+fn init_logger() {
+    use std::io::Write;
+
+    env_logger::Builder::from_default_env()
+        .format(|buf, record| {
+            let color = buf.default_level_style(record.level());
+
+            writeln!(
+                buf,
+                "{}:{} {} {color}{}{color:#} - {}",
+                record.file().unwrap_or("unknown"),
+                record.line().unwrap_or(0),
+                buf.timestamp(),
+                record.level(),
+                record.args()
+            )
+        })
+        .init();
+}
+
 fn main() {
+    init_logger();
+
     let args = Cli::parse();
 
     match args.command {
@@ -19,9 +41,6 @@ fn main() {
             let app = AporturePairingProtocol::new(PairKind::Sender, passphrase);
 
             let pair_info = app.pair();
-
-            // dbg!(&pair_info.transfer_info);
-            // dbg!(&pair_info.other_transfer_info);
 
             transfer::send_file(&path, &pair_info);
         }
@@ -38,9 +57,6 @@ fn main() {
             let app = AporturePairingProtocol::new(PairKind::Reciever, passphrase);
 
             let pair_info = app.pair();
-
-            // dbg!(&pair_info.transfer_info);
-            // dbg!(&pair_info.other_transfer_info);
 
             transfer::recieve_file(destination, &pair_info);
         }

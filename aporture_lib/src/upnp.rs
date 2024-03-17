@@ -46,10 +46,13 @@ impl Gateway {
         );
 
         let external_address = match external_address {
-            Err(igd::AddAnyPortError::OnlyPermanentLeasesSupported) => self
-                .igd
-                .get_any_address(PortMappingProtocol::TCP, local_address, 0, PORT_DESCRIPTION)
-                .map_err(|_| OpenPortError),
+            Err(igd::AddAnyPortError::OnlyPermanentLeasesSupported) => {
+                log::warn!("Router does not support temporary upnp, trying permanent leasing");
+
+                self.igd
+                    .get_any_address(PortMappingProtocol::TCP, local_address, 0, PORT_DESCRIPTION)
+                    .map_err(|_| OpenPortError)
+            }
             a => a.map_err(|_| OpenPortError),
         }?;
 

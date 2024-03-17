@@ -73,6 +73,8 @@ pub fn recieve_file(dest: Option<PathBuf>, pair_info: &PairInfo) {
 
     let listener = match pair_info.transfer_info {
         TransferType::UPnP { local_port, .. } => {
+            log::info!("binding to {} on port {}", "0.0.0.0", local_port);
+
             TcpListener::bind((IpAddr::from([0, 0, 0, 0]), local_port)).expect("bind correct")
         }
         _ => {
@@ -81,6 +83,8 @@ pub fn recieve_file(dest: Option<PathBuf>, pair_info: &PairInfo) {
     };
 
     let (mut peer, _) = listener.accept().expect("accept");
+
+    log::info!("Conection achieved");
 
     let mut buf = [0u8; 1024];
 

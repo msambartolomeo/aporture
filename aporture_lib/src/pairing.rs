@@ -107,6 +107,8 @@ impl AporturePairingProtocol {
             .shutdown(std::net::Shutdown::Both)
             .expect("correct shutdown");
 
+        log::info!("Finished pairing: {transfer_info:#?}");
+
         PairInfo { key, transfer_info }
     }
 }
@@ -118,13 +120,13 @@ fn tcp_send_recieve<S: Serialize>(stream: &mut TcpStream, input: &S, out_buf: &m
 
     let read = stream.read(out_buf).expect("Read buffer");
 
-    assert_eq!(read, 0, "Closed from server");
+    assert_ne!(read, 0, "Closed from server");
 }
 
 fn tcp_recieve_send<S: Serialize>(stream: &mut TcpStream, input: &S, out_buf: &mut [u8]) {
     let read = stream.read(out_buf).expect("Read buffer");
 
-    assert_eq!(read, 0, "Closed from server");
+    assert_ne!(read, 0, "Closed from server");
 
     let in_buf = serde_bencode::to_bytes(input).expect("Correct serde parse");
     stream.write_all(&in_buf).expect("write hello");
@@ -166,9 +168,6 @@ struct KeyExchangePayload(#[serde_as(as = "Bytes")] [u8; 33]);
 #[serde_as]
 #[derive(Debug, Deserialize, Serialize)]
 struct KeyConfirmationPayload(#[serde_as(as = "Bytes")] [u8; 33]);
-
-// #[derive(Debug, Deserialize, Serialize)]
-// struct TransferNegotaitionPayload(Vec<TransferType>);
 
 type Key = Vec<u8>;
 #[derive(Debug)]

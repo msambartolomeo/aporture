@@ -9,7 +9,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
 
 #[serde_as]
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct AporturePairingProtocol {
     /// Protocol version
     version: u8,
@@ -21,7 +21,7 @@ struct AporturePairingProtocol {
     pair_id: [u8; 64],
 }
 
-#[derive(Deserialize_repr, Serialize_repr)]
+#[derive(Debug, Deserialize_repr, Serialize_repr)]
 #[repr(u8)]
 enum PairKind {
     Sender = 0,
@@ -35,8 +35,30 @@ enum ResponseCode {
     UnsupportedVersion = 1,
 }
 
+fn init_logger() {
+    use std::io::Write;
+
+    env_logger::Builder::from_default_env()
+        .format(|buf, record| {
+            let color = buf.default_level_style(record.level());
+
+            writeln!(
+                buf,
+                "{}:{} {} {color}{}{color:#} - {}",
+                record.file().unwrap_or("unknown"),
+                record.line().unwrap_or(0),
+                buf.timestamp(),
+                record.level(),
+                record.args()
+            )
+        })
+        .init();
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    init_logger();
+
     let listener = TcpListener::bind("0.0.0.0:8080").await?;
 
     let map: Arc<Mutex<HashMap<[u8; 64], TcpStream>>> = Arc::new(Mutex::new(HashMap::new()));
@@ -65,9 +87,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut map = map.lock().await;
             match hello.kind {
                 PairKind::Sender => {
+                    log::info!("recieved hello from sender");
                     map.insert(hello.pair_id, socket);
                 }
                 PairKind::Reciever => {
+                    log::info!("recieved hello from reciever");
                     let mut sender_socket =
                         map.remove(&hello.pair_id).expect("Sender already arrived");
                     // NOTE: Drop map to allow other connections
@@ -85,6 +109,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .write_all(&response)
                         .await
                         .expect("No network errors sending response");
+
+                    log::info!("Starting bidirectional APP");
 
                     // NOTE: Delegate talking between pairs, per protocol
                     tokio::io::copy_bidirectional(&mut sender_socket, &mut reciever_socket)
