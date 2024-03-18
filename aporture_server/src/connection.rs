@@ -23,20 +23,22 @@ pub async fn handle_connection(
     mut connection: Connection,
     map: Arc<Mutex<HashMap<[u8; 64], Connection>>>,
 ) {
-    let mut buf = [0; 1024];
+    let mut buf = [0; AporturePairingProtocol::serialized_size()];
 
-    match connection.socket.read(&mut buf).await {
-        // socket closed
-        Ok(0) => return,
-        Ok(n) => n,
-        Err(e) => {
-            log::error!("failed to read from socket; err = {e:?}");
-            return;
+    if let Err(e) = connection.socket.read_exact(&mut buf).await {
+        match e.kind() {
+            std::io::ErrorKind::UnexpectedEof => {
+                log::warn!("Content does not match APP hello message length: {e}")
+            }
+            _ => log::warn!("Error reading APP hello message: {e}"),
         }
+        return;
     };
 
-    let hello: AporturePairingProtocol =
-        serde_bencode::de::from_bytes(&buf).expect("Response is valid APP");
+    let Ok(hello) = serde_bencode::from_bytes::<AporturePairingProtocol>(&buf) else {
+        log::warn!("Hello message does not match APP hello");
+        return;
+    };
 
     let mut map = map.lock().await;
 

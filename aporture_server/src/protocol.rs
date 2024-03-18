@@ -22,6 +22,13 @@ pub struct AporturePairingProtocol {
     pub pair_id: [u8; 64],
 }
 
+impl AporturePairingProtocol {
+    // TODO: Check if there is a way to calculate it automatically
+    pub const fn serialized_size() -> usize {
+        99
+    }
+}
+
 #[derive(Deserialize_repr, Serialize_repr)]
 #[repr(u8)]
 pub enum ResponseCode {
