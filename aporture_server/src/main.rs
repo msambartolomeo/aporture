@@ -2,11 +2,11 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use connection::Connection;
+use net::Connection;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
-mod connection;
+mod net;
 mod protocol;
 
 fn init_logger() {
@@ -42,6 +42,6 @@ async fn main() -> Result<(), std::io::Error> {
     loop {
         let connection = Connection::from(listener.accept().await?);
 
-        tokio::spawn(connection::handle_connection(connection, map.clone()));
+        tokio::spawn(net::handle_connection(connection, map.clone()));
     }
 }
