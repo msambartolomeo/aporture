@@ -16,7 +16,7 @@ pub trait BencodeSerDe: Serialize + for<'a> Deserialize<'a> {
     }
 }
 
-#[derive(Debug, Clone, Copy, Deserialize_repr, Serialize_repr)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize_repr, Serialize_repr)]
 #[repr(u8)]
 pub enum PairKind {
     Sender = 0,
@@ -28,7 +28,7 @@ impl BencodeSerDe for PairKind {
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct APPHello {
     /// Protocol version
     pub version: u8,
@@ -44,7 +44,7 @@ impl BencodeSerDe for APPHello {
     const SERIALIZED_SIZE: usize = 99;
 }
 
-#[derive(Debug, Clone, Copy, Deserialize_repr, Serialize_repr)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize_repr, Serialize_repr)]
 #[repr(u8)]
 pub enum ResponseCode {
     // NOTE: Okay types
@@ -59,4 +59,52 @@ pub enum ResponseCode {
 
 impl BencodeSerDe for ResponseCode {
     const SERIALIZED_SIZE: usize = 3;
+}
+
+#[cfg(test)]
+mod test {
+    use super::{APPHello, BencodeSerDe, PairKind, ResponseCode};
+
+    #[test]
+    fn test_response_ser_de() {
+        let response = ResponseCode::Ok;
+
+        let serialized = response.serialize();
+
+        assert_eq!(ResponseCode::SERIALIZED_SIZE, serialized.len());
+
+        let deserialized = ResponseCode::deserialize_from(&serialized).unwrap();
+
+        assert_eq!(response, deserialized)
+    }
+
+    #[test]
+    fn test_app_hello_ser_de() {
+        let hello = APPHello {
+            version: 0,
+            kind: PairKind::Sender,
+            pair_id: [0; 64],
+        };
+
+        let serialized = hello.serialize();
+
+        assert_eq!(APPHello::SERIALIZED_SIZE, serialized.len());
+
+        let deserialized = APPHello::deserialize_from(&serialized).unwrap();
+
+        assert_eq!(hello, deserialized)
+    }
+
+    #[test]
+    fn test_pair_kind_ser_de() {
+        let pair = PairKind::Sender;
+
+        let serialized = pair.serialize();
+
+        assert_eq!(PairKind::SERIALIZED_SIZE, serialized.len());
+
+        let deserialized = PairKind::deserialize_from(&serialized).unwrap();
+
+        assert_eq!(pair, deserialized)
+    }
 }
