@@ -18,32 +18,11 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            sudo apt-get install -y \
-            autoconf \
-            automake \
-            build-essential \
-            cmake \
-            dbus \
-            dbus-x11 \
-            gir1.2-gtk-4.0 \
-            gobject-introspection \
-            intltool \
-            libdbus-1-dev \
-            libdbus-glib-1-dev \
-            libgirepository1.0-dev \
-            libgtk-4-dev \
-            libglib2.0-dev \
-            libpango-1.0-dev \
-            libxml2-utils \
-            meson \
-            ninja-build \
-            pkg-config \
-            valac
-
+      - name: Set up GTK
+        uses: actions/setup-gtk@v2
+        with:
+          channels: stable
+          version: latest
 
       - name: "Runs formatter"
         run: cargo fmt --all -- --check
