@@ -119,15 +119,11 @@ fn tcp_send_recieve<P: Parser>(stream: &mut TcpStream, input: &P, out_buf: &mut 
 
     stream.write_all(&in_buf).expect("write hello");
 
-    let read = stream.read(out_buf).expect("Read buffer");
-
-    assert_ne!(read, 0, "Closed from server");
+    stream.read_exact(out_buf).expect("Read buffer");
 }
 
 fn tcp_recieve_send<P: Parser>(stream: &mut TcpStream, input: &P, out_buf: &mut [u8]) {
-    let read = stream.read(out_buf).expect("Read buffer");
-
-    assert_ne!(read, 0, "Closed from server");
+    stream.read_exact(out_buf).expect("Read buffer");
 
     let in_buf = input.serialize_to();
     stream.write_all(&in_buf).expect("write hello");
