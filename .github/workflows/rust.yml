@@ -25,7 +25,16 @@ jobs:
             libgtk-4-dev \
             libadwaita-1-dev \
             libglib2.0-dev \
-            pkg-config
+            libgdk-pixbuf2.0-dev \
+            libpango-1.0-dev \
+            libatk1.0-dev \
+            libcairo2-dev \
+            xorg-dev \
+            libdbus-1-dev \
+            libxml2-dev \
+            meson \
+            ninja-build \
+            wayland-protocols
 
       - name: "Runs formatter"
         run: cargo fmt --all -- --check
