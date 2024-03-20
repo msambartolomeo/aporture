@@ -21,7 +21,7 @@ jobs:
       - name: Install dependencies
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: libgtk-4-dev libadwaita-1-dev
+          packages: libgtk-4-dev libadwaita-1-dev libglib2.0-dev
           version: 1.0
 
       - name: "Runs formatter"
@@ -29,8 +29,6 @@ jobs:
 
       - name: "Runs clippy"
         run: cargo clippy -- --deny warnings
-        env:
-          PKG_CONFIG_PATH: /usr/lib/x86_64-linux-gnu/pkgconfig
 
       - name: "Runs all tests"
         run: cargo test --all-features
