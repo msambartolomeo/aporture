@@ -22,19 +22,28 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libgtk-4-dev \
-            libadwaita-1-dev \
-            libglib2.0-dev \
-            libgdk-pixbuf2.0-dev \
-            libpango-1.0-dev \
-            libatk1.0-dev \
-            libcairo2-dev \
-            xorg-dev \
+            sudo apt-get install -y \
+            autoconf \
+            automake \
+            build-essential \
+            cmake \
+            dbus \
+            dbus-x11 \
+            gir1.2-gtk-4.0 \
+            gobject-introspection \
+            intltool \
             libdbus-1-dev \
-            libxml2-dev \
+            libdbus-glib-1-dev \
+            libgirepository1.0-dev \
+            libgtk-4-dev \
+            libglib2.0-dev \
+            libpango-1.0-dev \
+            libxml2-utils \
             meson \
             ninja-build \
-            wayland-protocols
+            pkg-config \
+            valac
+
 
       - name: "Runs formatter"
         run: cargo fmt --all -- --check
