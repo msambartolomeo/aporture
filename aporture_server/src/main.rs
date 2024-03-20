@@ -36,7 +36,7 @@ async fn main() -> Result<(), std::io::Error> {
 
     let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], DEFAULT_PORT))).await?;
 
-    let map: Arc<Mutex<HashMap<[u8; 64], Connection>>> = Arc::default();
+    let map: Arc<Mutex<HashMap<[u8; 32], Connection>>> = Arc::default();
 
     loop {
         let connection = Connection::from(listener.accept().await?);

@@ -1,11 +1,13 @@
+use std::net::SocketAddr;
+
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use serde_with::{serde_as, Bytes};
 
-pub trait BencodeSerDe: Serialize + for<'a> Deserialize<'a> {
+pub trait Parser: Serialize + for<'a> Deserialize<'a> {
     const SERIALIZED_SIZE: usize;
 
-    fn serialize(&self) -> Vec<u8> {
+    fn serialize_to(&self) -> Vec<u8> {
         serde_bencode::to_bytes(self)
             .inspect_err(|e| log::error!("Unkown error when serializing type {e}"))
             .expect("Serialization should not fail because the type is valid")
@@ -23,13 +25,13 @@ pub enum PairKind {
     Reciever = 1,
 }
 
-impl BencodeSerDe for PairKind {
+impl Parser for PairKind {
     const SERIALIZED_SIZE: usize = 3;
 }
 
 #[serde_as]
 #[derive(Debug, PartialEq, Eq, Deserialize, Serialize)]
-pub struct APPHello {
+pub struct Hello {
     /// Protocol version
     pub version: u8,
 
@@ -37,11 +39,11 @@ pub struct APPHello {
     pub kind: PairKind,
 
     #[serde_as(as = "Bytes")]
-    pub pair_id: [u8; 64],
+    pub pair_id: [u8; 32],
 }
 
-impl BencodeSerDe for APPHello {
-    const SERIALIZED_SIZE: usize = 99;
+impl Parser for Hello {
+    const SERIALIZED_SIZE: usize = 67;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize_repr, Serialize_repr)]
@@ -57,19 +59,31 @@ pub enum ResponseCode {
     MalformedMessage = 5,
 }
 
-impl BencodeSerDe for ResponseCode {
+impl Parser for ResponseCode {
     const SERIALIZED_SIZE: usize = 3;
+}
+
+#[serde_as]
+#[derive(Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub struct KeyExchangePayload(#[serde_as(as = "Bytes")] pub [u8; 33]);
+
+impl Parser for KeyExchangePayload {
+    const SERIALIZED_SIZE: usize = 36;
+}
+
+impl Parser for SocketAddr {
+    const SERIALIZED_SIZE: usize = 11;
 }
 
 #[cfg(test)]
 mod test {
-    use super::{APPHello, BencodeSerDe, PairKind, ResponseCode};
+    use super::*;
 
     #[test]
     fn test_response_ser_de() {
         let response = ResponseCode::Ok;
 
-        let serialized = response.serialize();
+        let serialized = response.serialize_to();
 
         assert_eq!(ResponseCode::SERIALIZED_SIZE, serialized.len());
 
@@ -80,17 +94,17 @@ mod test {
 
     #[test]
     fn test_app_hello_ser_de() {
-        let hello = APPHello {
+        let hello = Hello {
             version: 0,
             kind: PairKind::Sender,
-            pair_id: [0; 64],
+            pair_id: Default::default(),
         };
 
-        let serialized = hello.serialize();
+        let serialized = hello.serialize_to();
 
-        assert_eq!(APPHello::SERIALIZED_SIZE, serialized.len());
+        assert_eq!(Hello::SERIALIZED_SIZE, serialized.len());
 
-        let deserialized = APPHello::deserialize_from(&serialized).unwrap();
+        let deserialized = Hello::deserialize_from(&serialized).unwrap();
 
         assert_eq!(hello, deserialized);
     }
@@ -99,12 +113,38 @@ mod test {
     fn test_pair_kind_ser_de() {
         let pair = PairKind::Sender;
 
-        let serialized = pair.serialize();
+        let serialized = pair.serialize_to();
 
         assert_eq!(PairKind::SERIALIZED_SIZE, serialized.len());
 
         let deserialized = PairKind::deserialize_from(&serialized).unwrap();
 
         assert_eq!(pair, deserialized);
+    }
+
+    #[test]
+    fn test_key_exchange_ser_de() {
+        let key_exchange = KeyExchangePayload([0; 33]);
+
+        let serialized = key_exchange.serialize_to();
+
+        assert_eq!(KeyExchangePayload::SERIALIZED_SIZE, serialized.len());
+
+        let deserialized = KeyExchangePayload::deserialize_from(&serialized).unwrap();
+
+        assert_eq!(key_exchange, deserialized);
+    }
+
+    #[test]
+    fn test_address_ser_de() {
+        let address = SocketAddr::from(([0, 0, 0, 0], 0));
+
+        let serialized = address.serialize_to();
+
+        assert_eq!(SocketAddr::SERIALIZED_SIZE, serialized.len());
+
+        let deserialized = SocketAddr::deserialize_from(&serialized).unwrap();
+
+        assert_eq!(address, deserialized);
     }
 }

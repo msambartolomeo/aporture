@@ -6,7 +6,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::{Mutex, MutexGuard};
 
-use aporture::protocol::{APPHello, BencodeSerDe, PairKind, ResponseCode};
+use aporture::protocol::{Hello, PairKind, Parser, ResponseCode};
 
 const SUPPORTED_VERSION: u8 = 1;
 
@@ -17,7 +17,7 @@ pub struct Connection {
 
 impl Connection {
     pub async fn send_response(&mut self, response: ResponseCode) -> Result<(), std::io::Error> {
-        self.socket.write_all(&response.serialize()).await
+        self.socket.write_all(&response.serialize_to()).await
     }
 }
 
@@ -29,9 +29,9 @@ impl From<(TcpStream, SocketAddr)> for Connection {
 
 pub async fn handle_connection(
     mut connection: Connection,
-    map: Arc<Mutex<HashMap<[u8; 64], Connection>>>,
+    map: Arc<Mutex<HashMap<[u8; 32], Connection>>>,
 ) {
-    let mut buf = [0; APPHello::SERIALIZED_SIZE];
+    let mut buf = [0; Hello::SERIALIZED_SIZE];
 
     if let Err(e) = connection.socket.read_exact(&mut buf).await {
         if e.kind() == std::io::ErrorKind::UnexpectedEof {
@@ -46,7 +46,7 @@ pub async fn handle_connection(
         return;
     };
 
-    let Ok(hello) = APPHello::deserialize_from(&buf) else {
+    let Ok(hello) = Hello::deserialize_from(&buf) else {
         log::warn!("Hello message does not match APP hello");
         let _ = connection
             .send_response(ResponseCode::MalformedMessage)
@@ -74,8 +74,8 @@ pub async fn handle_connection(
 
 fn handle_sender(
     connection: Connection,
-    id: [u8; 64],
-    mut map: MutexGuard<'_, HashMap<[u8; 64], Connection>>,
+    id: [u8; 32],
+    mut map: MutexGuard<'_, HashMap<[u8; 32], Connection>>,
 ) {
     log::info!("recieved hello from sender");
     map.insert(id, connection);
@@ -86,7 +86,7 @@ fn handle_sender(
 async fn handle_receiver<'a>(
     connection: Connection,
     id: &[u8],
-    mut map: MutexGuard<'a, HashMap<[u8; 64], Connection>>,
+    mut map: MutexGuard<'a, HashMap<[u8; 32], Connection>>,
 ) {
     log::info!("recieved hello from reciever");
     let mut receiver = connection;
