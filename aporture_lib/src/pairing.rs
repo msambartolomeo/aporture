@@ -1,15 +1,15 @@
 use std::io::{Read, Write};
-use std::net::{IpAddr, TcpStream};
+use std::net::{IpAddr, SocketAddr, TcpStream};
 
 use blake3::Hash;
-use local_ip_address::local_ip;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use serde_with::{serde_as, Bytes, DisplayFromStr};
 use spake2::{Ed25519Group, Identity, Password, Spake2};
 
+use crate::upnp::{self, Gateway};
+
 const SERVER_ADDRESS: &str = "127.0.0.1:8080";
-const DEFAULT_SENDER_PORT: u16 = 8081;
 const DEFAULT_RECIEVER_PORT: u16 = 8082;
 
 pub struct AporturePairingProtocol {
@@ -72,33 +72,34 @@ impl AporturePairingProtocol {
 
         // NOTE: exchange ips and ports
 
-        let port = match self.kind {
-            PairKind::Sender => DEFAULT_SENDER_PORT,
-            PairKind::Reciever => DEFAULT_RECIEVER_PORT,
-        };
-
-        let self_transfer_info = TransferType::LAN {
-            ip: local_ip().expect("get local ip"),
-            port,
-        };
-
-        let other_transfer_info: TransferType = match self.kind {
+        let transfer_info = match self.kind {
             PairKind::Sender => {
-                tcp_send_recieve(
-                    &mut server,
-                    &TransferNegotaitionPayload(vec![self_transfer_info]),
-                    &mut client_buffer,
-                );
+                tcp_recieve_send(&mut server, &ResponseCode::Ok, &mut client_buffer);
 
-                serde_bencode::from_bytes(&client_buffer).expect("server responds correctly")
-            }
-            PairKind::Reciever => {
-                tcp_recieve_send(&mut server, &self_transfer_info, &mut client_buffer);
-
-                let v: TransferNegotaitionPayload =
+                let address: SocketAddr =
                     serde_bencode::from_bytes(&client_buffer).expect("server responds correctly");
 
-                v.0[0]
+                TransferType::Address(address)
+            }
+            PairKind::Reciever => {
+                let mut gateway = upnp::Gateway::new().expect("upnp enabled in router");
+
+                let external_address = gateway
+                    .open_port(DEFAULT_RECIEVER_PORT)
+                    .expect("open port succesfully");
+
+                tcp_send_recieve(&mut server, &external_address, &mut client_buffer);
+
+                let response =
+                    serde_bencode::from_bytes(&client_buffer).expect("server responds correctly");
+
+                assert!(matches!(response, ResponseCode::Ok));
+
+                TransferType::UPnP {
+                    local_port: DEFAULT_RECIEVER_PORT,
+                    external_address,
+                    gateway,
+                }
             }
         };
 
@@ -106,11 +107,9 @@ impl AporturePairingProtocol {
             .shutdown(std::net::Shutdown::Both)
             .expect("correct shutdown");
 
-        PairInfo {
-            key,
-            self_transfer_info,
-            other_transfer_info,
-        }
+        log::info!("Finished pairing: {transfer_info:#?}");
+
+        PairInfo { key, transfer_info }
     }
 }
 
@@ -121,13 +120,13 @@ fn tcp_send_recieve<S: Serialize>(stream: &mut TcpStream, input: &S, out_buf: &m
 
     let read = stream.read(out_buf).expect("Read buffer");
 
-    assert_eq!(read, 0, "Closed from server");
+    assert_ne!(read, 0, "Closed from server");
 }
 
 fn tcp_recieve_send<S: Serialize>(stream: &mut TcpStream, input: &S, out_buf: &mut [u8]) {
     let read = stream.read(out_buf).expect("Read buffer");
 
-    assert_eq!(read, 0, "Closed from server");
+    assert_ne!(read, 0, "Closed from server");
 
     let in_buf = serde_bencode::to_bytes(input).expect("Correct serde parse");
     stream.write_all(&in_buf).expect("write hello");
@@ -170,18 +169,23 @@ struct KeyExchangePayload(#[serde_as(as = "Bytes")] [u8; 33]);
 #[derive(Debug, Deserialize, Serialize)]
 struct KeyConfirmationPayload(#[serde_as(as = "Bytes")] [u8; 33]);
 
-#[derive(Debug, Deserialize, Serialize)]
-struct TransferNegotaitionPayload(Vec<TransferType>);
-
 type Key = Vec<u8>;
 #[derive(Debug)]
 pub struct PairInfo {
     pub key: Key,
-    pub self_transfer_info: TransferType,
-    pub other_transfer_info: TransferType,
+    pub transfer_info: TransferType,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug)]
 pub enum TransferType {
-    LAN { ip: IpAddr, port: u16 },
+    LAN {
+        ip: IpAddr,
+        port: u16,
+    },
+    Address(SocketAddr),
+    UPnP {
+        local_port: u16,
+        external_address: SocketAddr,
+        gateway: Gateway,
+    },
 }

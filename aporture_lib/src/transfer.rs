@@ -2,7 +2,7 @@ use crate::pairing::{PairInfo, ResponseCode, TransferType};
 
 use std::fs;
 use std::io::{Read, Write};
-use std::net::{Shutdown, TcpListener, TcpStream};
+use std::net::{IpAddr, Shutdown, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 
 use aes_gcm_siv::aead::{Aead, KeyInit};
@@ -32,10 +32,13 @@ pub fn send_file(file: &Path, pair_info: &PairInfo) {
     let file_data = FileData { hash, file };
 
     let buf = serde_bencode::to_bytes(&file_data).expect("Correct serde parse");
-    let mut peer = match pair_info.other_transfer_info {
-        TransferType::LAN { ip, port } => {
-            log::info!("connecting to {ip} on port {port}");
-            TcpStream::connect((ip, port)).expect("Connect to server")
+    let mut peer = match pair_info.transfer_info {
+        TransferType::Address(address) => {
+            log::info!("connecting to {} on port {}", address.ip(), address.port());
+            TcpStream::connect(address).expect("Connect to server")
+        }
+        _ => {
+            unreachable!("Incorrect transferType")
         }
     };
 
@@ -45,7 +48,7 @@ pub fn send_file(file: &Path, pair_info: &PairInfo) {
 
     let read = peer.read(&mut buf).expect("Read buffer");
 
-    assert_eq!(read, 0, "Closed from reciever");
+    assert_ne!(read, 0, "Closed from reciever");
 
     let response: ResponseCode =
         serde_bencode::from_bytes(&buf).expect("server responds correctly");
@@ -54,9 +57,6 @@ pub fn send_file(file: &Path, pair_info: &PairInfo) {
     } else {
         panic!("Server error");
     }
-
-    peer.write_all(b"jwdoaiwdjoawjdawijdoawd")
-        .expect("Remove this after testing");
 
     peer.shutdown(Shutdown::Both).expect("Shutdown works");
 }
@@ -68,17 +68,26 @@ pub fn recieve_file(dest: Option<PathBuf>, pair_info: &PairInfo) {
             .expect("Valid Download Directory")
     });
 
-    let listener = match pair_info.self_transfer_info {
-        TransferType::LAN { ip, port } => TcpListener::bind((ip, port)).expect("bind correct"),
+    let listener = match pair_info.transfer_info {
+        TransferType::UPnP { local_port, .. } => {
+            log::info!("binding to {} on port {}", "0.0.0.0", local_port);
+
+            TcpListener::bind((IpAddr::from([0, 0, 0, 0]), local_port)).expect("bind correct")
+        }
+        _ => {
+            unreachable!("Incorrect transferType")
+        }
     };
 
     let (mut peer, _) = listener.accept().expect("accept");
+
+    log::info!("Conection achieved");
 
     let mut buf = [0u8; 1024];
 
     let read = peer.read(&mut buf).expect("Read buffer");
 
-    assert_eq!(read, 0, "Closed from sender");
+    assert_ne!(read, 0, "Closed from sender");
 
     let file_data: FileData = serde_bencode::from_bytes(&buf).expect("serde works");
 
@@ -86,18 +95,18 @@ pub fn recieve_file(dest: Option<PathBuf>, pair_info: &PairInfo) {
 
     peer.write_all(&buf).expect("Write all");
 
-    // TODO: Check why normal vector does not work and fix
-    let mut file = [0u8; 4096];
+    // // TODO: Check why normal vector does not work and fix
+    // let mut file = [0u8; 4096];
 
-    let read = peer.read(&mut file).expect("Read buffer");
+    // let read = peer.read(&mut file).expect("Read buffer");
 
-    assert_eq!(read, 0, "Closed from sender");
+    // assert_ne!(read, 0, "Closed from sender");
 
     peer.shutdown(Shutdown::Both).expect("Shutdown works");
 
     let file = decrypt(&file_data.file, &pair_info.key);
 
-    assert_ne!(
+    assert_eq!(
         blake3::hash(&file),
         file_data.hash,
         "Error in file transfer, hashes are not the same"
