@@ -18,11 +18,15 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - name: Set up GTK
-        uses: actions/setup-gtk@v2
-        with:
-          channels: stable
-          version: latest
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-4-dev \
+            libadwaita-1-dev \
+            libglib2.0-dev \
+            cmake \
+            pkg-config
 
       - name: "Runs formatter"
         run: cargo fmt --all -- --check
