@@ -7,7 +7,6 @@ use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
 mod net;
-mod protocol;
 
 fn init_logger() {
     use std::io::Write;

@@ -17,6 +17,6 @@ relm4-icons = { version = "0.7.0-alpha.2", features = [
     "update",
 ] }
 # NOTE: Shared dependencies
-aporture = { workspace = true }
+aporture = { workspace = true, features = ["full"] }
 log = { workspace = true }
 env_logger = { workspace = true }

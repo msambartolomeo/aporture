@@ -75,7 +75,7 @@ mod test {
 
         let deserialized = ResponseCode::deserialize_from(&serialized).unwrap();
 
-        assert_eq!(response, deserialized)
+        assert_eq!(response, deserialized);
     }
 
     #[test]
@@ -92,7 +92,7 @@ mod test {
 
         let deserialized = APPHello::deserialize_from(&serialized).unwrap();
 
-        assert_eq!(hello, deserialized)
+        assert_eq!(hello, deserialized);
     }
 
     #[test]
@@ -105,6 +105,6 @@ mod test {
 
         let deserialized = PairKind::deserialize_from(&serialized).unwrap();
 
-        assert_eq!(pair, deserialized)
+        assert_eq!(pair, deserialized);
     }
 }

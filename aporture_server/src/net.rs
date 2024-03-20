@@ -6,7 +6,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::{Mutex, MutexGuard};
 
-use crate::protocol::{APPHello, BencodeSerDe, PairKind, ResponseCode};
+use aporture::protocol::{APPHello, BencodeSerDe, PairKind, ResponseCode};
 
 const SUPPORTED_VERSION: u8 = 1;
 
