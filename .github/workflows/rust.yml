@@ -11,6 +11,9 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/msambartolomeo/fedora_gtk:latest
+      credentials:
+        username: msambartolomeo
+        password: ${{ secrets.GHCR_TOKEN }}
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
