@@ -1,4 +1,5 @@
-use crate::pairing::{PairInfo, ResponseCode, TransferType};
+use crate::pairing::{PairInfo, TransferInfo};
+use crate::protocol::ResponseCode;
 
 use std::fs;
 use std::io::{Read, Write};
@@ -33,7 +34,7 @@ pub fn send_file(file: &Path, pair_info: &PairInfo) {
 
     let buf = serde_bencode::to_bytes(&file_data).expect("Correct serde parse");
     let mut peer = match pair_info.transfer_info {
-        TransferType::Address(address) => {
+        TransferInfo::Address(address) => {
             log::info!("connecting to {} on port {}", address.ip(), address.port());
             TcpStream::connect(address).expect("Connect to server")
         }
@@ -69,7 +70,7 @@ pub fn recieve_file(dest: Option<PathBuf>, pair_info: &PairInfo) {
     });
 
     let listener = match pair_info.transfer_info {
-        TransferType::UPnP { local_port, .. } => {
+        TransferInfo::UPnP { local_port, .. } => {
             log::info!("binding to {} on port {}", "0.0.0.0", local_port);
 
             TcpListener::bind((IpAddr::from([0, 0, 0, 0]), local_port)).expect("bind correct")

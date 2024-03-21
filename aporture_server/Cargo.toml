@@ -11,9 +11,6 @@ workspace = true
 [dependencies]
 tokio = { version = "1.36.0", features = ["full"] }
 # NOTE: Shared dependencies
-serde = { workspace = true }
-serde_bencode = { workspace = true }
-serde_with = { workspace = true }
-serde_repr = { workspace = true }
+aporture = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }

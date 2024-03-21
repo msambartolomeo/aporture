@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use aporture::pairing::{AporturePairingProtocol, PairKind};
+use aporture::pairing::AporturePairingProtocol;
+use aporture::protocol::PairKind;
+
 use relm4::{prelude::*, Worker};
 
 #[derive(Debug)]

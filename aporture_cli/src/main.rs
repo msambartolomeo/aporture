@@ -1,4 +1,5 @@
-use aporture::pairing::{AporturePairingProtocol, PairKind};
+use aporture::pairing::AporturePairingProtocol;
+use aporture::protocol::PairKind;
 use aporture::transfer;
 use args::{Cli, Commands, SendMethod};
 

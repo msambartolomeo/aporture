@@ -161,7 +161,6 @@ dependencies = [
  "aes-gcm-siv",
  "blake3",
  "directories",
- "env_logger",
  "igd-next",
  "local-ip-address",
  "log",
@@ -177,12 +176,9 @@ dependencies = [
 name = "aporture_server"
 version = "0.1.0"
 dependencies = [
+ "aporture_lib",
  "env_logger",
  "log",
- "serde",
- "serde_bencode",
- "serde_repr",
- "serde_with",
  "tokio",
 ]
 
