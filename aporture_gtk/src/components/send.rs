@@ -5,7 +5,7 @@ use relm4::{prelude::*, WorkerController};
 use relm4_components::open_dialog::{
     OpenDialog, OpenDialogMsg, OpenDialogResponse, OpenDialogSettings,
 };
-use relm4_icons::icon_name;
+use relm4_icons::icon_names;
 
 use crate::workers::{AportureInput, AportureWorker};
 
@@ -60,7 +60,7 @@ impl SimpleComponent for SenderPage {
 
                 set_tooltip_text: Some("Passphrase"),
                 set_buffer: &model.passphrase,
-                set_icon_from_icon_name: (gtk::EntryIconPosition::Secondary, Some(icon_name::UPDATE)),
+                set_icon_from_icon_name: (gtk::EntryIconPosition::Secondary, Some(icon_names::UPDATE)),
                 #[watch]
                 set_sensitive: !model.form_disabled,
 
@@ -145,7 +145,7 @@ impl SimpleComponent for SenderPage {
             Msg::SendFile => {
                 self.form_disabled = true;
 
-                log::info!("Selected passphrase is {}", self.passphrase);
+                log::info!("Selected passphrase is {}", self.passphrase.text());
 
                 let passphrase = self.passphrase.text().into_bytes();
 

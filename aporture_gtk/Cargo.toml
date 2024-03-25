@@ -9,13 +9,9 @@ edition = "2021"
 workspace = true
 
 [dependencies]
-relm4 = { version = "0.7.0-rc.1", features = ["libadwaita", "gnome_45"] }
-relm4-components = "0.7.0-rc.1"
-relm4-icons = { version = "0.7.0-alpha.2", features = [
-    "send",
-    "inbox",
-    "update",
-] }
+relm4 = { version = "0.8.1", features = ["libadwaita", "gnome_45"] }
+relm4-components = "0.8.1"
+relm4-icons = "0.8.2"
 # NOTE: Shared dependencies
 aporture = { workspace = true, features = ["full"] }
 log = { workspace = true }

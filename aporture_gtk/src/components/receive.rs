@@ -81,7 +81,7 @@ impl SimpleComponent for ReceiverPage {
             Msg::PassphraseChanged => self.passphrase_empty = self.passphrase.length() == 0,
             Msg::RecieveFile => {
                 self.form_disabled = true;
-                log::info!("Selected passphrase is {}", self.passphrase);
+                log::info!("Selected passphrase is {}", self.passphrase.text());
 
                 let passphrase = self.passphrase.text().into_bytes();
 
