@@ -164,6 +164,7 @@ dependencies = [
  "igd-next",
  "local-ip-address",
  "log",
+ "rand",
  "serde",
  "serde_bencode",
  "serde_repr",
