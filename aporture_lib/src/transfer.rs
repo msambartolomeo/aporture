@@ -49,7 +49,7 @@ pub fn send_file(file: &Path, pair_info: &PairInfo) {
 
     let read = peer.read(&mut buf).expect("Read buffer");
 
-    assert_ne!(read, 0, "Closed from reciever");
+    assert_ne!(read, 0, "Closed from receiver");
 
     let response: ResponseCode =
         serde_bencode::from_bytes(&buf).expect("server responds correctly");

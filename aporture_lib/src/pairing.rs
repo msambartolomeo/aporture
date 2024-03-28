@@ -7,7 +7,7 @@ use crate::protocol::{Hello, KeyExchangePayload, PairKind, Parser, ResponseCode}
 use crate::upnp::{self, Gateway};
 
 const SERVER_ADDRESS: &str = "127.0.0.1:8080";
-const DEFAULT_RECIEVER_PORT: u16 = 8082;
+const DEFAULT_RECEIVER_PORT: u16 = 8082;
 
 pub struct AporturePairingProtocol {
     protocol_version: u8,
@@ -80,11 +80,11 @@ impl AporturePairingProtocol {
 
                 TransferInfo::Address(address)
             }
-            PairKind::Reciever => {
+            PairKind::Receiver => {
                 let mut gateway = upnp::Gateway::new().expect("upnp enabled in router");
 
                 let external_address = gateway
-                    .open_port(DEFAULT_RECIEVER_PORT)
+                    .open_port(DEFAULT_RECEIVER_PORT)
                     .expect("open port succesfully");
 
                 let mut response = [0; ResponseCode::SERIALIZED_SIZE];
@@ -97,7 +97,7 @@ impl AporturePairingProtocol {
                 assert!(matches!(response, ResponseCode::Ok));
 
                 TransferInfo::UPnP {
-                    local_port: DEFAULT_RECIEVER_PORT,
+                    local_port: DEFAULT_RECEIVER_PORT,
                     external_address,
                     gateway,
                 }

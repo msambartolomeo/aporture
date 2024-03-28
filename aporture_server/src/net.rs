@@ -68,7 +68,7 @@ pub async fn handle_connection(
 
     match hello.kind {
         PairKind::Sender => handle_sender(connection, hello.pair_id, map),
-        PairKind::Reciever => handle_receiver(connection, &hello.pair_id, map).await,
+        PairKind::Receiver => handle_receiver(connection, &hello.pair_id, map).await,
     }
 }
 
@@ -88,7 +88,7 @@ async fn handle_receiver<'a>(
     id: &[u8],
     mut map: MutexGuard<'a, HashMap<[u8; 32], Connection>>,
 ) {
-    log::info!("recieved hello from reciever");
+    log::info!("recieved hello from receiver");
     let mut receiver = connection;
     let Some(mut sender) = map.remove(id) else {
         log::warn!("Sender must arrive first and has not");

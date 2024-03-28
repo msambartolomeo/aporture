@@ -22,7 +22,7 @@ pub trait Parser: Serialize + for<'a> Deserialize<'a> {
 #[repr(u8)]
 pub enum PairKind {
     Sender = 0,
-    Reciever = 1,
+    Receiver = 1,
 }
 
 impl Parser for PairKind {

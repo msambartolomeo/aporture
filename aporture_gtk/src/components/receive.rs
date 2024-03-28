@@ -85,7 +85,7 @@ impl SimpleComponent for ReceiverPage {
 
                 let passphrase = self.passphrase.text().into_bytes();
 
-                log::info!("Starting reciever worker");
+                log::info!("Starting receiver worker");
 
                 self.aporture_worker
                     .sender()
@@ -95,7 +95,7 @@ impl SimpleComponent for ReceiverPage {
                     });
             }
             Msg::RecieveFileFinished => {
-                log::info!("Finished reciever worker");
+                log::info!("Finished receiver worker");
 
                 self.form_disabled = false;
             }

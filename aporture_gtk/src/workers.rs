@@ -51,7 +51,7 @@ impl Worker for AportureWorker {
                 passphrase,
                 destination,
             } => {
-                let pair_info = AporturePairingProtocol::new(PairKind::Reciever, passphrase).pair();
+                let pair_info = AporturePairingProtocol::new(PairKind::Receiver, passphrase).pair();
 
                 aporture::transfer::recieve_file(destination, &pair_info);
 

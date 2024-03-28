@@ -55,7 +55,7 @@ fn main() {
                 .expect("For now providing passphrase is required")
                 .into_bytes();
 
-            let app = AporturePairingProtocol::new(PairKind::Reciever, passphrase);
+            let app = AporturePairingProtocol::new(PairKind::Receiver, passphrase);
 
             let pair_info = app.pair();
 
