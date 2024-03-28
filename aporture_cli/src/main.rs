@@ -1,5 +1,4 @@
-use aporture::pairing::AporturePairingProtocol;
-use aporture::protocol::PairKind;
+use aporture::pairing::{AporturePairingProtocol, Receiver, Sender};
 use aporture::transfer;
 use args::{Cli, Commands, SendMethod};
 
@@ -39,9 +38,9 @@ fn main() {
             save: _,
         } => {
             let passphrase = get_passphrase(method);
-            let app = AporturePairingProtocol::new(PairKind::Sender, passphrase);
+            let app = AporturePairingProtocol::<Sender>::new(passphrase);
 
-            let pair_info = app.pair();
+            let pair_info = app.pair().unwrap();
 
             transfer::send_file(&path, &pair_info);
         }
@@ -55,9 +54,9 @@ fn main() {
                 .expect("For now providing passphrase is required")
                 .into_bytes();
 
-            let app = AporturePairingProtocol::new(PairKind::Receiver, passphrase);
+            let app = AporturePairingProtocol::<Receiver>::new(passphrase);
 
-            let pair_info = app.pair();
+            let pair_info = app.pair().unwrap();
 
             transfer::receive_file(destination, &pair_info);
         }

@@ -75,6 +75,10 @@ impl Parser for SocketAddr {
     const SERIALIZED_SIZE: usize = 11;
 }
 
+impl<P: Parser> Parser for Vec<P> {
+    const SERIALIZED_SIZE: usize = panic!("Variable Size");
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

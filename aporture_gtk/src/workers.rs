@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
-use aporture::pairing::AporturePairingProtocol;
-use aporture::protocol::PairKind;
+use aporture::pairing::{AporturePairingProtocol, Receiver, Sender};
 
 use relm4::{prelude::*, Worker};
 
@@ -39,7 +38,9 @@ impl Worker for AportureWorker {
     fn update(&mut self, msg: AportureInput, sender: ComponentSender<Self>) {
         match msg {
             AportureInput::SendFile { passphrase, path } => {
-                let pair_info = AporturePairingProtocol::new(PairKind::Sender, passphrase).pair();
+                let pair_info = AporturePairingProtocol::<Sender>::new(passphrase)
+                    .pair()
+                    .unwrap();
 
                 aporture::transfer::send_file(&path, &pair_info);
 
@@ -51,7 +52,9 @@ impl Worker for AportureWorker {
                 passphrase,
                 destination,
             } => {
-                let pair_info = AporturePairingProtocol::new(PairKind::Receiver, passphrase).pair();
+                let pair_info = AporturePairingProtocol::<Receiver>::new(passphrase)
+                    .pair()
+                    .unwrap();
 
                 aporture::transfer::receive_file(destination, &pair_info);
 
