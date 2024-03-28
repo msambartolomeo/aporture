@@ -62,7 +62,7 @@ pub fn send_file(file: &Path, pair_info: &PairInfo) {
     peer.shutdown(Shutdown::Both).expect("Shutdown works");
 }
 
-pub fn recieve_file(dest: Option<PathBuf>, pair_info: &PairInfo) {
+pub fn receive_file(dest: Option<PathBuf>, pair_info: &PairInfo) {
     let dest = dest.unwrap_or_else(|| {
         UserDirs::new()
             .and_then(|dirs| dirs.download_dir().map(Path::to_path_buf))
@@ -82,7 +82,7 @@ pub fn recieve_file(dest: Option<PathBuf>, pair_info: &PairInfo) {
 
     let (mut peer, _) = listener.accept().expect("accept");
 
-    log::info!("Conection achieved");
+    log::info!("Connection achieved");
 
     let mut buf = [0u8; 1024];
 

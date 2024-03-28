@@ -45,7 +45,7 @@ fn main() {
 
             transfer::send_file(&path, &pair_info);
         }
-        Commands::Recieve {
+        Commands::Receive {
             destination,
             method,
             save: _,
@@ -59,7 +59,7 @@ fn main() {
 
             let pair_info = app.pair();
 
-            transfer::recieve_file(destination, &pair_info);
+            transfer::receive_file(destination, &pair_info);
         }
         Commands::Contacts => todo!("Add contacts"),
         Commands::Pair { command: _ } => todo!("Add pair module"),

@@ -14,8 +14,8 @@ pub struct ReceiverPage {
 #[derive(Debug)]
 pub enum Msg {
     PassphraseChanged,
-    RecieveFile,
-    RecieveFileFinished,
+    ReceiveFile,
+    ReceiveFileFinished,
 }
 
 #[relm4::component(pub)]
@@ -29,7 +29,7 @@ impl SimpleComponent for ReceiverPage {
             set_margin_horizontal: 20,
             set_margin_vertical: 50,
 
-            set_title: "Recieve",
+            set_title: "Receive",
             set_description: Some("Enter the passphrase shared by the sender"),
             #[wrap(Some)]
             set_header_suffix = &gtk::Button {
@@ -38,7 +38,7 @@ impl SimpleComponent for ReceiverPage {
                 set_sensitive: !model.form_disabled && !model.passphrase_empty,
 
                 connect_clicked[sender] => move |_| {
-                    sender.input(Msg::RecieveFile);
+                    sender.input(Msg::ReceiveFile);
                 },
             },
 
@@ -62,7 +62,7 @@ impl SimpleComponent for ReceiverPage {
     ) -> ComponentParts<Self> {
         let aporture_worker = AportureWorker::builder()
             .detach_worker(())
-            .forward(sender.input_sender(), |_| Msg::RecieveFileFinished); // TODO: Handle Errors
+            .forward(sender.input_sender(), |_| Msg::ReceiveFileFinished); // TODO: Handle Errors
 
         let model = Self {
             passphrase: gtk::EntryBuffer::default(),
@@ -79,7 +79,7 @@ impl SimpleComponent for ReceiverPage {
     fn update(&mut self, msg: Self::Input, _sender: ComponentSender<Self>) {
         match msg {
             Msg::PassphraseChanged => self.passphrase_empty = self.passphrase.length() == 0,
-            Msg::RecieveFile => {
+            Msg::ReceiveFile => {
                 self.form_disabled = true;
                 log::info!("Selected passphrase is {}", self.passphrase.text());
 
@@ -89,12 +89,12 @@ impl SimpleComponent for ReceiverPage {
 
                 self.aporture_worker
                     .sender()
-                    .emit(AportureInput::RecieveFile {
+                    .emit(AportureInput::ReceiveFile {
                         passphrase,
                         destination: None,
                     });
             }
-            Msg::RecieveFileFinished => {
+            Msg::ReceiveFileFinished => {
                 log::info!("Finished receiver worker");
 
                 self.form_disabled = false;

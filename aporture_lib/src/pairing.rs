@@ -39,7 +39,7 @@ impl AporturePairingProtocol {
 
         let mut response = [0; ResponseCode::SERIALIZED_SIZE];
 
-        tcp_send_recieve(&mut server, &hello, &mut response);
+        tcp_send_receive(&mut server, &hello, &mut response);
 
         let response = ResponseCode::deserialize_from(&response).expect("Valid response code");
 
@@ -59,7 +59,7 @@ impl AporturePairingProtocol {
 
         let mut exchange_buffer = [0; KeyExchangePayload::SERIALIZED_SIZE];
 
-        tcp_send_recieve(&mut server, &key_exchange, &mut exchange_buffer);
+        tcp_send_receive(&mut server, &key_exchange, &mut exchange_buffer);
 
         let key_exchange =
             KeyExchangePayload::deserialize_from(&exchange_buffer).expect("Valid key exchange");
@@ -74,7 +74,7 @@ impl AporturePairingProtocol {
             PairKind::Sender => {
                 let mut address = [0; SocketAddr::SERIALIZED_SIZE];
 
-                tcp_recieve_send(&mut server, &ResponseCode::Ok, &mut address);
+                tcp_receive_send(&mut server, &ResponseCode::Ok, &mut address);
 
                 let address = SocketAddr::deserialize_from(&address).expect("Valid socket address");
 
@@ -85,11 +85,11 @@ impl AporturePairingProtocol {
 
                 let external_address = gateway
                     .open_port(DEFAULT_RECEIVER_PORT)
-                    .expect("open port succesfully");
+                    .expect("open port successfully");
 
                 let mut response = [0; ResponseCode::SERIALIZED_SIZE];
 
-                tcp_send_recieve(&mut server, &external_address, &mut response);
+                tcp_send_receive(&mut server, &external_address, &mut response);
 
                 let response =
                     ResponseCode::deserialize_from(&response).expect("Valid response message");
@@ -114,7 +114,7 @@ impl AporturePairingProtocol {
     }
 }
 
-fn tcp_send_recieve<P: Parser>(stream: &mut TcpStream, input: &P, out_buf: &mut [u8]) {
+fn tcp_send_receive<P: Parser>(stream: &mut TcpStream, input: &P, out_buf: &mut [u8]) {
     let in_buf = input.serialize_to();
 
     stream.write_all(&in_buf).expect("write hello");
@@ -122,7 +122,7 @@ fn tcp_send_recieve<P: Parser>(stream: &mut TcpStream, input: &P, out_buf: &mut 
     stream.read_exact(out_buf).expect("Read buffer");
 }
 
-fn tcp_recieve_send<P: Parser>(stream: &mut TcpStream, input: &P, out_buf: &mut [u8]) {
+fn tcp_receive_send<P: Parser>(stream: &mut TcpStream, input: &P, out_buf: &mut [u8]) {
     stream.read_exact(out_buf).expect("Read buffer");
 
     let in_buf = input.serialize_to();

@@ -9,7 +9,7 @@ pub trait Parser: Serialize + for<'a> Deserialize<'a> {
 
     fn serialize_to(&self) -> Vec<u8> {
         serde_bencode::to_bytes(self)
-            .inspect_err(|e| log::error!("Unkown error when serializing type {e}"))
+            .inspect_err(|e| log::error!("Unknown error when serializing type {e}"))
             .expect("Serialization should not fail because the type is valid")
     }
 

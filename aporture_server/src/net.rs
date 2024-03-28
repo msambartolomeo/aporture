@@ -77,7 +77,7 @@ fn handle_sender(
     id: [u8; 32],
     mut map: MutexGuard<'_, HashMap<[u8; 32], Connection>>,
 ) {
-    log::info!("recieved hello from sender");
+    log::info!("received hello from sender");
     map.insert(id, connection);
 
     drop(map);
@@ -88,7 +88,7 @@ async fn handle_receiver<'a>(
     id: &[u8],
     mut map: MutexGuard<'a, HashMap<[u8; 32], Connection>>,
 ) {
-    log::info!("recieved hello from receiver");
+    log::info!("received hello from receiver");
     let mut receiver = connection;
     let Some(mut sender) = map.remove(id) else {
         log::warn!("Sender must arrive first and has not");

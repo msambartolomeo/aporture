@@ -18,7 +18,7 @@ pub enum AportureInput {
         passphrase: Vec<u8>,
         path: PathBuf,
     },
-    RecieveFile {
+    ReceiveFile {
         passphrase: Vec<u8>,
         destination: Option<PathBuf>,
     },
@@ -47,13 +47,13 @@ impl Worker for AportureWorker {
                     .output(Output::Success)
                     .expect("Message returned to main thread");
             }
-            AportureInput::RecieveFile {
+            AportureInput::ReceiveFile {
                 passphrase,
                 destination,
             } => {
                 let pair_info = AporturePairingProtocol::new(PairKind::Receiver, passphrase).pair();
 
-                aporture::transfer::recieve_file(destination, &pair_info);
+                aporture::transfer::receive_file(destination, &pair_info);
 
                 sender
                     .output(Output::Success)
