@@ -91,6 +91,8 @@ async fn handle_receiver<'a>(
     log::info!("received hello from receiver");
     let mut receiver = connection;
     let Some(mut sender) = map.remove(id) else {
+        drop(map);
+
         log::warn!("Sender must arrive first and has not");
 
         let _ = receiver.send_response(ResponseCode::NoPeer).await;
