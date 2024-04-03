@@ -71,6 +71,35 @@ impl Parser for KeyExchangePayload {
     const SERIALIZED_SIZE: usize = 36;
 }
 
+#[serde_as]
+#[derive(Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub struct KeyConfirmationPayload {
+    #[serde_as(as = "Bytes")]
+    // NOTE: Must be aporture
+    pub tag: [u8; 8],
+
+    // NOTE: milis from epoch as bytes
+    #[serde_as(as = "Bytes")]
+    pub timestamp: [u8; 16],
+}
+
+impl Default for KeyConfirmationPayload {
+    fn default() -> Self {
+        Self {
+            tag: b"aporture".to_owned(),
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                .expect("Now is after unix epoch")
+                .as_millis()
+                .to_be_bytes(),
+        }
+    }
+}
+
+impl Parser for KeyConfirmationPayload {
+    const SERIALIZED_SIZE: usize = 47;
+}
+
 impl Parser for SocketAddr {
     const SERIALIZED_SIZE: usize = 11;
 }
@@ -137,6 +166,21 @@ mod test {
         let deserialized = KeyExchangePayload::deserialize_from(&serialized).unwrap();
 
         assert_eq!(key_exchange, deserialized);
+    }
+
+    #[test]
+    fn test_key_confirmation_ser_de() {
+        let payload = KeyConfirmationPayload::default();
+
+        let serialized = payload.serialize_to();
+
+        println!("{:?}", serialized);
+
+        assert_eq!(KeyConfirmationPayload::SERIALIZED_SIZE, serialized.len());
+
+        let deserialized = KeyConfirmationPayload::deserialize_from(&serialized).unwrap();
+
+        assert_eq!(payload, deserialized);
     }
 
     #[test]
