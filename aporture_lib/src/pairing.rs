@@ -5,7 +5,7 @@ use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream};
 use blake3::Hash;
 use spake2::{Ed25519Group, Identity, Password, Spake2};
 
-use crate::crypto::Key;
+use crate::crypto::Cipher;
 use crate::protocol::{Hello, KeyExchangePayload, PairKind, Parser, ResponseCode};
 use crate::upnp::{self, Gateway};
 
@@ -167,26 +167,36 @@ impl<K: Kind> AporturePairingProtocol<KeyExchange<K>> {
 
         let key = spake.finish(&key_exchange.0).expect("Key derivation works");
 
+        let cipher = Cipher::new(key);
+
+        // TODO: Exchange associated data and confirm key
+
         Ok(AporturePairingProtocol {
             data: self.data,
-            state: AddressNegotiation {
-                key,
-                server: self.state.server,
-                addresses: Vec::new(),
-                marker: PhantomData::<K>,
-            },
+            state: AddressNegotiation::new(cipher, self.state.server),
         })
     }
 }
 
 pub struct AddressNegotiation<K: Kind> {
-    key: Key,
+    cipher: Cipher,
     server: TcpStream,
     addresses: Vec<TransferInfo>,
     marker: PhantomData<K>,
 }
 
 impl<K: Kind> State for AddressNegotiation<K> {}
+
+impl<K: Kind> AddressNegotiation<K> {
+    fn new(cipher: Cipher, server: TcpStream) -> Self {
+        Self {
+            cipher,
+            server,
+            addresses: Vec::new(),
+            marker: PhantomData::<K>,
+        }
+    }
+}
 
 impl AporturePairingProtocol<AddressNegotiation<Sender>> {
     pub fn exchange_addr(mut self) -> Result<PairInfo2, String> {
@@ -214,7 +224,7 @@ impl AporturePairingProtocol<AddressNegotiation<Sender>> {
             Vec::<SocketAddr>::deserialize_from(&addresses).expect("Valid socket address");
 
         Ok(PairInfo2::Sender {
-            key: self.state.key,
+            key: self.state.cipher,
             addresses,
         })
     }
@@ -250,7 +260,7 @@ impl AporturePairingProtocol<AddressNegotiation<Receiver>> {
         assert!(matches!(response, ResponseCode::Ok));
 
         Ok(PairInfo2::Receiver {
-            key: self.state.key,
+            key: self.state.cipher,
             transfer_info: self.state.addresses,
         })
     }
@@ -290,25 +300,25 @@ fn tcp_send_receive<P: Parser>(stream: &mut TcpStream, input: &P, out_buf: &mut 
 
 #[derive(Debug)]
 pub struct PairInfo {
-    pub key: Key,
+    pub key: Vec<u8>,
     pub transfer_info: TransferInfo,
 }
 
 #[derive(Debug)]
 pub enum PairInfo2 {
     Sender {
-        key: Key,
+        key: Cipher,
         addresses: Vec<SocketAddr>,
     },
     Receiver {
-        key: Key,
+        key: Cipher,
         transfer_info: Vec<TransferInfo>,
     },
 }
 
 impl PairInfo2 {
     #[must_use]
-    pub const fn key(&self) -> &Key {
+    pub const fn cipher(&self) -> &Cipher {
         match self {
             Self::Sender { key, .. } | Self::Receiver { key, .. } => key,
         }
