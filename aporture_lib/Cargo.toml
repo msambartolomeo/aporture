@@ -22,6 +22,7 @@ serde = { version = "1.0.197", features = ["derive"] }
 serde_bencode = "0.2.4"
 serde_with = "3.7.0"
 serde_repr = "0.1.18"
+generic-array = "1.0.0"
 rand = "0.8.5"
 
 # NOTE: Shared dependencies
