@@ -1,32 +1,16 @@
 use std::net::SocketAddr;
 
+use generic_array::typenum::Unsigned;
+use generic_array::{ArrayLength, GenericArray};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use serde_with::{serde_as, Bytes};
-
-pub trait Parser: Serialize + for<'a> Deserialize<'a> {
-    const SERIALIZED_SIZE: usize;
-
-    fn serialize_to(&self) -> Vec<u8> {
-        serde_bencode::to_bytes(self)
-            .inspect_err(|e| log::error!("Unknown error when serializing type {e}"))
-            .expect("Serialization should not fail because the type is valid")
-    }
-
-    fn deserialize_from(buffer: &[u8]) -> Result<Self, serde_bencode::Error> {
-        serde_bencode::from_bytes(buffer)
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize_repr, Serialize_repr)]
 #[repr(u8)]
 pub enum PairKind {
     Sender = 0,
     Receiver = 1,
-}
-
-impl Parser for PairKind {
-    const SERIALIZED_SIZE: usize = 3;
 }
 
 #[serde_as]
@@ -42,10 +26,6 @@ pub struct Hello {
     pub pair_id: [u8; 32],
 }
 
-impl Parser for Hello {
-    const SERIALIZED_SIZE: usize = 67;
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize_repr, Serialize_repr)]
 #[repr(u8)]
 pub enum ResponseCode {
@@ -59,17 +39,9 @@ pub enum ResponseCode {
     MalformedMessage = 5,
 }
 
-impl Parser for ResponseCode {
-    const SERIALIZED_SIZE: usize = 3;
-}
-
 #[serde_as]
 #[derive(Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct KeyExchangePayload(#[serde_as(as = "Bytes")] pub [u8; 33]);
-
-impl Parser for KeyExchangePayload {
-    const SERIALIZED_SIZE: usize = 36;
-}
 
 #[serde_as]
 #[derive(Debug, PartialEq, Eq, Deserialize, Serialize)]
@@ -96,16 +68,55 @@ impl Default for KeyConfirmationPayload {
     }
 }
 
+pub trait Parser: Serialize + for<'a> Deserialize<'a> {
+    type SerializedSize: ArrayLength;
+
+    fn buffer() -> GenericArray<u8, Self::SerializedSize> {
+        GenericArray::default()
+    }
+
+    fn serialized_size() -> usize {
+        <Self::SerializedSize as Unsigned>::to_usize()
+    }
+
+    fn serialize_to(&self) -> Vec<u8> {
+        serde_bencode::to_bytes(self)
+            .inspect_err(|e| log::error!("Unknown error when serializing type {e}"))
+            .expect("Serialization should not fail because the type is valid")
+    }
+
+    fn deserialize_from(buffer: &[u8]) -> Result<Self, serde_bencode::Error> {
+        serde_bencode::from_bytes(buffer)
+    }
+}
+
+impl Parser for PairKind {
+    type SerializedSize = generic_array::typenum::U3;
+}
+
+impl Parser for Hello {
+    type SerializedSize = generic_array::typenum::U67;
+}
+
+impl Parser for ResponseCode {
+    type SerializedSize = generic_array::typenum::U3;
+}
+
+impl Parser for KeyExchangePayload {
+    type SerializedSize = generic_array::typenum::U36;
+}
+
 impl Parser for KeyConfirmationPayload {
-    const SERIALIZED_SIZE: usize = 47;
+    type SerializedSize = generic_array::typenum::U47;
 }
 
 impl Parser for SocketAddr {
-    const SERIALIZED_SIZE: usize = 11;
+    type SerializedSize = generic_array::typenum::U11;
 }
 
+// TODO: Remove and replace with sending many elements of P
 impl<P: Parser> Parser for Vec<P> {
-    const SERIALIZED_SIZE: usize = panic!("Variable Size");
+    type SerializedSize = generic_array::typenum::U3;
 }
 
 #[cfg(test)]
@@ -118,7 +129,7 @@ mod test {
 
         let serialized = response.serialize_to();
 
-        assert_eq!(ResponseCode::SERIALIZED_SIZE, serialized.len());
+        assert_eq!(ResponseCode::serialized_size(), serialized.len());
 
         let deserialized = ResponseCode::deserialize_from(&serialized).unwrap();
 
@@ -135,7 +146,7 @@ mod test {
 
         let serialized = hello.serialize_to();
 
-        assert_eq!(Hello::SERIALIZED_SIZE, serialized.len());
+        assert_eq!(Hello::serialized_size(), serialized.len());
 
         let deserialized = Hello::deserialize_from(&serialized).unwrap();
 
@@ -148,7 +159,7 @@ mod test {
 
         let serialized = pair.serialize_to();
 
-        assert_eq!(PairKind::SERIALIZED_SIZE, serialized.len());
+        assert_eq!(PairKind::serialized_size(), serialized.len());
 
         let deserialized = PairKind::deserialize_from(&serialized).unwrap();
 
@@ -161,7 +172,7 @@ mod test {
 
         let serialized = key_exchange.serialize_to();
 
-        assert_eq!(KeyExchangePayload::SERIALIZED_SIZE, serialized.len());
+        assert_eq!(KeyExchangePayload::serialized_size(), serialized.len());
 
         let deserialized = KeyExchangePayload::deserialize_from(&serialized).unwrap();
 
@@ -174,9 +185,7 @@ mod test {
 
         let serialized = payload.serialize_to();
 
-        println!("{:?}", serialized);
-
-        assert_eq!(KeyConfirmationPayload::SERIALIZED_SIZE, serialized.len());
+        assert_eq!(KeyConfirmationPayload::serialized_size(), serialized.len());
 
         let deserialized = KeyConfirmationPayload::deserialize_from(&serialized).unwrap();
 
@@ -189,7 +198,7 @@ mod test {
 
         let serialized = address.serialize_to();
 
-        assert_eq!(SocketAddr::SERIALIZED_SIZE, serialized.len());
+        assert_eq!(SocketAddr::serialized_size(), serialized.len());
 
         let deserialized = SocketAddr::deserialize_from(&serialized).unwrap();
 

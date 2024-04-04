@@ -110,7 +110,7 @@ impl<K: Kind> AporturePairingProtocol<Start<K>> {
             pair_id: *id.as_bytes(),
         };
 
-        let mut response = [0; ResponseCode::SERIALIZED_SIZE];
+        let mut response = ResponseCode::buffer();
 
         tcp_send_receive(&mut server, &hello, &mut response);
 
@@ -158,7 +158,7 @@ impl<K: Kind> AporturePairingProtocol<KeyExchange<K>> {
         let key_exchange =
             KeyExchangePayload(spake_msg.try_into().expect("Spake message is 33 bytes"));
 
-        let mut exchange_buffer = [0; KeyExchangePayload::SERIALIZED_SIZE];
+        let mut exchange_buffer = KeyExchangePayload::buffer();
 
         tcp_send_receive(&mut self.state.server, &key_exchange, &mut exchange_buffer);
 
@@ -248,7 +248,7 @@ impl AporturePairingProtocol<AddressNegotiation<Receiver>> {
             .write_all(&addresses)
             .expect("write addresses");
 
-        let mut response = [0; ResponseCode::SERIALIZED_SIZE];
+        let mut response = ResponseCode::buffer();
 
         self.state
             .server

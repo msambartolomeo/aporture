@@ -31,7 +31,7 @@ pub async fn handle_connection(
     mut connection: Connection,
     map: Arc<Mutex<HashMap<[u8; 32], Connection>>>,
 ) {
-    let mut buf = [0; Hello::SERIALIZED_SIZE];
+    let mut buf = Hello::buffer();
 
     if let Err(e) = connection.socket.read_exact(&mut buf).await {
         if e.kind() == std::io::ErrorKind::UnexpectedEof {
