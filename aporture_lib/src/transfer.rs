@@ -1,20 +1,19 @@
 use crate::crypto::Cipher;
 use crate::net::NetworkPeer;
-use crate::pairing::{PairInfo, TransferInfo};
+use crate::pairing::TransferInfo;
 use crate::protocol::{FileData, ResponseCode};
 
-use std::io::{Read, Write};
-use std::net::{IpAddr, Shutdown, SocketAddr, TcpListener};
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
 use aes_gcm_siv::aead::{Aead, KeyInit};
 use aes_gcm_siv::Aes256GcmSiv;
 use directories::UserDirs;
-use tokio::net::TcpStream;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 
 async fn connect(a: SocketAddr) -> Result<(TcpStream, SocketAddr), std::io::Error> {
-    log::info!("Connection to {} on port {}", a.ip(), a.port());
+    log::info!("Trying connection to {} on port {}", a.ip(), a.port());
 
     Ok((TcpStream::connect(a).await?, a))
 }
@@ -57,56 +56,67 @@ pub async fn send_file(file: &Path, cipher: Cipher, addresses: &[SocketAddr]) {
     peer.write_ser_enc(&file_data).await.unwrap();
     peer.write_enc(&mut file).await.unwrap();
 
-    let response = peer.read_ser::<ResponseCode>().await.unwrap();
+    let response = peer.read_ser_enc::<ResponseCode>().await.unwrap();
 
     assert_eq!(response, ResponseCode::Ok, "Error sending file");
 }
 
-pub fn receive_file(dest: Option<PathBuf>, pair_info: &PairInfo) {
+async fn bind(
+    address: SocketAddr,
+    bind_address: SocketAddr,
+) -> Result<(TcpStream, SocketAddr), std::io::Error> {
+    log::info!("Trying bind to {} on port {}", address.ip(), address.port());
+
+    let listener = TcpListener::bind(bind_address).await?;
+
+    let (peer, _) = listener.accept().await?;
+
+    Ok((peer, address))
+}
+
+pub async fn receive_file(dest: Option<PathBuf>, cipher: Cipher, transfers: &[TransferInfo]) {
     let dest = dest.unwrap_or_else(|| {
         UserDirs::new()
             .and_then(|dirs| dirs.download_dir().map(Path::to_path_buf))
             .expect("Valid Download Directory")
     });
 
-    let listener = match pair_info.transfer_info {
-        TransferInfo::UPnP { local_port, .. } => {
-            log::info!("binding to {} on port {}", "0.0.0.0", local_port);
+    let mut options = transfers
+        .iter()
+        .map(|t| (t.get_connection_address(), t.get_bind_address()))
+        .fold(JoinSet::new(), |mut set, (a, b)| {
+            set.spawn(bind(a, b));
+            set
+        });
 
-            TcpListener::bind((IpAddr::from([0, 0, 0, 0]), local_port)).expect("bind correct")
-        }
-        _ => {
-            unreachable!("Incorrect transferType")
+    let peer = loop {
+        match options.join_next().await {
+            Some(Ok(Ok((peer, address)))) => {
+                log::info!("Peer connected to {}", address);
+                break peer;
+            }
+            Some(_) => continue,
+            None => {
+                // TODO: Handle error
+                return;
+            }
         }
     };
+    drop(options);
 
-    let (mut peer, _) = listener.accept().expect("accept");
+    let mut peer = NetworkPeer::new(Some(cipher), peer);
 
-    log::info!("Connection achieved");
+    let file_data = peer.read_ser_enc::<FileData>().await.unwrap();
+    // TODO: Use file name if exists
 
-    let mut buf = [0u8; 1024];
+    // TODO: Check why normal vector does not work and fix
+    let mut file = vec![0; usize::from_be_bytes(file_data.file_size)];
 
-    let read = peer.read(&mut buf).expect("Read buffer");
+    peer.read_enc(&mut file).await.unwrap();
 
-    assert_ne!(read, 0, "Closed from sender");
+    peer.write_ser_enc(&ResponseCode::Ok).await.unwrap();
 
-    let file_data: FileData = serde_bencode::from_bytes(&buf).expect("serde works");
-
-    let buf = serde_bencode::to_bytes(&ResponseCode::Ok).expect("Translation to bencode");
-
-    peer.write_all(&buf).expect("Write all");
-
-    // // TODO: Check why normal vector does not work and fix
-    // let mut file = [0u8; 4096];
-
-    // let read = peer.read(&mut file).expect("Read buffer");
-
-    // assert_ne!(read, 0, "Closed from sender");
-
-    peer.shutdown(Shutdown::Both).expect("Shutdown works");
-
-    let file = decrypt(&file_data.file, &pair_info.key);
-
+    // TODO: Handle Error
     assert_eq!(
         blake3::hash(&file),
         file_data.hash,
