@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::path::PathBuf;
 
 use generic_array::typenum::Unsigned;
 use generic_array::{ArrayLength, GenericArray};
@@ -68,6 +69,22 @@ impl Default for KeyConfirmationPayload {
     }
 }
 
+#[serde_as]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileData {
+    #[serde_as(as = "Bytes")]
+    pub hash: [u8; 32],
+
+    // NOTE: Size of file in network byte order
+    #[serde_as(as = "Bytes")]
+    pub file_size: [u8; 8],
+
+    pub file_name: PathBuf,
+
+    // TODO: Remove
+    pub file: Vec<u8>,
+}
+
 pub trait Parser: Serialize + for<'a> Deserialize<'a> {
     type SerializedSize: ArrayLength;
 
@@ -112,6 +129,10 @@ impl Parser for KeyConfirmationPayload {
 
 impl Parser for SocketAddr {
     type SerializedSize = generic_array::typenum::U11;
+}
+
+impl Parser for FileData {
+    type SerializedSize = generic_array::typenum::U46;
 }
 
 // TODO: Remove and replace with sending many elements of P
@@ -203,5 +224,23 @@ mod test {
         let deserialized = SocketAddr::deserialize_from(&serialized).unwrap();
 
         assert_eq!(address, deserialized);
+    }
+
+    #[test]
+    fn test_file_data_ser_de() {
+        let file_data = FileData {
+            hash: [1; 32],
+            file_size: 1usize.to_be_bytes(),
+            file_name: PathBuf::new(),
+            file: Vec::new(),
+        };
+
+        let serialized = file_data.serialize_to();
+
+        assert_eq!(FileData::serialized_size(), serialized.len());
+
+        let deserialized = FileData::deserialize_from(&serialized).unwrap();
+
+        assert_eq!(file_data, deserialized);
     }
 }
