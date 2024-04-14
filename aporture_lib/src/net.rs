@@ -5,20 +5,20 @@ use tokio::net::TcpStream;
 use crate::crypto::{Cipher, DecryptError};
 use crate::protocol::Parser;
 
-pub struct NetworkPeer {
-    cipher: Option<Cipher>,
+pub struct NetworkPeer<'a> {
+    cipher: Option<&'a mut Cipher>,
     stream: Box<TcpStream>,
 }
 
-impl NetworkPeer {
-    pub fn new(cipher: Option<Cipher>, stream: TcpStream) -> Self {
+impl<'a> NetworkPeer<'a> {
+    pub fn new(cipher: Option<&'a mut Cipher>, stream: TcpStream) -> Self {
         Self {
             cipher,
             stream: Box::new(stream),
         }
     }
 
-    pub fn add_cipher(&mut self, cipher: Cipher) {
+    pub fn add_cipher(&mut self, cipher: &'a mut Cipher) {
         self.cipher = Some(cipher);
     }
 

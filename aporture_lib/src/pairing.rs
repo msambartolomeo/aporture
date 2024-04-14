@@ -76,9 +76,7 @@ impl<K: Kind> State for Start<K> {}
 
 impl AporturePairingProtocol<Start<Sender>> {
     pub fn pair(self) -> Result<PairInfo, String> {
-        let _ = self.connect()?.exchange_key()?.exchange_addr();
-
-        todo!("Refactorization in progress");
+        self.connect()?.exchange_key()?.exchange_addr()
     }
 }
 
@@ -92,9 +90,7 @@ impl AporturePairingProtocol<Start<Receiver>> {
         }
         address_collector.add_server();
 
-        let _ = address_collector.exchange_addr()?;
-
-        todo!("Refactorization in progress");
+        address_collector.exchange_addr()
     }
 }
 
@@ -199,7 +195,7 @@ impl<K: Kind> AddressNegotiation<K> {
 }
 
 impl AporturePairingProtocol<AddressNegotiation<Sender>> {
-    pub fn exchange_addr(mut self) -> Result<PairInfo2, String> {
+    pub fn exchange_addr(mut self) -> Result<PairInfo, String> {
         let mut length = [0u8; 8];
         self.state
             .server
@@ -223,7 +219,7 @@ impl AporturePairingProtocol<AddressNegotiation<Sender>> {
         let addresses =
             Vec::<SocketAddr>::deserialize_from(&addresses).expect("Valid socket address");
 
-        Ok(PairInfo2::Sender {
+        Ok(PairInfo::Sender {
             key: self.state.cipher,
             addresses,
         })
@@ -231,7 +227,7 @@ impl AporturePairingProtocol<AddressNegotiation<Sender>> {
 }
 
 impl AporturePairingProtocol<AddressNegotiation<Receiver>> {
-    pub fn exchange_addr(mut self) -> Result<PairInfo2, String> {
+    pub fn exchange_addr(mut self) -> Result<PairInfo, String> {
         let addresses = self
             .state
             .addresses
@@ -259,7 +255,7 @@ impl AporturePairingProtocol<AddressNegotiation<Receiver>> {
 
         assert!(matches!(response, ResponseCode::Ok));
 
-        Ok(PairInfo2::Receiver {
+        Ok(PairInfo::Receiver {
             key: self.state.cipher,
             transfer_info: self.state.addresses,
         })
@@ -299,13 +295,7 @@ fn tcp_send_receive<P: Parser>(stream: &mut TcpStream, input: &P, out_buf: &mut 
 }
 
 #[derive(Debug)]
-pub struct PairInfo {
-    pub key: Vec<u8>,
-    pub transfer_info: TransferInfo,
-}
-
-#[derive(Debug)]
-pub enum PairInfo2 {
+pub enum PairInfo {
     Sender {
         key: Cipher,
         addresses: Vec<SocketAddr>,
@@ -316,21 +306,32 @@ pub enum PairInfo2 {
     },
 }
 
-impl PairInfo2 {
+impl PairInfo {
     #[must_use]
-    pub const fn cipher(&self) -> &Cipher {
+    pub fn cipher(&mut self) -> &mut Cipher {
         match self {
             Self::Sender { key, .. } | Self::Receiver { key, .. } => key,
         }
     }
 
     #[must_use]
-    pub fn addresses(&self) -> Box<dyn Iterator<Item = SocketAddr> + '_> {
+    pub fn addresses(&self) -> Vec<SocketAddr> {
         match self {
-            Self::Sender { addresses, .. } => Box::new(addresses.iter().copied()),
-            Self::Receiver { transfer_info, .. } => {
-                Box::new(transfer_info.iter().map(TransferInfo::get_bind_address))
-            }
+            Self::Sender { addresses, .. } => addresses.clone(),
+            Self::Receiver { transfer_info, .. } => transfer_info
+                .iter()
+                .map(TransferInfo::get_connection_address)
+                .collect(),
+        }
+    }
+
+    pub fn bind_addresses(&self) -> Vec<(SocketAddr, SocketAddr)> {
+        match self {
+            Self::Sender { addresses, .. } => addresses.iter().copied().map(|a| (a, a)).collect(),
+            Self::Receiver { transfer_info, .. } => transfer_info
+                .iter()
+                .map(|t| (t.get_bind_address(), t.get_connection_address()))
+                .collect(),
         }
     }
 }

@@ -1,13 +1,10 @@
-use crate::crypto::Cipher;
 use crate::net::NetworkPeer;
-use crate::pairing::TransferInfo;
+use crate::pairing::PairInfo;
 use crate::protocol::{FileData, ResponseCode};
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
-use aes_gcm_siv::aead::{Aead, KeyInit};
-use aes_gcm_siv::Aes256GcmSiv;
 use directories::UserDirs;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
@@ -18,11 +15,14 @@ async fn connect(a: SocketAddr) -> Result<(TcpStream, SocketAddr), std::io::Erro
     Ok((TcpStream::connect(a).await?, a))
 }
 
-pub async fn send_file(file: &Path, cipher: Cipher, addresses: &[SocketAddr]) {
-    let mut options = addresses.iter().fold(JoinSet::new(), |mut set, &a| {
-        set.spawn(connect(a));
-        set
-    });
+pub async fn send_file(file: &Path, pair_info: &mut PairInfo) {
+    let mut options = pair_info
+        .addresses()
+        .into_iter()
+        .fold(JoinSet::new(), |mut set, a| {
+            set.spawn(connect(a));
+            set
+        });
 
     let peer = loop {
         match options.join_next().await {
@@ -39,7 +39,7 @@ pub async fn send_file(file: &Path, cipher: Cipher, addresses: &[SocketAddr]) {
     };
     drop(options);
 
-    let mut peer = NetworkPeer::new(Some(cipher), peer);
+    let mut peer = NetworkPeer::new(Some(pair_info.cipher()), peer);
 
     // TODO: Buffer file
     let mut file = std::fs::read(file).unwrap();
@@ -74,20 +74,21 @@ async fn bind(
     Ok((peer, address))
 }
 
-pub async fn receive_file(dest: Option<PathBuf>, cipher: Cipher, transfers: &[TransferInfo]) {
+pub async fn receive_file(dest: Option<PathBuf>, pair_info: &mut PairInfo) {
     let dest = dest.unwrap_or_else(|| {
         UserDirs::new()
             .and_then(|dirs| dirs.download_dir().map(Path::to_path_buf))
             .expect("Valid Download Directory")
     });
 
-    let mut options = transfers
-        .iter()
-        .map(|t| (t.get_connection_address(), t.get_bind_address()))
-        .fold(JoinSet::new(), |mut set, (a, b)| {
-            set.spawn(bind(a, b));
-            set
-        });
+    let mut options =
+        pair_info
+            .bind_addresses()
+            .into_iter()
+            .fold(JoinSet::new(), |mut set, (a, b)| {
+                set.spawn(bind(a, b));
+                set
+            });
 
     let peer = loop {
         match options.join_next().await {
@@ -104,7 +105,7 @@ pub async fn receive_file(dest: Option<PathBuf>, cipher: Cipher, transfers: &[Tr
     };
     drop(options);
 
-    let mut peer = NetworkPeer::new(Some(cipher), peer);
+    let mut peer = NetworkPeer::new(Some(pair_info.cipher()), peer);
 
     let file_data = peer.read_ser_enc::<FileData>().await.unwrap();
     // TODO: Use file name if exists
@@ -124,24 +125,4 @@ pub async fn receive_file(dest: Option<PathBuf>, cipher: Cipher, transfers: &[Tr
     );
 
     std::fs::write(dest, file).expect("Can write file");
-}
-
-#[must_use]
-pub fn encrypt(plain: &[u8], key: &[u8]) -> Vec<u8> {
-    let key = key.into();
-    // TODO: Get a real nonce
-    let nonce = b"unique nonce".into();
-    let aes = Aes256GcmSiv::new(key);
-
-    aes.encrypt(nonce, plain).expect("Encryption failure")
-}
-
-#[must_use]
-pub fn decrypt(cipher: &[u8], key: &[u8]) -> Vec<u8> {
-    let key = key.into();
-    // TODO: Get a real nonce
-    let nonce = b"unique nonce".into();
-    let aes = Aes256GcmSiv::new(key);
-
-    aes.decrypt(nonce, cipher).expect("Decryption failure")
 }
