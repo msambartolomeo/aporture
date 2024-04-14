@@ -26,7 +26,8 @@ fn init_logger() {
         .init();
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     init_logger();
 
     let args = Cli::parse();
@@ -40,9 +41,9 @@ fn main() {
             let passphrase = get_passphrase(method);
             let app = AporturePairingProtocol::<Sender>::new(passphrase);
 
-            let pair_info = app.pair().unwrap();
+            let mut pair_info = app.pair().unwrap();
 
-            transfer::send_file(&path, &pair_info);
+            transfer::send_file(&path, &mut pair_info).await;
         }
         Commands::Receive {
             destination,
@@ -56,9 +57,9 @@ fn main() {
 
             let app = AporturePairingProtocol::<Receiver>::new(passphrase);
 
-            let pair_info = app.pair().unwrap();
+            let mut pair_info = app.pair().unwrap();
 
-            transfer::receive_file(destination, &pair_info);
+            transfer::receive_file(destination, &mut pair_info).await;
         }
         Commands::Contacts => todo!("Add contacts"),
         Commands::Pair { command: _ } => todo!("Add pair module"),
