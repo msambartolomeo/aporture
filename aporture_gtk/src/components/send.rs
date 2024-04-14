@@ -1,13 +1,13 @@
 use std::path::PathBuf;
 
 use adw::prelude::*;
-use relm4::{prelude::*, WorkerController};
+use relm4::prelude::*;
 use relm4_components::open_dialog::{
     OpenDialog, OpenDialogMsg, OpenDialogResponse, OpenDialogSettings,
 };
 use relm4_icons::icon_names;
 
-use crate::workers::{AportureInput, AportureWorker};
+use crate::components::dialog::{AportureDialog, AportureInput, Purpose};
 
 #[derive(Debug)]
 pub struct SenderPage {
@@ -16,7 +16,7 @@ pub struct SenderPage {
     file_path: Option<PathBuf>,
     file_name: Option<String>,
     file_picker_dialog: Controller<OpenDialog>,
-    aporture_worker: WorkerController<AportureWorker>,
+    aporture_dialog: AsyncController<AportureDialog>,
     form_disabled: bool,
 }
 
@@ -109,8 +109,9 @@ impl SimpleComponent for SenderPage {
                 OpenDialogResponse::Cancel => Msg::Ignore,
             });
 
-        let aporture_worker = AportureWorker::builder()
-            .detach_worker(())
+        let aporture_dialog = AportureDialog::builder()
+            .transient_for(&root)
+            .launch(Purpose::Send)
             .forward(sender.input_sender(), |_| Msg::SendFileFinished); // TODO: Handle Errors
 
         let model = Self {
@@ -119,7 +120,7 @@ impl SimpleComponent for SenderPage {
             file_path: None,
             file_name: None,
             file_picker_dialog,
-            aporture_worker,
+            aporture_dialog,
             form_disabled: false,
         };
 
@@ -150,7 +151,7 @@ impl SimpleComponent for SenderPage {
                 let passphrase = self.passphrase.text().into_bytes();
 
                 log::info!("Starting sender worker");
-                self.aporture_worker.sender().emit(AportureInput::SendFile {
+                self.aporture_dialog.emit(AportureInput::SendFile {
                     passphrase,
                     path: self.file_path.clone().expect("Button disabled if None"),
                 });

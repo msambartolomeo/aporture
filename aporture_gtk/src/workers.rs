@@ -1,3 +1,6 @@
+#![allow(unused)]
+#![allow(unused_variables)]
+// TODO: DEPRECATED, REMOVE FILE
 use std::path::PathBuf;
 
 use aporture::pairing::{AporturePairingProtocol, Receiver, Sender};
@@ -36,32 +39,34 @@ impl Worker for AportureWorker {
     }
 
     fn update(&mut self, msg: AportureInput, sender: ComponentSender<Self>) {
-        match msg {
-            AportureInput::SendFile { passphrase, path } => {
-                let pair_info = AporturePairingProtocol::<Sender>::new(passphrase)
-                    .pair()
-                    .unwrap();
+        todo!();
 
-                aporture::transfer::send_file(&path, &pair_info);
+        // match msg {
+        //     AportureInput::SendFile { passphrase, path } => {
+        //         let mut pair_info = AporturePairingProtocol::<Sender>::new(passphrase)
+        //             .pair()
+        //             .unwrap();
 
-                sender
-                    .output(Output::Success)
-                    .expect("Message returned to main thread");
-            }
-            AportureInput::ReceiveFile {
-                passphrase,
-                destination,
-            } => {
-                let pair_info = AporturePairingProtocol::<Receiver>::new(passphrase)
-                    .pair()
-                    .unwrap();
+        //         aporture::transfer::send_file(&path, &mut pair_info).await;
 
-                aporture::transfer::receive_file(destination, &pair_info);
+        //         sender
+        //             .output(Output::Success)
+        //             .expect("Message returned to main thread");
+        //     }
+        //     AportureInput::ReceiveFile {
+        //         passphrase,
+        //         destination,
+        //     } => {
+        //         let mut pair_info = AporturePairingProtocol::<Receiver>::new(passphrase)
+        //             .pair()
+        //             .unwrap();
 
-                sender
-                    .output(Output::Success)
-                    .expect("Message returned to main thread");
-            }
-        }
+        //         aporture::transfer::receive_file(destination, &mut pair_info).await;
+
+        //         sender
+        //             .output(Output::Success)
+        //             .expect("Message returned to main thread");
+        //     }
+        // }
     }
 }

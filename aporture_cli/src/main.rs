@@ -41,7 +41,7 @@ async fn main() {
             let passphrase = get_passphrase(method);
             let app = AporturePairingProtocol::<Sender>::new(passphrase);
 
-            let mut pair_info = app.pair().unwrap();
+            let mut pair_info = app.pair().await.unwrap();
 
             transfer::send_file(&path, &mut pair_info).await;
         }
@@ -57,7 +57,7 @@ async fn main() {
 
             let app = AporturePairingProtocol::<Receiver>::new(passphrase);
 
-            let mut pair_info = app.pair().unwrap();
+            let mut pair_info = app.pair().await.unwrap();
 
             transfer::receive_file(destination, &mut pair_info).await;
         }

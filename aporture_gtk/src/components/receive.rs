@@ -1,13 +1,13 @@
 use adw::prelude::*;
-use relm4::{prelude::*, WorkerController};
+use relm4::prelude::*;
 
-use crate::workers::{AportureInput, AportureWorker};
+use crate::components::dialog::{AportureDialog, AportureInput, Purpose};
 
 #[derive(Debug)]
 pub struct ReceiverPage {
     passphrase: gtk::EntryBuffer,
     passphrase_empty: bool,
-    aporture_worker: WorkerController<AportureWorker>,
+    aporture_dialog: AsyncController<AportureDialog>,
     form_disabled: bool,
 }
 
@@ -60,14 +60,15 @@ impl SimpleComponent for ReceiverPage {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let aporture_worker = AportureWorker::builder()
-            .detach_worker(())
+        let aporture_dialog = AportureDialog::builder()
+            .transient_for(&root)
+            .launch(Purpose::Send)
             .forward(sender.input_sender(), |_| Msg::ReceiveFileFinished); // TODO: Handle Errors
 
         let model = Self {
             passphrase: gtk::EntryBuffer::default(),
             passphrase_empty: true,
-            aporture_worker,
+            aporture_dialog,
             form_disabled: false,
         };
 
@@ -87,12 +88,10 @@ impl SimpleComponent for ReceiverPage {
 
                 log::info!("Starting receiver worker");
 
-                self.aporture_worker
-                    .sender()
-                    .emit(AportureInput::ReceiveFile {
-                        passphrase,
-                        destination: None,
-                    });
+                self.aporture_dialog.emit(AportureInput::ReceiveFile {
+                    passphrase,
+                    destination: None,
+                });
             }
             Msg::ReceiveFileFinished => {
                 log::info!("Finished receiver worker");
