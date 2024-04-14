@@ -9,8 +9,8 @@ edition = "2021"
 workspace = true
 
 [dependencies]
-tokio = { version = "1.36.0", features = ["full"] }
 # NOTE: Shared dependencies
 aporture = { workspace = true }
+tokio = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }

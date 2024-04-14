@@ -26,6 +26,7 @@ generic-array = "1.0.0"
 rand = "0.8.5"
 
 # NOTE: Shared dependencies
+tokio = { workspace = true }
 log = { workspace = true }
 
 [features]
