@@ -1,9 +1,10 @@
-use std::io::{Read, Write};
 use std::marker::PhantomData;
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 
 use blake3::Hash;
 use spake2::{Ed25519Group, Identity, Password, Spake2};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 
 use crate::crypto::Cipher;
 use crate::protocol::{Hello, KeyExchangePayload, PairKind, Parser, ResponseCode};
@@ -75,28 +76,35 @@ pub struct Start<K: Kind>(PhantomData<K>);
 impl<K: Kind> State for Start<K> {}
 
 impl AporturePairingProtocol<Start<Sender>> {
-    pub fn pair(self) -> Result<PairInfo, String> {
-        self.connect()?.exchange_key()?.exchange_addr()
+    pub async fn pair(self) -> Result<PairInfo, String> {
+        self.connect()
+            .await?
+            .exchange_key()
+            .await?
+            .exchange_addr()
+            .await
     }
 }
 
 impl AporturePairingProtocol<Start<Receiver>> {
-    pub fn pair(self) -> Result<PairInfo, String> {
-        let mut address_collector = self.connect()?.exchange_key()?;
+    pub async fn pair(self) -> Result<PairInfo, String> {
+        let mut address_collector = self.connect().await?.exchange_key().await?;
 
-        address_collector.add_upnp();
+        address_collector.add_upnp().await;
         if address_collector.data.same_public_ip {
-            address_collector.add_local();
+            address_collector.add_local().await;
         }
-        address_collector.add_server();
+        address_collector.add_server().await;
 
-        address_collector.exchange_addr()
+        address_collector.exchange_addr().await
     }
 }
 
 impl<K: Kind> AporturePairingProtocol<Start<K>> {
-    pub fn connect(self) -> Result<AporturePairingProtocol<KeyExchange<K>>, String> {
-        let mut server = TcpStream::connect(SERVER_ADDRESS).expect("Connect to server");
+    pub async fn connect(self) -> Result<AporturePairingProtocol<KeyExchange<K>>, String> {
+        let mut server = TcpStream::connect(SERVER_ADDRESS)
+            .await
+            .expect("Connect to server");
 
         let id = blake3::hash(&self.data.passphrase);
 
@@ -108,7 +116,7 @@ impl<K: Kind> AporturePairingProtocol<Start<K>> {
 
         let mut response = ResponseCode::buffer();
 
-        tcp_send_receive(&mut server, &hello, &mut response);
+        tcp_send_receive(&mut server, &hello, &mut response).await;
 
         let response = ResponseCode::deserialize_from(&response).expect("Valid response code");
 
@@ -143,7 +151,7 @@ pub struct KeyExchange<K: Kind> {
 impl<K: Kind> State for KeyExchange<K> {}
 
 impl<K: Kind> AporturePairingProtocol<KeyExchange<K>> {
-    pub fn exchange_key(
+    pub async fn exchange_key(
         mut self,
     ) -> Result<AporturePairingProtocol<AddressNegotiation<K>>, String> {
         let password = &Password::new(&self.data.passphrase);
@@ -156,7 +164,7 @@ impl<K: Kind> AporturePairingProtocol<KeyExchange<K>> {
 
         let mut exchange_buffer = KeyExchangePayload::buffer();
 
-        tcp_send_receive(&mut self.state.server, &key_exchange, &mut exchange_buffer);
+        tcp_send_receive(&mut self.state.server, &key_exchange, &mut exchange_buffer).await;
 
         let key_exchange =
             KeyExchangePayload::deserialize_from(&exchange_buffer).expect("Valid key exchange");
@@ -195,11 +203,12 @@ impl<K: Kind> AddressNegotiation<K> {
 }
 
 impl AporturePairingProtocol<AddressNegotiation<Sender>> {
-    pub fn exchange_addr(mut self) -> Result<PairInfo, String> {
+    pub async fn exchange_addr(mut self) -> Result<PairInfo, String> {
         let mut length = [0u8; 8];
         self.state
             .server
             .read_exact(&mut length)
+            .await
             .expect("Read buffer");
 
         let length = usize::from_be_bytes(length);
@@ -209,11 +218,13 @@ impl AporturePairingProtocol<AddressNegotiation<Sender>> {
         self.state
             .server
             .read_exact(&mut addresses)
+            .await
             .expect("Read addresses");
 
         self.state
             .server
             .write_all(&ResponseCode::Ok.serialize_to())
+            .await
             .expect("write works");
 
         let addresses =
@@ -227,7 +238,7 @@ impl AporturePairingProtocol<AddressNegotiation<Sender>> {
 }
 
 impl AporturePairingProtocol<AddressNegotiation<Receiver>> {
-    pub fn exchange_addr(mut self) -> Result<PairInfo, String> {
+    pub async fn exchange_addr(mut self) -> Result<PairInfo, String> {
         let addresses = self
             .state
             .addresses
@@ -238,10 +249,16 @@ impl AporturePairingProtocol<AddressNegotiation<Receiver>> {
 
         let length = addresses.len().to_be_bytes();
 
-        self.state.server.write_all(&length).expect("write length");
+        self.state
+            .server
+            .write_all(&length)
+            .await
+            .expect("write length");
+
         self.state
             .server
             .write_all(&addresses)
+            .await
             .expect("write addresses");
 
         let mut response = ResponseCode::buffer();
@@ -249,6 +266,7 @@ impl AporturePairingProtocol<AddressNegotiation<Receiver>> {
         self.state
             .server
             .read_exact(&mut response)
+            .await
             .expect("Read buffer");
 
         let response = ResponseCode::deserialize_from(&response).expect("Valid response message");
@@ -261,11 +279,12 @@ impl AporturePairingProtocol<AddressNegotiation<Receiver>> {
         })
     }
 
-    pub fn add_upnp(&mut self) {
-        let mut gateway = upnp::Gateway::new().expect("upnp enabled in router");
+    pub async fn add_upnp(&mut self) {
+        let mut gateway = upnp::Gateway::new().await.expect("upnp enabled in router");
 
         let external_address = gateway
             .open_port(DEFAULT_RECEIVER_PORT)
+            .await
             .expect("open port successfully");
 
         let info = TransferInfo::UPnP {
@@ -277,21 +296,21 @@ impl AporturePairingProtocol<AddressNegotiation<Receiver>> {
         self.state.addresses.push(info);
     }
 
-    pub fn add_local(&mut self) {
+    pub async fn add_local(&mut self) {
         unimplemented!()
     }
 
-    pub fn add_server(&mut self) {
+    pub async fn add_server(&mut self) {
         unimplemented!()
     }
 }
 
-fn tcp_send_receive<P: Parser>(stream: &mut TcpStream, input: &P, out_buf: &mut [u8]) {
+async fn tcp_send_receive<P: Parser>(stream: &mut TcpStream, input: &P, out_buf: &mut [u8]) {
     let in_buf = input.serialize_to();
 
-    stream.write_all(&in_buf).expect("write hello");
+    stream.write_all(&in_buf).await.expect("write hello");
 
-    stream.read_exact(out_buf).expect("Read buffer");
+    stream.read_exact(out_buf).await.expect("Read buffer");
 }
 
 #[derive(Debug)]
@@ -334,6 +353,17 @@ impl PairInfo {
                 .collect(),
         }
     }
+
+    pub async fn finalize(self) {
+        match self {
+            PairInfo::Sender { .. } => (),
+            PairInfo::Receiver { transfer_info, .. } => {
+                for info in transfer_info {
+                    info.finalize().await;
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -365,6 +395,15 @@ impl TransferInfo {
                 SocketAddr::V6(_) => (Ipv6Addr::UNSPECIFIED, a.port()).into(),
             },
             Self::UPnP { local_port, .. } => (Ipv4Addr::UNSPECIFIED, *local_port).into(),
+        }
+    }
+
+    async fn finalize(self) {
+        match self {
+            TransferInfo::Address(_) => (),
+            TransferInfo::UPnP { mut gateway, .. } => {
+                let _ = gateway.close_port().await;
+            }
         }
     }
 }

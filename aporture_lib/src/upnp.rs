@@ -1,18 +1,20 @@
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 
+use igd::aio::tokio::Tokio;
+use igd::aio::Gateway as IgdGateway;
 use igd::{PortMappingProtocol, SearchOptions};
 use thiserror::Error;
 
 #[derive(Debug)]
 pub struct Gateway {
-    igd: igd::Gateway,
+    igd: IgdGateway<Tokio>,
     ip: IpAddr,
     port: Option<u16>,
 }
 
 impl Gateway {
-    pub fn new() -> Result<Self, GatewayError> {
+    pub async fn new() -> Result<Self, GatewayError> {
         let search_options = SearchOptions {
             timeout: Some(Duration::from_secs(2)),
             ..Default::default()
@@ -20,7 +22,9 @@ impl Gateway {
 
         let ip = local_ip_address::local_ip().map_err(|_| GatewayError::LocalIpNotFound)?;
 
-        let igd = igd::search_gateway(search_options).map_err(|_| GatewayError::GatewayNotFound)?;
+        let igd = igd::aio::tokio::search_gateway(search_options)
+            .await
+            .map_err(|_| GatewayError::GatewayNotFound)?;
 
         Ok(Self {
             igd,
@@ -29,21 +33,24 @@ impl Gateway {
         })
     }
 
-    pub fn open_port(&mut self, port: u16) -> Result<SocketAddr, OpenPortError> {
+    pub async fn open_port(&mut self, port: u16) -> Result<SocketAddr, OpenPortError> {
         const PORT_DESCRIPTION: &str = "aporture";
 
         if self.port.is_some() {
-            self.close_port().map_err(|_| OpenPortError)?;
+            self.close_port().await.map_err(|_| OpenPortError)?;
         }
 
         let local_address = (self.ip, port).into();
 
-        let external_address = self.igd.get_any_address(
-            PortMappingProtocol::TCP,
-            local_address,
-            3600,
-            PORT_DESCRIPTION,
-        );
+        let external_address = self
+            .igd
+            .get_any_address(
+                PortMappingProtocol::TCP,
+                local_address,
+                3600,
+                PORT_DESCRIPTION,
+            )
+            .await;
 
         let external_address = match external_address {
             Err(igd::AddAnyPortError::OnlyPermanentLeasesSupported) => {
@@ -51,6 +58,7 @@ impl Gateway {
 
                 self.igd
                     .get_any_address(PortMappingProtocol::TCP, local_address, 0, PORT_DESCRIPTION)
+                    .await
                     .map_err(|_| OpenPortError)
             }
             a => a.map_err(|_| OpenPortError),
@@ -61,10 +69,11 @@ impl Gateway {
         Ok(external_address)
     }
 
-    pub fn close_port(&mut self) -> Result<(), ClosePortError> {
+    pub async fn close_port(&mut self) -> Result<(), ClosePortError> {
         if let Some(port) = self.port.take() {
             self.igd
                 .remove_port(igd::PortMappingProtocol::TCP, port)
+                .await
                 .map_err(|e| match e {
                     igd::RemovePortError::NoSuchPortMapping => ClosePortError::NotOpen(port),
                     _ => ClosePortError::UPnPError,
@@ -72,12 +81,6 @@ impl Gateway {
         };
 
         Ok(())
-    }
-}
-
-impl Drop for Gateway {
-    fn drop(&mut self) {
-        let _ = self.close_port();
     }
 }
 
