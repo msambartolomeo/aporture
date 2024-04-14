@@ -1,65 +1,65 @@
+use crate::crypto::Cipher;
+use crate::net::NetworkPeer;
 use crate::pairing::{PairInfo, TransferInfo};
-use crate::protocol::ResponseCode;
+use crate::protocol::{FileData, ResponseCode};
 
-use std::fs;
 use std::io::{Read, Write};
-use std::net::{IpAddr, Shutdown, TcpListener, TcpStream};
+use std::net::{IpAddr, Shutdown, SocketAddr, TcpListener};
 use std::path::{Path, PathBuf};
 
 use aes_gcm_siv::aead::{Aead, KeyInit};
 use aes_gcm_siv::Aes256GcmSiv;
-use blake3::Hash;
 use directories::UserDirs;
-use serde::{Deserialize, Serialize};
-use serde_with::{serde_as, Bytes, DisplayFromStr};
+use tokio::net::TcpStream;
+use tokio::task::JoinSet;
 
-#[serde_as]
-#[derive(Debug, Serialize, Deserialize)]
-struct FileData {
-    #[serde_as(as = "DisplayFromStr")]
-    hash: Hash,
+async fn connect(a: SocketAddr) -> Result<(TcpStream, SocketAddr), std::io::Error> {
+    log::info!("Connection to {} on port {}", a.ip(), a.port());
 
-    #[serde_as(as = "Bytes")]
-    file: Vec<u8>,
+    Ok((TcpStream::connect(a).await?, a))
 }
 
-pub fn send_file(file: &Path, pair_info: &PairInfo) {
-    let file = fs::read(file).expect("File exists");
+pub async fn send_file(file: &Path, cipher: Cipher, addresses: &[SocketAddr]) {
+    let mut options = addresses.iter().fold(JoinSet::new(), |mut set, &a| {
+        set.spawn(connect(a));
+        set
+    });
+
+    let peer = loop {
+        match options.join_next().await {
+            Some(Ok(Ok((peer, address)))) => {
+                log::info!("Connected to {}", address);
+                break peer;
+            }
+            Some(_) => continue,
+            None => {
+                // TODO: Handle error
+                return;
+            }
+        }
+    };
+    drop(options);
+
+    let mut peer = NetworkPeer::new(Some(cipher), peer);
+
+    // TODO: Buffer file
+    let mut file = std::fs::read(file).unwrap();
 
     let hash = blake3::hash(&file);
 
-    let file = encrypt(&file, &pair_info.key);
-
-    let file_data = FileData { hash, file };
-
-    let buf = serde_bencode::to_bytes(&file_data).expect("Correct serde parse");
-    let mut peer = match pair_info.transfer_info {
-        TransferInfo::Address(address) => {
-            log::info!("connecting to {} on port {}", address.ip(), address.port());
-            TcpStream::connect(address).expect("Connect to server")
-        }
-        _ => {
-            unreachable!("Incorrect transferType")
-        }
+    let file_data = FileData {
+        hash: *hash.as_bytes(),
+        file_size: file.len().to_be_bytes(),
+        file_name: PathBuf::new(),
+        file: Vec::new(),
     };
 
-    peer.write_all(&buf).expect("Write all");
+    peer.write_ser_enc(&file_data).await.unwrap();
+    peer.write_enc(&mut file).await.unwrap();
 
-    let mut buf = [0u8; 1024];
+    let response = peer.read_ser::<ResponseCode>().await.unwrap();
 
-    let read = peer.read(&mut buf).expect("Read buffer");
-
-    assert_ne!(read, 0, "Closed from receiver");
-
-    let response: ResponseCode =
-        serde_bencode::from_bytes(&buf).expect("server responds correctly");
-
-    if matches!(response, ResponseCode::Ok) {
-    } else {
-        panic!("Server error");
-    }
-
-    peer.shutdown(Shutdown::Both).expect("Shutdown works");
+    assert_eq!(response, ResponseCode::Ok, "Error sending file");
 }
 
 pub fn receive_file(dest: Option<PathBuf>, pair_info: &PairInfo) {
@@ -113,7 +113,7 @@ pub fn receive_file(dest: Option<PathBuf>, pair_info: &PairInfo) {
         "Error in file transfer, hashes are not the same"
     );
 
-    fs::write(dest, file).expect("Can write file");
+    std::fs::write(dest, file).expect("Can write file");
 }
 
 #[must_use]
