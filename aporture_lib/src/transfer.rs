@@ -102,11 +102,14 @@ pub async fn receive_file(dest: Option<PathBuf>, pair_info: &mut PairInfo) {
             }
             Some(_) => continue,
             None => {
-                // TODO: Handle error
-                return;
+                break pair_info
+                    .fallback()
+                    .expect("Connection to server must exist");
             }
         }
     };
+    // NOTE: Drop fallback and futures if unused
+    drop(pair_info.fallback());
     drop(options);
 
     let mut peer = NetworkPeer::new(Some(pair_info.cipher()), peer);
