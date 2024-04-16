@@ -44,6 +44,8 @@ async fn main() {
             let mut pair_info = app.pair().await.unwrap();
 
             transfer::send_file(&path, &mut pair_info).await;
+
+            pair_info.finalize().await;
         }
         Commands::Receive {
             destination,
@@ -60,6 +62,8 @@ async fn main() {
             let mut pair_info = app.pair().await.unwrap();
 
             transfer::receive_file(destination, &mut pair_info).await;
+
+            pair_info.finalize().await;
         }
         Commands::Contacts => todo!("Add contacts"),
         Commands::Pair { command: _ } => todo!("Add pair module"),

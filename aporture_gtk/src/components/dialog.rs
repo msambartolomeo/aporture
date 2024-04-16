@@ -93,6 +93,8 @@ impl SimpleAsyncComponent for AportureDialog {
                 sender
                     .output(Output::Success)
                     .expect("Message returned to main thread");
+
+                pair_info.finalize().await;
             }
             AportureInput::ReceiveFile {
                 passphrase,
@@ -110,6 +112,8 @@ impl SimpleAsyncComponent for AportureDialog {
                 sender
                     .output(Output::Success)
                     .expect("Message returned to main thread");
+
+                pair_info.finalize().await;
             }
         }
 

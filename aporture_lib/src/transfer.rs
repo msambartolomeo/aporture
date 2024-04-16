@@ -32,11 +32,14 @@ pub async fn send_file(file: &Path, pair_info: &mut PairInfo) {
             }
             Some(_) => continue,
             None => {
-                // TODO: Handle error
-                return;
+                break pair_info
+                    .fallback()
+                    .expect("Connection to server must exist");
             }
         }
     };
+    // NOTE: Drop fallback and futures if unused
+    drop(pair_info.fallback());
     drop(options);
 
     let mut peer = NetworkPeer::new(Some(pair_info.cipher()), peer);
@@ -58,6 +61,7 @@ pub async fn send_file(file: &Path, pair_info: &mut PairInfo) {
 
     let response = peer.read_ser_enc::<ResponseCode>().await.unwrap();
 
+    // TODO: Real response
     assert_eq!(response, ResponseCode::Ok, "Error sending file");
 }
 

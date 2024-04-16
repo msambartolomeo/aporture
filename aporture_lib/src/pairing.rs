@@ -230,9 +230,13 @@ impl AporturePairingProtocol<AddressNegotiation<Sender>> {
         let addresses =
             Vec::<SocketAddr>::deserialize_from(&addresses).expect("Valid socket address");
 
-        Ok(PairInfo::Sender {
+        Ok(PairInfo {
             key: self.state.cipher,
-            addresses,
+            transfer_info: addresses
+                .into_iter()
+                .map(|a| TransferInfo::Address(a))
+                .collect(),
+            server_fallback: Some(self.state.server),
         })
     }
 }
@@ -273,9 +277,10 @@ impl AporturePairingProtocol<AddressNegotiation<Receiver>> {
 
         assert!(matches!(response, ResponseCode::Ok));
 
-        Ok(PairInfo::Receiver {
+        Ok(PairInfo {
             key: self.state.cipher,
             transfer_info: self.state.addresses,
+            server_fallback: Some(self.state.server),
         })
     }
 
@@ -314,54 +319,40 @@ async fn tcp_send_receive<P: Parser>(stream: &mut TcpStream, input: &P, out_buf:
 }
 
 #[derive(Debug)]
-pub enum PairInfo {
-    Sender {
-        key: Cipher,
-        addresses: Vec<SocketAddr>,
-    },
-    Receiver {
-        key: Cipher,
-        transfer_info: Vec<TransferInfo>,
-    },
+pub struct PairInfo {
+    key: Cipher,
+    transfer_info: Vec<TransferInfo>,
+    server_fallback: Option<TcpStream>,
 }
 
 impl PairInfo {
     #[must_use]
     pub fn cipher(&mut self) -> &mut Cipher {
-        match self {
-            Self::Sender { key, .. } | Self::Receiver { key, .. } => key,
-        }
+        &mut self.key
+    }
+
+    pub fn fallback(&mut self) -> Option<TcpStream> {
+        self.server_fallback.take()
     }
 
     #[must_use]
     pub fn addresses(&self) -> Vec<SocketAddr> {
-        match self {
-            Self::Sender { addresses, .. } => addresses.clone(),
-            Self::Receiver { transfer_info, .. } => transfer_info
-                .iter()
-                .map(TransferInfo::get_connection_address)
-                .collect(),
-        }
+        self.transfer_info
+            .iter()
+            .map(TransferInfo::get_connection_address)
+            .collect()
     }
 
     pub fn bind_addresses(&self) -> Vec<(SocketAddr, SocketAddr)> {
-        match self {
-            Self::Sender { addresses, .. } => addresses.iter().copied().map(|a| (a, a)).collect(),
-            Self::Receiver { transfer_info, .. } => transfer_info
-                .iter()
-                .map(|t| (t.get_bind_address(), t.get_connection_address()))
-                .collect(),
-        }
+        self.transfer_info
+            .iter()
+            .map(|t| (t.get_bind_address(), t.get_connection_address()))
+            .collect()
     }
 
     pub async fn finalize(self) {
-        match self {
-            PairInfo::Sender { .. } => (),
-            PairInfo::Receiver { transfer_info, .. } => {
-                for info in transfer_info {
-                    info.finalize().await;
-                }
-            }
+        for info in self.transfer_info {
+            info.finalize().await;
         }
     }
 }
