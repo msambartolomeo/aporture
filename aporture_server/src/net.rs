@@ -17,7 +17,10 @@ pub struct Connection {
 
 impl Connection {
     pub async fn send_response(&mut self, response: ResponseCode) -> Result<(), std::io::Error> {
-        self.socket.write_all(&response.serialize_to()).await
+        let response = response.serialize_to();
+
+        self.socket.write_all(&response.len().to_be_bytes()).await?;
+        self.socket.write_all(&response).await
     }
 }
 
@@ -31,7 +34,25 @@ pub async fn handle_connection(
     mut connection: Connection,
     map: Arc<Mutex<HashMap<[u8; 32], Connection>>>,
 ) {
+    let mut length = [0; 8];
+
+    if let Err(e) = connection.socket.read_exact(&mut length).await {
+        log::warn!("No hello message length received: {e}");
+
+        let _ = connection
+            .send_response(ResponseCode::MalformedMessage)
+            .await;
+    }
+
     let mut buf = Hello::buffer();
+    if buf.len() != usize::from_be_bytes(length) {
+        log::warn!("Invalid hello message length");
+        let _ = connection
+            .send_response(ResponseCode::MalformedMessage)
+            .await;
+
+        return;
+    }
 
     if let Err(e) = connection.socket.read_exact(&mut buf).await {
         if e.kind() == std::io::ErrorKind::UnexpectedEof {

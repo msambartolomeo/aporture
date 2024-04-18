@@ -4,19 +4,18 @@ use crate::protocol::{FileData, ResponseCode};
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use directories::UserDirs;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 
-async fn connect(a: SocketAddr) -> Result<(TcpStream, SocketAddr), std::io::Error> {
-    log::info!("Trying connection to {} on port {}", a.ip(), a.port());
-
-    Ok((TcpStream::connect(a).await?, a))
-}
-
 pub async fn send_file(file: &Path, pair_info: &mut PairInfo) {
-    let mut options = pair_info
+    // TODO: Find better alternative
+    // NOTE: Sleep to give time to receiver to bind
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    let options = pair_info
         .addresses()
         .into_iter()
         .fold(JoinSet::new(), |mut set, a| {
@@ -24,25 +23,9 @@ pub async fn send_file(file: &Path, pair_info: &mut PairInfo) {
             set
         });
 
-    let peer = loop {
-        match options.join_next().await {
-            Some(Ok(Ok((peer, address)))) => {
-                log::info!("Connected to {}", address);
-                break peer;
-            }
-            Some(_) => continue,
-            None => {
-                break pair_info
-                    .fallback()
-                    .expect("Connection to server must exist");
-            }
-        }
-    };
-    // NOTE: Drop fallback and futures if unused
-    drop(pair_info.fallback());
-    drop(options);
+    let mut peer = find_peer(options, pair_info).await;
 
-    let mut peer = NetworkPeer::new(Some(pair_info.cipher()), peer);
+    peer.add_cipher(pair_info.cipher().clone());
 
     // TODO: Buffer file
     let mut file = std::fs::read(file).unwrap();
@@ -65,19 +48,6 @@ pub async fn send_file(file: &Path, pair_info: &mut PairInfo) {
     assert_eq!(response, ResponseCode::Ok, "Error sending file");
 }
 
-async fn bind(
-    address: SocketAddr,
-    bind_address: SocketAddr,
-) -> Result<(TcpStream, SocketAddr), std::io::Error> {
-    log::info!("Trying bind to {} on port {}", address.ip(), address.port());
-
-    let listener = TcpListener::bind(bind_address).await?;
-
-    let (peer, _) = listener.accept().await?;
-
-    Ok((peer, address))
-}
-
 pub async fn receive_file(dest: Option<PathBuf>, pair_info: &mut PairInfo) {
     let dest = dest.unwrap_or_else(|| {
         UserDirs::new()
@@ -85,34 +55,17 @@ pub async fn receive_file(dest: Option<PathBuf>, pair_info: &mut PairInfo) {
             .expect("Valid Download Directory")
     });
 
-    let mut options =
-        pair_info
-            .bind_addresses()
-            .into_iter()
-            .fold(JoinSet::new(), |mut set, (a, b)| {
-                set.spawn(bind(a, b));
-                set
-            });
+    let options = pair_info
+        .bind_addresses()
+        .into_iter()
+        .fold(JoinSet::new(), |mut set, (b, a)| {
+            set.spawn(bind(b, a));
+            set
+        });
 
-    let peer = loop {
-        match options.join_next().await {
-            Some(Ok(Ok((peer, address)))) => {
-                log::info!("Peer connected to {}", address);
-                break peer;
-            }
-            Some(_) => continue,
-            None => {
-                break pair_info
-                    .fallback()
-                    .expect("Connection to server must exist");
-            }
-        }
-    };
-    // NOTE: Drop fallback and futures if unused
-    drop(pair_info.fallback());
-    drop(options);
+    let mut peer = find_peer(options, pair_info).await;
 
-    let mut peer = NetworkPeer::new(Some(pair_info.cipher()), peer);
+    peer.add_cipher(pair_info.cipher().clone());
 
     let file_data = peer.read_ser_enc::<FileData>().await.unwrap();
     // TODO: Use file name if exists
@@ -132,4 +85,53 @@ pub async fn receive_file(dest: Option<PathBuf>, pair_info: &mut PairInfo) {
     );
 
     std::fs::write(dest, file).expect("Can write file");
+}
+
+async fn find_peer(
+    mut options: JoinSet<Result<(TcpStream, SocketAddr), std::io::Error>>,
+    pair_info: &mut PairInfo,
+) -> NetworkPeer {
+    loop {
+        match options.join_next().await {
+            Some(Ok(Ok((peer, address)))) => {
+                log::info!("Peer connected to {}", address);
+
+                // NOTE: Drop fallback if unused
+                drop(pair_info.fallback());
+
+                break NetworkPeer::new(peer);
+            }
+            Some(_) => continue,
+            None => {
+                log::info!("Using server fallback");
+                break pair_info
+                    .fallback()
+                    .expect("Connection to server must exist");
+            }
+        }
+    }
+}
+
+// TODO: Add timeout somehow
+async fn bind(
+    bind_address: SocketAddr,
+    full_address: SocketAddr,
+) -> Result<(TcpStream, SocketAddr), std::io::Error> {
+    log::info!(
+        "Trying bind to {} on port {}",
+        full_address.ip(),
+        full_address.port(),
+    );
+
+    let listener = TcpListener::bind(bind_address).await?;
+
+    let (peer, _) = listener.accept().await?;
+
+    Ok((peer, full_address))
+}
+
+async fn connect(a: SocketAddr) -> Result<(TcpStream, SocketAddr), std::io::Error> {
+    log::info!("Trying connection to {} on port {}", a.ip(), a.port());
+
+    Ok((TcpStream::connect(a).await?, a))
 }

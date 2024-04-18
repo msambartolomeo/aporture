@@ -3,11 +3,11 @@ use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 
 use blake3::Hash;
 use spake2::{Ed25519Group, Identity, Password, Spake2};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 use crate::crypto::Cipher;
-use crate::protocol::{Hello, KeyExchangePayload, PairKind, Parser, ResponseCode};
+use crate::net::NetworkPeer;
+use crate::protocol::{Hello, KeyExchangePayload, PairKind, ResponseCode};
 use crate::upnp::{self, Gateway};
 
 const SERVER_ADDRESS: &str = "127.0.0.1:8080";
@@ -101,9 +101,11 @@ impl AporturePairingProtocol<Start<Receiver>> {
 
 impl<K: Kind> AporturePairingProtocol<Start<K>> {
     pub async fn connect(self) -> Result<AporturePairingProtocol<KeyExchange<K>>, String> {
-        let mut server = TcpStream::connect(SERVER_ADDRESS)
+        let server = TcpStream::connect(SERVER_ADDRESS)
             .await
             .expect("Connect to server");
+
+        let mut server = NetworkPeer::new(server);
 
         let id = blake3::hash(&self.data.passphrase);
 
@@ -113,11 +115,9 @@ impl<K: Kind> AporturePairingProtocol<Start<K>> {
             pair_id: *id.as_bytes(),
         };
 
-        let mut response = ResponseCode::buffer();
+        server.write_ser(&hello).await.unwrap();
 
-        tcp_send_receive(&mut server, &hello, &mut response).await;
-
-        let response = ResponseCode::deserialize_from(&response).expect("Valid response code");
+        let response = server.read_ser::<ResponseCode>().await.unwrap();
 
         let mut app = AporturePairingProtocol {
             data: self.data,
@@ -143,7 +143,7 @@ impl<K: Kind> AporturePairingProtocol<Start<K>> {
 
 pub struct KeyExchange<K: Kind> {
     id: Hash,
-    server: TcpStream,
+    server: NetworkPeer,
     marker: PhantomData<K>,
 }
 
@@ -161,29 +161,32 @@ impl<K: Kind> AporturePairingProtocol<KeyExchange<K>> {
         let key_exchange =
             KeyExchangePayload(spake_msg.try_into().expect("Spake message is 33 bytes"));
 
-        let mut exchange_buffer = KeyExchangePayload::buffer();
+        self.state.server.write_ser(&key_exchange).await.unwrap();
 
-        tcp_send_receive(&mut self.state.server, &key_exchange, &mut exchange_buffer).await;
-
-        let key_exchange =
-            KeyExchangePayload::deserialize_from(&exchange_buffer).expect("Valid key exchange");
+        let key_exchange = self
+            .state
+            .server
+            .read_ser::<KeyExchangePayload>()
+            .await
+            .unwrap();
 
         let key = spake.finish(&key_exchange.0).expect("Key derivation works");
 
         let cipher = Cipher::new(key);
 
+        self.state.server.add_cipher(cipher);
+
         // TODO: Exchange associated data and confirm key
 
         Ok(AporturePairingProtocol {
             data: self.data,
-            state: AddressNegotiation::new(cipher, self.state.server),
+            state: AddressNegotiation::new(self.state.server),
         })
     }
 }
 
 pub struct AddressNegotiation<K: Kind> {
-    cipher: Cipher,
-    server: TcpStream,
+    server: NetworkPeer,
     addresses: Vec<TransferInfo>,
     marker: PhantomData<K>,
 }
@@ -191,9 +194,8 @@ pub struct AddressNegotiation<K: Kind> {
 impl<K: Kind> State for AddressNegotiation<K> {}
 
 impl<K: Kind> AddressNegotiation<K> {
-    fn new(cipher: Cipher, server: TcpStream) -> Self {
+    fn new(server: NetworkPeer) -> Self {
         Self {
-            cipher,
             server,
             addresses: Vec::new(),
             marker: PhantomData::<K>,
@@ -203,34 +205,23 @@ impl<K: Kind> AddressNegotiation<K> {
 
 impl AporturePairingProtocol<AddressNegotiation<Sender>> {
     pub async fn exchange_addr(mut self) -> Result<PairInfo, String> {
-        let mut length = [0u8; 8];
-        self.state
+        let addresses = self
+            .state
             .server
-            .read_exact(&mut length)
+            .read_ser_enc::<Vec<SocketAddr>>()
             .await
-            .expect("Read buffer");
-
-        let length = usize::from_be_bytes(length);
-
-        let mut addresses = vec![0; length];
+            .unwrap();
 
         self.state
             .server
-            .read_exact(&mut addresses)
+            .write_ser_enc(&ResponseCode::Ok)
             .await
-            .expect("Read addresses");
+            .unwrap();
 
-        self.state
-            .server
-            .write_all(&ResponseCode::Ok.serialize_to())
-            .await
-            .expect("write works");
-
-        let addresses =
-            Vec::<SocketAddr>::deserialize_from(&addresses).expect("Valid socket address");
+        let cipher = self.state.server.extract_cipher().unwrap();
 
         Ok(PairInfo {
-            key: self.state.cipher,
+            cipher,
             transfer_info: addresses
                 .into_iter()
                 .map(|a| TransferInfo::Address(a))
@@ -247,37 +238,23 @@ impl AporturePairingProtocol<AddressNegotiation<Receiver>> {
             .addresses
             .iter()
             .map(TransferInfo::get_connection_address)
-            .collect::<Vec<_>>()
-            .serialize_to();
+            .collect::<Vec<_>>();
 
-        let length = addresses.len().to_be_bytes();
+        self.state.server.write_ser_enc(&addresses).await.unwrap();
 
-        self.state
+        let response = self
+            .state
             .server
-            .write_all(&length)
+            .read_ser_enc::<ResponseCode>()
             .await
-            .expect("write length");
-
-        self.state
-            .server
-            .write_all(&addresses)
-            .await
-            .expect("write addresses");
-
-        let mut response = ResponseCode::buffer();
-
-        self.state
-            .server
-            .read_exact(&mut response)
-            .await
-            .expect("Read buffer");
-
-        let response = ResponseCode::deserialize_from(&response).expect("Valid response message");
+            .unwrap();
 
         assert!(matches!(response, ResponseCode::Ok));
 
+        let cipher = self.state.server.extract_cipher().unwrap();
+
         Ok(PairInfo {
-            key: self.state.cipher,
+            cipher,
             transfer_info: self.state.addresses,
             server_fallback: Some(self.state.server),
         })
@@ -309,28 +286,20 @@ impl AporturePairingProtocol<AddressNegotiation<Receiver>> {
     }
 }
 
-async fn tcp_send_receive<P: Parser>(stream: &mut TcpStream, input: &P, out_buf: &mut [u8]) {
-    let in_buf = input.serialize_to();
-
-    stream.write_all(&in_buf).await.expect("write hello");
-
-    stream.read_exact(out_buf).await.expect("Read buffer");
-}
-
 #[derive(Debug)]
 pub struct PairInfo {
-    key: Cipher,
+    cipher: Cipher,
     transfer_info: Vec<TransferInfo>,
-    server_fallback: Option<TcpStream>,
+    server_fallback: Option<NetworkPeer>,
 }
 
 impl PairInfo {
     #[must_use]
     pub fn cipher(&mut self) -> &mut Cipher {
-        &mut self.key
+        &mut self.cipher
     }
 
-    pub fn fallback(&mut self) -> Option<TcpStream> {
+    pub fn fallback(&mut self) -> Option<NetworkPeer> {
         self.server_fallback.take()
     }
 
