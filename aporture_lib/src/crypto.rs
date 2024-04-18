@@ -4,9 +4,11 @@ use aes_gcm_siv::{Aes256GcmSiv, KeyInit};
 use rand::RngCore;
 use thiserror::Error;
 
+#[derive(Clone)]
 pub struct Cipher {
+    key: Vec<u8>,
     aead: Aes256GcmSiv,
-    associated_data: Vec<u8>,
+    associated_data: Option<Vec<u8>>,
 }
 
 impl std::fmt::Debug for Cipher {
@@ -25,12 +27,17 @@ impl Cipher {
 
         Self {
             aead,
-            associated_data: key,
+            associated_data: None,
+            key,
         }
     }
 
+    pub fn get_key(&self) -> &Vec<u8> {
+        &self.key
+    }
+
     pub fn set_associated_data(&mut self, associated_data: Vec<u8>) {
-        self.associated_data = associated_data;
+        self.associated_data = Some(associated_data);
     }
 
     #[must_use]
@@ -39,9 +46,14 @@ impl Cipher {
 
         rand::thread_rng().fill_bytes(&mut nonce);
 
+        let associated_data = match self.associated_data {
+            Some(ref ad) => ad,
+            None => &self.key,
+        };
+
         let tag = self
             .aead
-            .encrypt_in_place_detached(&nonce, &self.associated_data, plain)
+            .encrypt_in_place_detached(&nonce, associated_data, plain)
             .expect("Associated data an plan are not bigger than expected in aes_gcm");
 
         (nonce.into(), tag.into())
@@ -53,8 +65,12 @@ impl Cipher {
         nonce: &[u8; 12],
         tag: &[u8; 16],
     ) -> Result<(), DecryptError> {
+        let associated_data = match self.associated_data {
+            Some(ref ad) => ad,
+            None => &self.key,
+        };
         self.aead
-            .decrypt_in_place_detached(nonce.into(), &self.associated_data, cipher, tag.into())
+            .decrypt_in_place_detached(nonce.into(), associated_data, cipher, tag.into())
             .map_err(|_| DecryptError)
     }
 }
