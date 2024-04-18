@@ -94,7 +94,6 @@ impl AporturePairingProtocol<Start<Receiver>> {
         if address_collector.data.same_public_ip {
             address_collector.add_local().await;
         }
-        address_collector.add_server().await;
 
         address_collector.exchange_addr().await
     }
@@ -302,11 +301,11 @@ impl AporturePairingProtocol<AddressNegotiation<Receiver>> {
     }
 
     pub async fn add_local(&mut self) {
-        unimplemented!()
-    }
+        let ip = local_ip_address::local_ip().unwrap();
 
-    pub async fn add_server(&mut self) {
-        unimplemented!()
+        let info = TransferInfo::Address((ip, DEFAULT_RECEIVER_PORT).into());
+
+        self.state.addresses.push(info);
     }
 }
 

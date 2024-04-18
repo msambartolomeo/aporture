@@ -7,15 +7,12 @@ use crate::protocol::Parser;
 
 pub struct NetworkPeer<'a> {
     cipher: Option<&'a mut Cipher>,
-    stream: Box<TcpStream>,
+    stream: TcpStream,
 }
 
 impl<'a> NetworkPeer<'a> {
     pub fn new(cipher: Option<&'a mut Cipher>, stream: TcpStream) -> Self {
-        Self {
-            cipher,
-            stream: Box::new(stream),
-        }
+        Self { cipher, stream }
     }
 
     pub fn add_cipher(&mut self, cipher: &'a mut Cipher) {
