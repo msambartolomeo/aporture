@@ -14,6 +14,7 @@ pub struct Cipher {
 impl std::fmt::Debug for Cipher {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Cipher")
+            .field("key", &self.key)
             .field("aead", &"Hidden implementation")
             .field("associated_data", &self.associated_data)
             .finish()
@@ -32,7 +33,7 @@ impl Cipher {
         }
     }
 
-    pub fn get_key(&self) -> &Vec<u8> {
+    pub const fn get_key(&self) -> &Vec<u8> {
         &self.key
     }
 

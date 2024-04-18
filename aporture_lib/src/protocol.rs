@@ -88,10 +88,12 @@ pub struct FileData {
 pub trait Parser: Serialize + for<'a> Deserialize<'a> {
     type SerializedSize: ArrayLength;
 
+    #[must_use]
     fn buffer() -> GenericArray<u8, Self::SerializedSize> {
         GenericArray::default()
     }
 
+    #[must_use]
     fn serialized_size() -> usize {
         <Self::SerializedSize as Unsigned>::to_usize()
     }

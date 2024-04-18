@@ -6,7 +6,7 @@ use relm4::prelude::*;
 use aporture::pairing::{AporturePairingProtocol, Receiver, Sender};
 
 #[derive(Debug)]
-pub struct AportureDialog {
+pub struct AportureTransfer {
     visible: bool,
     purpose: Purpose,
 }
@@ -37,7 +37,7 @@ pub enum AportureInput {
 }
 
 #[relm4::component(pub)]
-impl Component for AportureDialog {
+impl Component for AportureTransfer {
     type Init = Purpose;
     type Input = AportureInput;
     type Output = Output;
@@ -74,11 +74,13 @@ impl Component for AportureDialog {
         root: Self::Root,
         _sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let model = AportureDialog {
+        let model = Self {
             visible: false,
             purpose: init,
         };
+
         let widgets = view_output!();
+
         ComponentParts { model, widgets }
     }
 
@@ -119,7 +121,7 @@ impl Component for AportureDialog {
                     pair_info.finalize().await;
 
                     Output::Success
-                })
+                });
             }
         }
     }

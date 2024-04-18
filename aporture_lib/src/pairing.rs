@@ -92,14 +92,14 @@ impl AporturePairingProtocol<Start<Receiver>> {
 
         address_collector.add_upnp().await;
         if address_collector.data.same_public_ip {
-            address_collector.add_local().await;
+            address_collector.add_local();
         }
 
         address_collector.exchange_addr().await
     }
 }
 
-impl<K: Kind> AporturePairingProtocol<Start<K>> {
+impl<K: Kind + Send> AporturePairingProtocol<Start<K>> {
     pub async fn connect(self) -> Result<AporturePairingProtocol<KeyExchange<K>>, String> {
         let server = TcpStream::connect(SERVER_ADDRESS)
             .await
@@ -149,7 +149,7 @@ pub struct KeyExchange<K: Kind> {
 
 impl<K: Kind> State for KeyExchange<K> {}
 
-impl<K: Kind> AporturePairingProtocol<KeyExchange<K>> {
+impl<K: Kind + Send> AporturePairingProtocol<KeyExchange<K>> {
     pub async fn exchange_key(
         mut self,
     ) -> Result<AporturePairingProtocol<AddressNegotiation<K>>, String> {
@@ -222,10 +222,7 @@ impl AporturePairingProtocol<AddressNegotiation<Sender>> {
 
         Ok(PairInfo {
             cipher,
-            transfer_info: addresses
-                .into_iter()
-                .map(|a| TransferInfo::Address(a))
-                .collect(),
+            transfer_info: addresses.into_iter().map(TransferInfo::Address).collect(),
             server_fallback: Some(self.state.server),
         })
     }
@@ -277,7 +274,7 @@ impl AporturePairingProtocol<AddressNegotiation<Receiver>> {
         self.state.addresses.push(info);
     }
 
-    pub async fn add_local(&mut self) {
+    pub fn add_local(&mut self) {
         let ip = local_ip_address::local_ip().unwrap();
 
         let info = TransferInfo::Address((ip, DEFAULT_RECEIVER_PORT).into());
@@ -359,8 +356,8 @@ impl TransferInfo {
 
     async fn finalize(self) {
         match self {
-            TransferInfo::Address(_) => (),
-            TransferInfo::UPnP { mut gateway, .. } => {
+            Self::Address(_) => (),
+            Self::UPnP { mut gateway, .. } => {
                 let _ = gateway.close_port().await;
             }
         }

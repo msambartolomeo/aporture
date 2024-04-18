@@ -7,7 +7,7 @@ use relm4_components::open_dialog::{
 };
 use relm4_icons::icon_names;
 
-use crate::components::dialog::{AportureDialog, AportureInput, Purpose};
+use crate::components::dialog::{AportureInput, AportureTransfer, Purpose};
 
 #[derive(Debug)]
 pub struct SenderPage {
@@ -16,7 +16,7 @@ pub struct SenderPage {
     file_path: Option<PathBuf>,
     file_name: Option<String>,
     file_picker_dialog: Controller<OpenDialog>,
-    aporture_dialog: Controller<AportureDialog>,
+    aporture_dialog: Controller<AportureTransfer>,
     form_disabled: bool,
 }
 
@@ -109,7 +109,7 @@ impl SimpleComponent for SenderPage {
                 OpenDialogResponse::Cancel => Msg::Ignore,
             });
 
-        let aporture_dialog = AportureDialog::builder()
+        let aporture_dialog = AportureTransfer::builder()
             .transient_for(&root)
             .launch(Purpose::Send)
             .forward(sender.input_sender(), |_| Msg::SendFileFinished); // TODO: Handle Errors

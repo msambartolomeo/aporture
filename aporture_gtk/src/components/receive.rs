@@ -1,13 +1,13 @@
 use adw::prelude::*;
 use relm4::prelude::*;
 
-use crate::components::dialog::{AportureDialog, AportureInput, Purpose};
+use crate::components::dialog::{AportureInput, AportureTransfer, Purpose};
 
 #[derive(Debug)]
 pub struct ReceiverPage {
     passphrase: gtk::EntryBuffer,
     passphrase_empty: bool,
-    aporture_dialog: Controller<AportureDialog>,
+    aporture_dialog: Controller<AportureTransfer>,
     form_disabled: bool,
 }
 
@@ -60,7 +60,7 @@ impl SimpleComponent for ReceiverPage {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let aporture_dialog = AportureDialog::builder()
+        let aporture_dialog = AportureTransfer::builder()
             .transient_for(&root)
             .launch(Purpose::Send)
             .forward(sender.input_sender(), |_| Msg::ReceiveFileFinished); // TODO: Handle Errors

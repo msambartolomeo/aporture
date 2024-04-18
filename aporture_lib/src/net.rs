@@ -12,7 +12,7 @@ pub struct NetworkPeer {
 }
 
 impl NetworkPeer {
-    pub fn new(stream: TcpStream) -> Self {
+    pub const fn new(stream: TcpStream) -> Self {
         Self {
             cipher: None,
             stream,
@@ -27,7 +27,7 @@ impl NetworkPeer {
         self.cipher.take()
     }
 
-    pub async fn write_ser<P: Parser>(&mut self, input: &P) -> Result<(), Error> {
+    pub async fn write_ser<P: Parser + Sync>(&mut self, input: &P) -> Result<(), Error> {
         let in_buf = input.serialize_to();
 
         self.stream
@@ -38,7 +38,7 @@ impl NetworkPeer {
         self.stream.write_all(&in_buf).await.map_err(Error::IO)
     }
 
-    pub async fn read_ser<P: Parser>(&mut self) -> Result<P, Error> {
+    pub async fn read_ser<P: Parser + Sync>(&mut self) -> Result<P, Error> {
         let mut length = [0; 8];
 
         self.stream
@@ -69,7 +69,7 @@ impl NetworkPeer {
         }
     }
 
-    pub async fn write_ser_enc<P: Parser>(&mut self, input: &P) -> Result<(), Error> {
+    pub async fn write_ser_enc<P: Parser + Sync>(&mut self, input: &P) -> Result<(), Error> {
         if self.cipher.is_none() {
             return Err(Error::NoCipher);
         }
@@ -92,13 +92,13 @@ impl NetworkPeer {
         let (nonce, tag) = cipher.encrypt(input);
 
         self.stream.write_all(&nonce).await.map_err(Error::IO)?;
-        self.stream.write_all(&input).await.map_err(Error::IO)?;
+        self.stream.write_all(input).await.map_err(Error::IO)?;
         self.stream.write_all(&tag).await.map_err(Error::IO)?;
 
         Ok(())
     }
 
-    pub async fn read_ser_enc<P: Parser>(&mut self) -> Result<P, Error> {
+    pub async fn read_ser_enc<P: Parser + Sync>(&mut self) -> Result<P, Error> {
         if self.cipher.is_none() {
             return Err(Error::NoCipher);
         }
