@@ -135,9 +135,8 @@ impl Parser for FileData {
     type SerializedSize = generic_array::typenum::U46;
 }
 
-// TODO: Remove and replace with sending many elements of P
 impl<P: Parser> Parser for Vec<P> {
-    type SerializedSize = generic_array::typenum::U3;
+    type SerializedSize = P::SerializedSize;
 }
 
 #[cfg(test)]
