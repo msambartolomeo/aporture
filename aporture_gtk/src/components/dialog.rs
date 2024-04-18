@@ -36,14 +36,15 @@ pub enum AportureInput {
     },
 }
 
-#[relm4::component(pub async)]
-impl SimpleAsyncComponent for AportureDialog {
+#[relm4::component(pub)]
+impl Component for AportureDialog {
     type Init = Purpose;
     type Input = AportureInput;
     type Output = Output;
+    type CommandOutput = Output;
 
     view! {
-        dialog = adw::Window {
+        dialog = gtk::Window {
             #[watch]
             set_visible: model.visible,
             set_modal: true,
@@ -51,7 +52,7 @@ impl SimpleAsyncComponent for AportureDialog {
             #[wrap(Some)]
             set_child = &gtk::Label {
                 set_width_request: 250,
-                set_height_request: 600,
+                set_height_request: 400,
                 set_halign: gtk::Align::Center,
                 set_valign: gtk::Align::Center,
                 #[watch]
@@ -60,41 +61,46 @@ impl SimpleAsyncComponent for AportureDialog {
                     Purpose::Receive => "Receiving file...",
                 }
             },
+
+            // connect_close_request[sender] => move |_| {
+            //     sender.input(DialogMsg::Hide);
+            //     glib::Propagation::Stop
+            // }
         }
     }
 
-    async fn init(
+    fn init(
         init: Self::Init,
         root: Self::Root,
-        _sender: AsyncComponentSender<Self>,
-    ) -> AsyncComponentParts<Self> {
+        _sender: ComponentSender<Self>,
+    ) -> ComponentParts<Self> {
         let model = AportureDialog {
             visible: false,
             purpose: init,
         };
         let widgets = view_output!();
-        AsyncComponentParts { model, widgets }
+        ComponentParts { model, widgets }
     }
 
-    async fn update(&mut self, msg: Self::Input, sender: AsyncComponentSender<Self>) {
+    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, _: &Self::Root) {
         self.visible = true;
 
         match msg {
             AportureInput::SendFile { passphrase, path } => {
                 self.purpose = Purpose::Send;
 
-                let mut pair_info = AporturePairingProtocol::<Sender>::new(passphrase)
-                    .pair()
-                    .await
-                    .unwrap();
+                sender.oneshot_command(async move {
+                    let mut pair_info = AporturePairingProtocol::<Sender>::new(passphrase)
+                        .pair()
+                        .await
+                        .unwrap();
 
-                aporture::transfer::send_file(&path, &mut pair_info).await;
+                    aporture::transfer::send_file(&path, &mut pair_info).await;
 
-                sender
-                    .output(Output::Success)
-                    .expect("Message returned to main thread");
+                    pair_info.finalize().await;
 
-                pair_info.finalize().await;
+                    Output::Success
+                });
             }
             AportureInput::ReceiveFile {
                 passphrase,
@@ -102,19 +108,32 @@ impl SimpleAsyncComponent for AportureDialog {
             } => {
                 self.purpose = Purpose::Receive;
 
-                let mut pair_info = AporturePairingProtocol::<Receiver>::new(passphrase)
-                    .pair()
-                    .await
-                    .unwrap();
+                sender.oneshot_command(async {
+                    let mut pair_info = AporturePairingProtocol::<Receiver>::new(passphrase)
+                        .pair()
+                        .await
+                        .unwrap();
 
-                aporture::transfer::receive_file(destination, &mut pair_info).await;
+                    aporture::transfer::receive_file(destination, &mut pair_info).await;
 
-                sender
-                    .output(Output::Success)
-                    .expect("Message returned to main thread");
+                    pair_info.finalize().await;
 
-                pair_info.finalize().await;
+                    Output::Success
+                })
             }
+        }
+    }
+
+    fn update_cmd(
+        &mut self,
+        message: Self::CommandOutput,
+        sender: ComponentSender<Self>,
+        _: &Self::Root,
+    ) {
+        match message {
+            Output::Success => sender
+                .output(Output::Success)
+                .expect("Message returned to main thread"),
         }
 
         self.visible = false;

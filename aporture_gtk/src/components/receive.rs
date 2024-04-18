@@ -7,7 +7,7 @@ use crate::components::dialog::{AportureDialog, AportureInput, Purpose};
 pub struct ReceiverPage {
     passphrase: gtk::EntryBuffer,
     passphrase_empty: bool,
-    aporture_dialog: AsyncController<AportureDialog>,
+    aporture_dialog: Controller<AportureDialog>,
     form_disabled: bool,
 }
 

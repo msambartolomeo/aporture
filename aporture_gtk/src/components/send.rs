@@ -16,7 +16,7 @@ pub struct SenderPage {
     file_path: Option<PathBuf>,
     file_name: Option<String>,
     file_picker_dialog: Controller<OpenDialog>,
-    aporture_dialog: AsyncController<AportureDialog>,
+    aporture_dialog: Controller<AportureDialog>,
     form_disabled: bool,
 }
 
