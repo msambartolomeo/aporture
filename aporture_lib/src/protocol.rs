@@ -80,9 +80,6 @@ pub struct FileData {
     pub file_size: [u8; 8],
 
     pub file_name: PathBuf,
-
-    // TODO: Remove
-    pub file: Vec<u8>,
 }
 
 pub trait Parser: Serialize + for<'a> Deserialize<'a> {
@@ -233,7 +230,6 @@ mod test {
             hash: [1; 32],
             file_size: 1usize.to_be_bytes(),
             file_name: PathBuf::new(),
-            file: Vec::new(),
         };
 
         let serialized = file_data.serialize_to();

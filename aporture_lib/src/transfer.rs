@@ -36,7 +36,6 @@ pub async fn send_file(file: &Path, pair_info: &mut PairInfo) {
         hash: *hash.as_bytes(),
         file_size: file.len().to_be_bytes(),
         file_name: PathBuf::new(),
-        file: Vec::new(),
     };
 
     peer.write_ser_enc(&file_data).await.unwrap();
@@ -70,7 +69,6 @@ pub async fn receive_file(dest: Option<PathBuf>, pair_info: &mut PairInfo) {
     let file_data = peer.read_ser_enc::<FileData>().await.unwrap();
     // TODO: Use file name if exists
 
-    // TODO: Check why normal vector does not work and fix
     let mut file = vec![0; usize::from_be_bytes(file_data.file_size)];
 
     peer.read_enc(&mut file).await.unwrap();
@@ -112,7 +110,6 @@ async fn find_peer(
     }
 }
 
-// TODO: Add timeout somehow
 async fn bind(
     bind_address: SocketAddr,
     full_address: SocketAddr,
@@ -125,7 +122,7 @@ async fn bind(
 
     let listener = TcpListener::bind(bind_address).await?;
 
-    let (peer, _) = listener.accept().await?;
+    let (peer, _) = tokio::time::timeout(Duration::from_secs(5), listener.accept()).await??;
 
     Ok((peer, full_address))
 }
