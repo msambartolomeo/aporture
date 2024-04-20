@@ -1,6 +1,6 @@
 use crate::net::NetworkPeer;
 use crate::pairing::PairInfo;
-use crate::protocol::{FileData, ResponseCode};
+use crate::protocol::{FileData, TransferResponseCode};
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -10,7 +10,10 @@ use directories::UserDirs;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 
-pub async fn send_file(file: &Path, pair_info: &mut PairInfo) {
+mod error;
+pub use error::{Receive as ReceiveError, Send as SendError};
+
+pub async fn send_file(file: &Path, pair_info: &mut PairInfo) -> Result<(), error::Send> {
     // TODO: Find better alternative
     // NOTE: Sleep to give time to receiver to bind
     tokio::time::sleep(Duration::from_secs(1)).await;
@@ -28,7 +31,7 @@ pub async fn send_file(file: &Path, pair_info: &mut PairInfo) {
     peer.add_cipher(pair_info.cipher().clone());
 
     // TODO: Buffer file
-    let mut file = std::fs::read(file).unwrap();
+    let mut file = tokio::fs::read(file).await?;
 
     let hash = blake3::hash(&file);
 
@@ -38,16 +41,27 @@ pub async fn send_file(file: &Path, pair_info: &mut PairInfo) {
         file_name: PathBuf::new(),
     };
 
-    peer.write_ser_enc(&file_data).await.unwrap();
-    peer.write_enc(&mut file).await.unwrap();
+    peer.write_ser_enc(&file_data).await?;
+    peer.write_enc(&mut file).await?;
 
-    let response = peer.read_ser_enc::<ResponseCode>().await.unwrap();
+    let response = peer.read_ser_enc::<TransferResponseCode>().await?;
 
-    // TODO: Real response
-    assert_eq!(response, ResponseCode::Ok, "Error sending file");
+    match response {
+        TransferResponseCode::Ok => {
+            log::info!("File transfered correctly");
+            Ok(())
+        }
+        TransferResponseCode::HashMismatch => {
+            log::error!("Hash mismatch in file transfer");
+            Err(error::Send::HashMismatch)
+        }
+    }
 }
 
-pub async fn receive_file(dest: Option<PathBuf>, pair_info: &mut PairInfo) {
+pub async fn receive_file(
+    dest: Option<PathBuf>,
+    pair_info: &mut PairInfo,
+) -> Result<PathBuf, error::Receive> {
     let dest = dest.unwrap_or_else(|| {
         UserDirs::new()
             .and_then(|dirs| dirs.download_dir().map(Path::to_path_buf))
@@ -66,23 +80,26 @@ pub async fn receive_file(dest: Option<PathBuf>, pair_info: &mut PairInfo) {
 
     peer.add_cipher(pair_info.cipher().clone());
 
-    let file_data = peer.read_ser_enc::<FileData>().await.unwrap();
+    let file_data = peer.read_ser_enc::<FileData>().await?;
     // TODO: Use file name if exists
 
     let mut file = vec![0; usize::from_be_bytes(file_data.file_size)];
 
-    peer.read_enc(&mut file).await.unwrap();
+    peer.read_enc(&mut file).await?;
 
-    peer.write_ser_enc(&ResponseCode::Ok).await.unwrap();
+    let hash = blake3::hash(&file);
 
-    // TODO: Handle Error
-    assert_eq!(
-        blake3::hash(&file),
-        file_data.hash,
-        "Error in file transfer, hashes are not the same"
-    );
+    let response = if hash == file_data.hash {
+        TransferResponseCode::Ok
+    } else {
+        TransferResponseCode::HashMismatch
+    };
 
-    std::fs::write(dest, file).expect("Can write file");
+    peer.write_ser_enc(&response).await?;
+
+    tokio::fs::write(&dest, file).await?;
+
+    Ok(dest)
 }
 
 async fn find_peer(

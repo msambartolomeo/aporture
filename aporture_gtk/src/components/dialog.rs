@@ -97,7 +97,9 @@ impl Component for AportureTransfer {
                         .await
                         .unwrap();
 
-                    aporture::transfer::send_file(&path, &mut pair_info).await;
+                    aporture::transfer::send_file(&path, &mut pair_info)
+                        .await
+                        .unwrap();
 
                     pair_info.finalize().await;
 
@@ -116,7 +118,9 @@ impl Component for AportureTransfer {
                         .await
                         .unwrap();
 
-                    aporture::transfer::receive_file(destination, &mut pair_info).await;
+                    aporture::transfer::receive_file(destination, &mut pair_info)
+                        .await
+                        .unwrap();
 
                     pair_info.finalize().await;
 

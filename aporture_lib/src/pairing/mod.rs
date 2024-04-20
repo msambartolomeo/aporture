@@ -7,7 +7,7 @@ use tokio::net::TcpStream;
 
 use crate::crypto::Cipher;
 use crate::net::NetworkPeer;
-use crate::protocol::{Hello, KeyExchangePayload, PairKind, ResponseCode};
+use crate::protocol::{Hello, KeyExchangePayload, PairKind, PairingResponseCode};
 use crate::upnp::{self, Gateway};
 
 pub mod error;
@@ -132,7 +132,7 @@ impl<K: Kind + Send> AporturePairingProtocol<Start<K>> {
 
         server.write_ser(&hello).await?;
 
-        let response = server.read_ser::<ResponseCode>().await?;
+        let response = server.read_ser::<PairingResponseCode>().await?;
 
         let mut app = AporturePairingProtocol {
             data: self.data,
@@ -144,14 +144,14 @@ impl<K: Kind + Send> AporturePairingProtocol<Start<K>> {
         };
 
         match response {
-            ResponseCode::Ok => Ok(app),
-            ResponseCode::OkSamePublicIP => {
+            PairingResponseCode::Ok => Ok(app),
+            PairingResponseCode::OkSamePublicIP => {
                 app.data.same_public_ip = true;
                 Ok(app)
             }
-            ResponseCode::UnsupportedVersion => Err(error::Hello::ServerUnsupportedVersion),
-            ResponseCode::NoPeer => Err(error::Hello::NoPeer),
-            ResponseCode::MalformedMessage => Err(error::Hello::ClientError),
+            PairingResponseCode::UnsupportedVersion => Err(error::Hello::ServerUnsupportedVersion),
+            PairingResponseCode::NoPeer => Err(error::Hello::NoPeer),
+            PairingResponseCode::MalformedMessage => Err(error::Hello::ClientError),
         }
     }
 }

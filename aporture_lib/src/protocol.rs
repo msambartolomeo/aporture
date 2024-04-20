@@ -29,7 +29,7 @@ pub struct Hello {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize_repr, Serialize_repr)]
 #[repr(u8)]
-pub enum ResponseCode {
+pub enum PairingResponseCode {
     // NOTE: Okay types
     Ok = 0,
     OkSamePublicIP = 3,
@@ -82,6 +82,13 @@ pub struct FileData {
     pub file_name: PathBuf,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize_repr, Serialize_repr)]
+#[repr(u8)]
+pub enum TransferResponseCode {
+    Ok = 0,
+    HashMismatch = 1,
+}
+
 pub trait Parser: Serialize + for<'a> Deserialize<'a> {
     type MinimumSerializedSize: ArrayLength;
 
@@ -114,7 +121,7 @@ impl Parser for Hello {
     type MinimumSerializedSize = generic_array::typenum::U67;
 }
 
-impl Parser for ResponseCode {
+impl Parser for PairingResponseCode {
     type MinimumSerializedSize = generic_array::typenum::U3;
 }
 
@@ -134,6 +141,10 @@ impl Parser for FileData {
     type MinimumSerializedSize = generic_array::typenum::U77;
 }
 
+impl Parser for TransferResponseCode {
+    type MinimumSerializedSize = generic_array::typenum::U3;
+}
+
 impl<P: Parser> Parser for Vec<P> {
     type MinimumSerializedSize = P::MinimumSerializedSize;
 }
@@ -144,13 +155,13 @@ mod test {
 
     #[test]
     fn test_response_ser_de() {
-        let response = ResponseCode::Ok;
+        let response = PairingResponseCode::Ok;
 
         let serialized = response.serialize_to();
 
-        assert_eq!(ResponseCode::serialized_size(), serialized.len());
+        assert_eq!(PairingResponseCode::serialized_size(), serialized.len());
 
-        let deserialized = ResponseCode::deserialize_from(&serialized).unwrap();
+        let deserialized = PairingResponseCode::deserialize_from(&serialized).unwrap();
 
         assert_eq!(response, deserialized);
     }
@@ -239,5 +250,18 @@ mod test {
         let deserialized = FileData::deserialize_from(&serialized).unwrap();
 
         assert_eq!(file_data, deserialized);
+    }
+
+    #[test]
+    fn test_transfer_response_ser_de() {
+        let response = TransferResponseCode::Ok;
+
+        let serialized = response.serialize_to();
+
+        assert_eq!(TransferResponseCode::serialized_size(), serialized.len());
+
+        let deserialized = TransferResponseCode::deserialize_from(&serialized).unwrap();
+
+        assert_eq!(response, deserialized);
     }
 }

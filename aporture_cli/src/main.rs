@@ -43,7 +43,7 @@ async fn main() {
 
             let mut pair_info = app.pair().await.unwrap();
 
-            transfer::send_file(&path, &mut pair_info).await;
+            transfer::send_file(&path, &mut pair_info).await.unwrap();
 
             pair_info.finalize().await;
         }
@@ -61,7 +61,9 @@ async fn main() {
 
             let mut pair_info = app.pair().await.unwrap();
 
-            transfer::receive_file(destination, &mut pair_info).await;
+            transfer::receive_file(destination, &mut pair_info)
+                .await
+                .unwrap();
 
             pair_info.finalize().await;
         }
