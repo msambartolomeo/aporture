@@ -71,11 +71,18 @@ impl Cipher {
             None => &self.key,
         };
         self.aead
-            .decrypt_in_place_detached(nonce.into(), associated_data, cipher, tag.into())
-            .map_err(|_| DecryptError)
+            .decrypt_in_place_detached(nonce.into(), associated_data, cipher, tag.into())?;
+
+        Ok(())
     }
 }
 
 #[derive(Debug, Error)]
 #[error("Failure verifying MAC")]
 pub struct DecryptError;
+
+impl From<aes_gcm_siv::Error> for DecryptError {
+    fn from(_: aes_gcm_siv::Error) -> Self {
+        Self
+    }
+}

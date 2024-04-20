@@ -2,7 +2,7 @@ use thiserror::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
-use crate::crypto::{Cipher, DecryptError};
+use crate::crypto::Cipher;
 use crate::protocol::Parser;
 
 #[derive(Debug)]
@@ -30,42 +30,36 @@ impl NetworkPeer {
     pub async fn write_ser<P: Parser + Sync>(&mut self, input: &P) -> Result<(), Error> {
         let in_buf = input.serialize_to();
 
-        self.stream
-            .write_all(&in_buf.len().to_be_bytes())
-            .await
-            .map_err(Error::IO)?;
+        self.stream.write_all(&in_buf.len().to_be_bytes()).await?;
 
-        self.stream.write_all(&in_buf).await.map_err(Error::IO)
+        self.stream.write_all(&in_buf).await?;
+
+        Ok(())
     }
 
     pub async fn read_ser<P: Parser + Sync>(&mut self) -> Result<P, Error> {
         let mut length = [0; 8];
 
-        self.stream
-            .read_exact(&mut length)
-            .await
-            .map_err(Error::IO)?;
+        self.stream.read_exact(&mut length).await?;
 
         let length = usize::from_be_bytes(length);
 
         if length == P::serialized_size() {
             let mut buffer = P::buffer();
 
-            self.stream
-                .read_exact(&mut buffer)
-                .await
-                .map_err(Error::IO)?;
+            self.stream.read_exact(&mut buffer).await?;
 
-            P::deserialize_from(&buffer).map_err(Error::SerDe)
+            let deserialized = P::deserialize_from(&buffer)?;
+
+            Ok(deserialized)
         } else {
             let mut buffer = vec![0; length];
 
-            self.stream
-                .read_exact(&mut buffer)
-                .await
-                .map_err(Error::IO)?;
+            self.stream.read_exact(&mut buffer).await?;
 
-            P::deserialize_from(&buffer).map_err(Error::SerDe)
+            let deserialized = P::deserialize_from(&buffer)?;
+
+            Ok(deserialized)
         }
     }
 
@@ -76,12 +70,11 @@ impl NetworkPeer {
 
         let mut buf = input.serialize_to();
 
-        self.stream
-            .write_all(&buf.len().to_be_bytes())
-            .await
-            .map_err(Error::IO)?;
+        self.stream.write_all(&buf.len().to_be_bytes()).await?;
 
-        self.write_enc(&mut buf).await
+        self.write_enc(&mut buf).await?;
+
+        Ok(())
     }
 
     pub async fn write_enc(&mut self, input: &mut [u8]) -> Result<(), Error> {
@@ -91,9 +84,9 @@ impl NetworkPeer {
 
         let (nonce, tag) = cipher.encrypt(input);
 
-        self.stream.write_all(&nonce).await.map_err(Error::IO)?;
-        self.stream.write_all(input).await.map_err(Error::IO)?;
-        self.stream.write_all(&tag).await.map_err(Error::IO)?;
+        self.stream.write_all(&nonce).await?;
+        self.stream.write_all(input).await?;
+        self.stream.write_all(&tag).await?;
 
         Ok(())
     }
@@ -105,10 +98,7 @@ impl NetworkPeer {
 
         let mut length = [0; 8];
 
-        self.stream
-            .read_exact(&mut length)
-            .await
-            .map_err(Error::IO)?;
+        self.stream.read_exact(&mut length).await?;
 
         let length = usize::from_be_bytes(length);
 
@@ -117,13 +107,17 @@ impl NetworkPeer {
 
             self.read_enc(&mut buffer).await?;
 
-            P::deserialize_from(&buffer).map_err(Error::SerDe)
+            let deserialized = P::deserialize_from(&buffer)?;
+
+            Ok(deserialized)
         } else {
             let mut buffer = vec![0; length];
 
             self.read_enc(&mut buffer).await?;
 
-            P::deserialize_from(&buffer).map_err(Error::SerDe)
+            let deserialized = P::deserialize_from(&buffer)?;
+
+            Ok(deserialized)
         }
     }
 
@@ -135,14 +129,13 @@ impl NetworkPeer {
         let mut nonce = [0; 12];
         let mut tag = [0; 16];
 
-        self.stream
-            .read_exact(&mut nonce)
-            .await
-            .map_err(Error::IO)?;
-        self.stream.read_exact(buffer).await.map_err(Error::IO)?;
-        self.stream.read_exact(&mut tag).await.map_err(Error::IO)?;
+        self.stream.read_exact(&mut nonce).await?;
+        self.stream.read_exact(buffer).await?;
+        self.stream.read_exact(&mut tag).await?;
 
-        cipher.decrypt(buffer, &nonce, &tag).map_err(Error::Cipher)
+        cipher.decrypt(buffer, &nonce, &tag)?;
+
+        Ok(())
     }
 }
 
@@ -155,8 +148,26 @@ pub enum Error {
     SerDe(serde_bencode::Error),
 
     #[error("Cipher error: {0}")]
-    Cipher(DecryptError),
+    Cipher(crate::crypto::DecryptError),
 
     #[error("No cipher configured for this method.")]
     NoCipher,
+}
+
+impl From<std::io::Error> for Error {
+    fn from(value: std::io::Error) -> Self {
+        Self::IO(value)
+    }
+}
+
+impl From<serde_bencode::Error> for Error {
+    fn from(value: serde_bencode::Error) -> Self {
+        Self::SerDe(value)
+    }
+}
+
+impl From<crate::crypto::DecryptError> for Error {
+    fn from(value: crate::crypto::DecryptError) -> Self {
+        Self::Cipher(value)
+    }
 }
