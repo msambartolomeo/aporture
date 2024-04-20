@@ -13,7 +13,11 @@ use tokio::task::JoinSet;
 mod error;
 pub use error::{Receive as ReceiveError, Send as SendError};
 
-pub async fn send_file(file: &Path, pair_info: &mut PairInfo) -> Result<(), error::Send> {
+pub async fn send_file(path: &Path, pair_info: &mut PairInfo) -> Result<(), error::Send> {
+    let Some(file_name) = path.file_name() else {
+        return Err(error::Send::Path);
+    };
+
     // TODO: Find better alternative
     // NOTE: Sleep to give time to receiver to bind
     tokio::time::sleep(Duration::from_secs(1)).await;
@@ -31,14 +35,15 @@ pub async fn send_file(file: &Path, pair_info: &mut PairInfo) -> Result<(), erro
     peer.add_cipher(pair_info.cipher().clone());
 
     // TODO: Buffer file
-    let mut file = tokio::fs::read(file).await?;
+    let mut file = tokio::fs::read(path).await?;
 
     let hash = blake3::hash(&file);
 
     let file_data = FileData {
         hash: *hash.as_bytes(),
         file_size: file.len().to_be_bytes(),
-        file_name: PathBuf::new(),
+        // TODO: Test if this works cross platform (test also file_name.to_string_lossy())
+        file_name: file_name.to_owned(),
     };
 
     peer.write_ser_enc(&file_data).await?;
@@ -62,7 +67,7 @@ pub async fn receive_file(
     dest: Option<PathBuf>,
     pair_info: &mut PairInfo,
 ) -> Result<PathBuf, error::Receive> {
-    let dest = dest.unwrap_or_else(|| {
+    let mut dest = dest.unwrap_or_else(|| {
         UserDirs::new()
             .and_then(|dirs| dirs.download_dir().map(Path::to_path_buf))
             .expect("Valid Download Directory")
@@ -81,7 +86,10 @@ pub async fn receive_file(
     peer.add_cipher(pair_info.cipher().clone());
 
     let file_data = peer.read_ser_enc::<FileData>().await?;
-    // TODO: Use file name if exists
+
+    if dest.is_dir() {
+        dest.push(file_data.file_name);
+    }
 
     let mut file = vec![0; usize::from_be_bytes(file_data.file_size)];
 

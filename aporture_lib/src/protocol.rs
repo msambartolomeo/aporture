@@ -1,5 +1,5 @@
+use std::ffi::OsString;
 use std::net::SocketAddr;
-use std::path::PathBuf;
 
 use generic_array::typenum::Unsigned;
 use generic_array::{ArrayLength, GenericArray};
@@ -79,7 +79,7 @@ pub struct FileData {
     #[serde_as(as = "Bytes")]
     pub file_size: [u8; 8],
 
-    pub file_name: PathBuf,
+    pub file_name: OsString,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize_repr, Serialize_repr)]
@@ -240,10 +240,12 @@ mod test {
         let file_data = FileData {
             hash: [1; 32],
             file_size: 1usize.to_be_bytes(),
-            file_name: PathBuf::new(),
+            file_name: OsString::new(),
         };
 
         let serialized = file_data.serialize_to();
+
+        println!("{}", serde_bencode::ser::to_string(&file_data).unwrap());
 
         assert_eq!(FileData::serialized_size(), serialized.len());
 

@@ -2,6 +2,8 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Send {
+    #[error("The selected file is not a regular file, it may be a folder")]
+    Path,
     #[error("Could not open file to send")]
     File(std::io::Error),
     #[error("Could not send file to peer over the network")]
