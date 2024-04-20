@@ -1,9 +1,11 @@
-use thiserror::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 use crate::crypto::Cipher;
 use crate::protocol::Parser;
+
+mod error;
+pub use error::Error;
 
 #[derive(Debug)]
 pub struct NetworkPeer {
@@ -136,38 +138,5 @@ impl NetworkPeer {
         cipher.decrypt(buffer, &nonce, &tag)?;
 
         Ok(())
-    }
-}
-
-#[derive(Debug, Error)]
-pub enum Error {
-    #[error("Network failure: {0}")]
-    IO(std::io::Error),
-
-    #[error("Serde error: {0}")]
-    SerDe(serde_bencode::Error),
-
-    #[error("Cipher error: {0}")]
-    Cipher(crate::crypto::DecryptError),
-
-    #[error("No cipher configured for this method.")]
-    NoCipher,
-}
-
-impl From<std::io::Error> for Error {
-    fn from(value: std::io::Error) -> Self {
-        Self::IO(value)
-    }
-}
-
-impl From<serde_bencode::Error> for Error {
-    fn from(value: serde_bencode::Error) -> Self {
-        Self::SerDe(value)
-    }
-}
-
-impl From<crate::crypto::DecryptError> for Error {
-    fn from(value: crate::crypto::DecryptError) -> Self {
-        Self::Cipher(value)
     }
 }

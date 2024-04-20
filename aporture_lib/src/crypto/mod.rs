@@ -2,7 +2,9 @@ use aes_gcm_siv::aead::generic_array::GenericArray;
 use aes_gcm_siv::aead::AeadInPlace;
 use aes_gcm_siv::{Aes256GcmSiv, KeyInit};
 use rand::RngCore;
-use thiserror::Error;
+
+mod error;
+pub use error::Error;
 
 #[derive(Clone)]
 pub struct Cipher {
@@ -65,7 +67,7 @@ impl Cipher {
         cipher: &mut [u8],
         nonce: &[u8; 12],
         tag: &[u8; 16],
-    ) -> Result<(), DecryptError> {
+    ) -> Result<(), Error> {
         let associated_data = match self.associated_data {
             Some(ref ad) => ad,
             None => &self.key,
@@ -74,15 +76,5 @@ impl Cipher {
             .decrypt_in_place_detached(nonce.into(), associated_data, cipher, tag.into())?;
 
         Ok(())
-    }
-}
-
-#[derive(Debug, Error)]
-#[error("Failure verifying MAC")]
-pub struct DecryptError;
-
-impl From<aes_gcm_siv::Error> for DecryptError {
-    fn from(_: aes_gcm_siv::Error) -> Self {
-        Self
     }
 }

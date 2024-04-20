@@ -3,13 +3,15 @@ use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 
 use blake3::Hash;
 use spake2::{Ed25519Group, Identity, Password, Spake2};
-use thiserror::Error;
 use tokio::net::TcpStream;
 
 use crate::crypto::Cipher;
 use crate::net::NetworkPeer;
 use crate::protocol::{Hello, KeyExchangePayload, PairKind, ResponseCode};
 use crate::upnp::{self, Gateway};
+
+pub mod error;
+pub use error::Error;
 
 const SERVER_ADDRESS: &str = "127.0.0.1:8080";
 const DEFAULT_RECEIVER_PORT: u16 = 8082;
@@ -115,7 +117,7 @@ impl AporturePairingProtocol<Start<Receiver>> {
 }
 
 impl<K: Kind + Send> AporturePairingProtocol<Start<K>> {
-    pub async fn connect(self) -> Result<AporturePairingProtocol<KeyExchange<K>>, HelloError> {
+    pub async fn connect(self) -> Result<AporturePairingProtocol<KeyExchange<K>>, error::Hello> {
         let server = TcpStream::connect(SERVER_ADDRESS).await?;
 
         let mut server = NetworkPeer::new(server);
@@ -147,9 +149,9 @@ impl<K: Kind + Send> AporturePairingProtocol<Start<K>> {
                 app.data.same_public_ip = true;
                 Ok(app)
             }
-            ResponseCode::UnsupportedVersion => Err(HelloError::ServerUnsupportedVersion),
-            ResponseCode::NoPeer => Err(HelloError::NoPeer),
-            ResponseCode::MalformedMessage => Err(HelloError::ClientError),
+            ResponseCode::UnsupportedVersion => Err(error::Hello::ServerUnsupportedVersion),
+            ResponseCode::NoPeer => Err(error::Hello::NoPeer),
+            ResponseCode::MalformedMessage => Err(error::Hello::ClientError),
         }
     }
 }
@@ -165,7 +167,7 @@ impl<K: Kind> State for KeyExchange<K> {}
 impl<K: Kind + Send> AporturePairingProtocol<KeyExchange<K>> {
     pub async fn exchange_key(
         mut self,
-    ) -> Result<AporturePairingProtocol<AddressNegotiation<K>>, KeyExchangeError> {
+    ) -> Result<AporturePairingProtocol<AddressNegotiation<K>>, error::KeyExchange> {
         let password = &Password::new(&self.data.passphrase);
         let identity = &Identity::new(self.state.id.as_bytes());
 
@@ -212,7 +214,7 @@ impl<K: Kind> AddressNegotiation<K> {
 }
 
 impl AporturePairingProtocol<AddressNegotiation<Sender>> {
-    pub async fn exchange_addr(mut self) -> Result<PairInfo, AddressExchangeError> {
+    pub async fn exchange_addr(mut self) -> Result<PairInfo, error::AddressExchange> {
         let addresses = self.state.server.read_ser_enc::<Vec<SocketAddr>>().await?;
 
         let cipher = self
@@ -230,7 +232,7 @@ impl AporturePairingProtocol<AddressNegotiation<Sender>> {
 }
 
 impl AporturePairingProtocol<AddressNegotiation<Receiver>> {
-    pub async fn exchange_addr(mut self) -> Result<PairInfo, AddressExchangeError> {
+    pub async fn exchange_addr(mut self) -> Result<PairInfo, error::AddressExchange> {
         let addresses = self
             .state
             .addresses
@@ -358,89 +360,5 @@ impl TransferInfo {
                 let _ = gateway.close_port().await;
             }
         }
-    }
-}
-
-#[derive(Debug, Error)]
-pub enum Error {
-    #[error("{0}")]
-    Hello(HelloError),
-    #[error("{0}")]
-    KeyExchange(KeyExchangeError),
-    #[error("{0}")]
-    AddressExchange(AddressExchangeError),
-}
-
-impl From<HelloError> for Error {
-    fn from(value: HelloError) -> Self {
-        Self::Hello(value)
-    }
-}
-
-impl From<KeyExchangeError> for Error {
-    fn from(value: KeyExchangeError) -> Self {
-        Self::KeyExchange(value)
-    }
-}
-
-impl From<AddressExchangeError> for Error {
-    fn from(value: AddressExchangeError) -> Self {
-        Self::AddressExchange(value)
-    }
-}
-
-#[derive(Debug, Error)]
-pub enum HelloError {
-    #[error("Could not connect to server: {0}")]
-    NoServer(std::io::Error),
-    #[error("Peer has not yet arrived")]
-    NoPeer,
-    #[error("The selected server does not implement APP version {PROTOCOL_VERSION}")]
-    ServerUnsupportedVersion,
-    #[error("Server behaved incorrectly on connection: {0}")]
-    ServerError(crate::net::Error),
-    #[error("Message send to server was invalid")]
-    ClientError,
-}
-
-impl From<crate::net::Error> for HelloError {
-    fn from(value: crate::net::Error) -> Self {
-        Self::ServerError(value)
-    }
-}
-
-impl From<std::io::Error> for HelloError {
-    fn from(value: std::io::Error) -> Self {
-        Self::NoServer(value)
-    }
-}
-
-#[derive(Debug, Error)]
-pub enum KeyExchangeError {
-    #[error("Error exchanging key with peer: {0}")]
-    NetworkError(crate::net::Error),
-    #[error("Invalid key derivation")]
-    KeyDerivationError,
-}
-
-impl From<crate::net::Error> for KeyExchangeError {
-    fn from(value: crate::net::Error) -> Self {
-        Self::NetworkError(value)
-    }
-}
-
-impl From<spake2::Error> for KeyExchangeError {
-    fn from(_: spake2::Error) -> Self {
-        Self::KeyDerivationError
-    }
-}
-
-#[derive(Debug, Error)]
-#[error("Error exchanging defined addresses with peer: {0}")]
-pub struct AddressExchangeError(crate::net::Error);
-
-impl From<crate::net::Error> for AddressExchangeError {
-    fn from(value: crate::net::Error) -> Self {
-        Self(value)
     }
 }
