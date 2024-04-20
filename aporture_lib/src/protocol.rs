@@ -83,16 +83,16 @@ pub struct FileData {
 }
 
 pub trait Parser: Serialize + for<'a> Deserialize<'a> {
-    type SerializedSize: ArrayLength;
+    type MinimumSerializedSize: ArrayLength;
 
     #[must_use]
-    fn buffer() -> GenericArray<u8, Self::SerializedSize> {
+    fn buffer() -> GenericArray<u8, Self::MinimumSerializedSize> {
         GenericArray::default()
     }
 
     #[must_use]
     fn serialized_size() -> usize {
-        <Self::SerializedSize as Unsigned>::to_usize()
+        <Self::MinimumSerializedSize as Unsigned>::to_usize()
     }
 
     fn serialize_to(&self) -> Vec<u8> {
@@ -107,35 +107,35 @@ pub trait Parser: Serialize + for<'a> Deserialize<'a> {
 }
 
 impl Parser for PairKind {
-    type SerializedSize = generic_array::typenum::U3;
+    type MinimumSerializedSize = generic_array::typenum::U3;
 }
 
 impl Parser for Hello {
-    type SerializedSize = generic_array::typenum::U67;
+    type MinimumSerializedSize = generic_array::typenum::U67;
 }
 
 impl Parser for ResponseCode {
-    type SerializedSize = generic_array::typenum::U3;
+    type MinimumSerializedSize = generic_array::typenum::U3;
 }
 
 impl Parser for KeyExchangePayload {
-    type SerializedSize = generic_array::typenum::U36;
+    type MinimumSerializedSize = generic_array::typenum::U36;
 }
 
 impl Parser for KeyConfirmationPayload {
-    type SerializedSize = generic_array::typenum::U47;
+    type MinimumSerializedSize = generic_array::typenum::U47;
 }
 
 impl Parser for SocketAddr {
-    type SerializedSize = generic_array::typenum::U11;
+    type MinimumSerializedSize = generic_array::typenum::U11;
 }
 
 impl Parser for FileData {
-    type SerializedSize = generic_array::typenum::U46;
+    type MinimumSerializedSize = generic_array::typenum::U77;
 }
 
 impl<P: Parser> Parser for Vec<P> {
-    type SerializedSize = P::SerializedSize;
+    type MinimumSerializedSize = P::MinimumSerializedSize;
 }
 
 #[cfg(test)]
