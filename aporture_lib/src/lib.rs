@@ -10,3 +10,5 @@ pub mod pairing;
 pub mod transfer;
 #[cfg(feature = "full")]
 mod upnp;
+
+pub mod passphrase;

@@ -1,5 +1,5 @@
 use aporture::pairing::{AporturePairingProtocol, Receiver, Sender};
-use aporture::transfer;
+use aporture::{passphrase, transfer};
 use args::{Cli, Commands, SendMethod};
 
 use clap::Parser;
@@ -81,5 +81,5 @@ fn get_passphrase(method: SendMethod) -> Vec<u8> {
         todo!("Add contacts")
     }
 
-    todo!("Add password generation")
+    passphrase::generate(4)
 }
