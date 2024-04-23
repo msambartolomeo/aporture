@@ -81,5 +81,9 @@ fn get_passphrase(method: SendMethod) -> Vec<u8> {
         todo!("Add contacts")
     }
 
-    passphrase::generate(4)
+    let passphrase = passphrase::generate(4);
+
+    println!("The selected passphrase for the transfer is {passphrase}");
+
+    passphrase.into_bytes()
 }
