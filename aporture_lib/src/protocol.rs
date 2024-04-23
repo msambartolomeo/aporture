@@ -149,7 +149,7 @@ impl Parser for SocketAddr {
 }
 
 impl Parser for FileData {
-    type MinimumSerializedSize = generic_array::typenum::U77;
+    type MinimumSerializedSize = generic_array::typenum::U85;
 }
 
 impl Parser for TransferResponseCode {
@@ -255,8 +255,6 @@ mod test {
         };
 
         let serialized = file_data.serialize_to();
-
-        println!("{}", serde_bencode::ser::to_string(&file_data).unwrap());
 
         assert_eq!(FileData::serialized_size(), serialized.len());
 
