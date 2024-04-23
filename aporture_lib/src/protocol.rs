@@ -14,6 +14,7 @@ pub enum PairKind {
     Receiver = 1,
 }
 
+pub const PROTOCOL_VERSION: u8 = 1;
 #[serde_as]
 #[derive(Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Hello {
@@ -25,6 +26,16 @@ pub struct Hello {
 
     #[serde_as(as = "Bytes")]
     pub pair_id: [u8; 32],
+}
+
+impl Hello {
+    pub fn new(kind: PairKind, pair_id: [u8; 32]) -> Self {
+        Self {
+            version: PROTOCOL_VERSION,
+            kind,
+            pair_id,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize_repr, Serialize_repr)]

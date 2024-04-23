@@ -8,8 +8,6 @@ use tokio::sync::{Mutex, MutexGuard};
 
 use aporture::protocol::{Hello, PairKind, PairingResponseCode, Parser};
 
-const SUPPORTED_VERSION: u8 = 1;
-
 pub struct Connection {
     pub socket: TcpStream,
     pub address: SocketAddr,
@@ -78,7 +76,7 @@ pub async fn handle_connection(
         return;
     };
 
-    if hello.version != SUPPORTED_VERSION {
+    if hello.version != aporture::protocol::PROTOCOL_VERSION {
         log::warn!("Not supported protocol version");
 
         let _ = connection

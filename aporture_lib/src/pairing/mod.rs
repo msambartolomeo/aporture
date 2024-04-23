@@ -15,7 +15,6 @@ pub use error::Error;
 
 const SERVER_ADDRESS: &str = "127.0.0.1:8080";
 const DEFAULT_RECEIVER_PORT: u16 = 8082;
-const PROTOCOL_VERSION: u8 = 1;
 
 pub struct AporturePairingProtocolState {
     protocol_version: u8,
@@ -41,7 +40,7 @@ impl AporturePairingProtocol<Sender> {
     #[must_use]
     pub fn new(passphrase: Vec<u8>) -> AporturePairingProtocol<Start<Sender>> {
         let state = AporturePairingProtocolState {
-            protocol_version: PROTOCOL_VERSION,
+            protocol_version: crate::protocol::PROTOCOL_VERSION,
             kind: PairKind::Sender,
             passphrase,
             same_public_ip: false,
@@ -62,7 +61,7 @@ impl AporturePairingProtocol<Receiver> {
     #[must_use]
     pub fn new(passphrase: Vec<u8>) -> AporturePairingProtocol<Start<Receiver>> {
         let state = AporturePairingProtocolState {
-            protocol_version: 1,
+            protocol_version: crate::protocol::PROTOCOL_VERSION,
             kind: PairKind::Receiver,
             passphrase,
             same_public_ip: false,

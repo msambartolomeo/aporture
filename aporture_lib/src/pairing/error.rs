@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+use crate::protocol::PROTOCOL_VERSION;
+
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("{0}")]
@@ -34,10 +36,7 @@ pub enum Hello {
     NoServer(std::io::Error),
     #[error("Peer has not yet arrived")]
     NoPeer,
-    #[error(
-        "The selected server does not implement APP version {}",
-        super::PROTOCOL_VERSION
-    )]
+    #[error("The selected server does not implement APP version {PROTOCOL_VERSION}")]
     ServerUnsupportedVersion,
     #[error("Server behaved incorrectly on connection: {0}")]
     ServerError(crate::net::Error),
