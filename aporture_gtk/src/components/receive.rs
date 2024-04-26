@@ -29,6 +29,8 @@ impl SimpleComponent for ReceiverPage {
             set_margin_horizontal: 20,
             set_margin_vertical: 50,
 
+            set_width_request: 250,
+
             set_title: "Receive",
             set_description: Some("Enter the passphrase shared by the sender"),
             #[wrap(Some)]
