@@ -17,12 +17,8 @@ pub enum Purpose {
     Receive,
 }
 
-#[derive(Debug)]
-pub enum Output {
-    Success,
-    // TODO: Handle errors
-    // Error,
-}
+mod error;
+pub use error::Error;
 
 #[derive(Debug)]
 pub enum AportureInput {
@@ -40,8 +36,8 @@ pub enum AportureInput {
 impl Component for AportureTransfer {
     type Init = Purpose;
     type Input = AportureInput;
-    type Output = Output;
-    type CommandOutput = Output;
+    type Output = Result<(), Error>;
+    type CommandOutput = Result<(), Error>;
 
     view! {
         dialog = gtk::Window {
@@ -86,6 +82,7 @@ impl Component for AportureTransfer {
 
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, _: &Self::Root) {
         self.visible = true;
+        // TODO: Show errors in screen
 
         match msg {
             AportureInput::SendFile { passphrase, path } => {
@@ -94,16 +91,13 @@ impl Component for AportureTransfer {
                 sender.oneshot_command(async move {
                     let mut pair_info = AporturePairingProtocol::<Sender>::new(passphrase)
                         .pair()
-                        .await
-                        .unwrap();
+                        .await?;
 
-                    aporture::transfer::send_file(&path, &mut pair_info)
-                        .await
-                        .unwrap();
+                    aporture::transfer::send_file(&path, &mut pair_info).await?;
 
                     pair_info.finalize().await;
 
-                    Output::Success
+                    Ok(())
                 });
             }
             AportureInput::ReceiveFile {
@@ -115,16 +109,13 @@ impl Component for AportureTransfer {
                 sender.oneshot_command(async {
                     let mut pair_info = AporturePairingProtocol::<Receiver>::new(passphrase)
                         .pair()
-                        .await
-                        .unwrap();
+                        .await?;
 
-                    aporture::transfer::receive_file(destination, &mut pair_info)
-                        .await
-                        .unwrap();
+                    aporture::transfer::receive_file(destination, &mut pair_info).await?;
 
                     pair_info.finalize().await;
 
-                    Output::Success
+                    Ok(())
                 });
             }
         }
@@ -136,11 +127,9 @@ impl Component for AportureTransfer {
         sender: ComponentSender<Self>,
         _: &Self::Root,
     ) {
-        match message {
-            Output::Success => sender
-                .output(Output::Success)
-                .expect("Message returned to main thread"),
-        }
+        sender
+            .output(message)
+            .expect("Message returned to the main thread");
 
         self.visible = false;
     }

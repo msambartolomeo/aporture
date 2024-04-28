@@ -29,7 +29,8 @@ pub struct Hello {
 }
 
 impl Hello {
-    pub fn new(kind: PairKind, pair_id: [u8; 32]) -> Self {
+    #[must_use]
+    pub const fn new(kind: PairKind, pair_id: [u8; 32]) -> Self {
         Self {
             version: PROTOCOL_VERSION,
             kind,
