@@ -6,9 +6,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::{Mutex, MutexGuard};
 
-use aporture::protocol::{Hello, PairKind, Parser, ResponseCode};
-
-const SUPPORTED_VERSION: u8 = 1;
+use aporture::protocol::{Hello, PairKind, PairingResponseCode, Parser};
 
 pub struct Connection {
     pub socket: TcpStream,
@@ -16,8 +14,14 @@ pub struct Connection {
 }
 
 impl Connection {
-    pub async fn send_response(&mut self, response: ResponseCode) -> Result<(), std::io::Error> {
-        self.socket.write_all(&response.serialize_to()).await
+    pub async fn send_response(
+        &mut self,
+        response: PairingResponseCode,
+    ) -> Result<(), std::io::Error> {
+        let response = response.serialize_to();
+
+        self.socket.write_all(&response.len().to_be_bytes()).await?;
+        self.socket.write_all(&response).await
     }
 }
 
@@ -31,13 +35,31 @@ pub async fn handle_connection(
     mut connection: Connection,
     map: Arc<Mutex<HashMap<[u8; 32], Connection>>>,
 ) {
-    let mut buf = [0; Hello::SERIALIZED_SIZE];
+    let mut length = [0; 8];
+
+    if let Err(e) = connection.socket.read_exact(&mut length).await {
+        log::warn!("No hello message length received: {e}");
+
+        let _ = connection
+            .send_response(PairingResponseCode::MalformedMessage)
+            .await;
+    }
+
+    let mut buf = Hello::buffer();
+    if buf.len() != usize::from_be_bytes(length) {
+        log::warn!("Invalid hello message length");
+        let _ = connection
+            .send_response(PairingResponseCode::MalformedMessage)
+            .await;
+
+        return;
+    }
 
     if let Err(e) = connection.socket.read_exact(&mut buf).await {
         if e.kind() == std::io::ErrorKind::UnexpectedEof {
             log::warn!("Content does not match APP hello message length: {e}");
             let _ = connection
-                .send_response(ResponseCode::MalformedMessage)
+                .send_response(PairingResponseCode::MalformedMessage)
                 .await;
         } else {
             log::warn!("Error reading APP hello message: {e}");
@@ -49,16 +71,16 @@ pub async fn handle_connection(
     let Ok(hello) = Hello::deserialize_from(&buf) else {
         log::warn!("Hello message does not match APP hello");
         let _ = connection
-            .send_response(ResponseCode::MalformedMessage)
+            .send_response(PairingResponseCode::MalformedMessage)
             .await;
         return;
     };
 
-    if hello.version != SUPPORTED_VERSION {
+    if hello.version != aporture::protocol::PROTOCOL_VERSION {
         log::warn!("Not supported protocol version");
 
         let _ = connection
-            .send_response(ResponseCode::UnsupportedVersion)
+            .send_response(PairingResponseCode::UnsupportedVersion)
             .await;
 
         return;
@@ -95,7 +117,7 @@ async fn handle_receiver<'a>(
 
         log::warn!("Sender must arrive first and has not");
 
-        let _ = receiver.send_response(ResponseCode::NoPeer).await;
+        let _ = receiver.send_response(PairingResponseCode::NoPeer).await;
 
         return;
     };
@@ -104,15 +126,15 @@ async fn handle_receiver<'a>(
     drop(map);
 
     let response = if receiver.address.ip() == sender.address.ip() {
-        ResponseCode::OkSamePublicIP
+        PairingResponseCode::OkSamePublicIP
     } else {
-        ResponseCode::Ok
+        PairingResponseCode::Ok
     };
 
     if sender.send_response(response).await.is_err() {
         log::warn!("Connection closed from sender");
 
-        let _ = receiver.send_response(ResponseCode::NoPeer).await;
+        let _ = receiver.send_response(PairingResponseCode::NoPeer).await;
 
         return;
     }
@@ -120,7 +142,7 @@ async fn handle_receiver<'a>(
     if receiver.send_response(response).await.is_err() {
         log::warn!("Connection closed from receiver");
 
-        let _ = sender.send_response(ResponseCode::NoPeer).await;
+        let _ = sender.send_response(PairingResponseCode::NoPeer).await;
 
         return;
     }

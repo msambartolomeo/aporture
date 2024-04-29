@@ -1,5 +1,4 @@
-use aporture::pairing::AporturePairingProtocol;
-use aporture::protocol::PairKind;
+use aporture::pairing::{AporturePairingProtocol, Receiver, Sender};
 use aporture::transfer;
 use args::{Cli, Commands, SendMethod};
 
@@ -27,7 +26,8 @@ fn init_logger() {
         .init();
 }
 
-fn main() {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     init_logger();
 
     let args = Cli::parse();
@@ -39,11 +39,13 @@ fn main() {
             save: _,
         } => {
             let passphrase = get_passphrase(method);
-            let app = AporturePairingProtocol::new(PairKind::Sender, passphrase);
+            let app = AporturePairingProtocol::<Sender>::new(passphrase);
 
-            let pair_info = app.pair();
+            let mut pair_info = app.pair().await?;
 
-            transfer::send_file(&path, &pair_info);
+            transfer::send_file(&path, &mut pair_info).await?;
+
+            pair_info.finalize().await;
         }
         Commands::Receive {
             destination,
@@ -55,15 +57,19 @@ fn main() {
                 .expect("For now providing passphrase is required")
                 .into_bytes();
 
-            let app = AporturePairingProtocol::new(PairKind::Receiver, passphrase);
+            let app = AporturePairingProtocol::<Receiver>::new(passphrase);
 
-            let pair_info = app.pair();
+            let mut pair_info = app.pair().await?;
 
-            transfer::receive_file(destination, &pair_info);
+            transfer::receive_file(destination, &mut pair_info).await?;
+
+            pair_info.finalize().await;
         }
         Commands::Contacts => todo!("Add contacts"),
         Commands::Pair { command: _ } => todo!("Add pair module"),
     };
+
+    Ok(())
 }
 
 fn get_passphrase(method: SendMethod) -> Vec<u8> {

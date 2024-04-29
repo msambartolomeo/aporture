@@ -14,7 +14,9 @@ aes-gcm-siv = { version = "0.11.1", optional = true }
 spake2 = { version = "0.4.0", optional = true }
 directories = { version = "5.0.1", optional = true }
 local-ip-address = { version = "0.6.1", optional = true }
-igd = { version = "0.14.3", package = "igd-next", optional = true }
+igd = { version = "0.14.3", package = "igd-next", optional = true, features = [
+    "aio_tokio",
+] }
 thiserror = { version = "1.0.58", optional = true }
 
 # NOTE: Protocol dependencies
@@ -22,8 +24,11 @@ serde = { version = "1.0.197", features = ["derive"] }
 serde_bencode = "0.2.4"
 serde_with = "3.7.0"
 serde_repr = "0.1.18"
+generic-array = "1.0.0"
+rand = "0.8.5"
 
 # NOTE: Shared dependencies
+tokio = { workspace = true }
 log = { workspace = true }
 
 [features]
