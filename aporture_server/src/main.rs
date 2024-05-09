@@ -28,7 +28,7 @@ fn init_logger() {
         .init();
 }
 
-const DEFAULT_PORT: u16 = 8080;
+const DEFAULT_PORT: u16 = 8765;
 
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {

@@ -13,7 +13,8 @@ use crate::upnp::{self, Gateway};
 pub mod error;
 pub use error::Error;
 
-const SERVER_ADDRESS: &str = "127.0.0.1:8080";
+const SERVER_ADDRESS: Option<&str> = option_env!("SERVER_ADDRESS");
+const DEFAULT_SERVER_PORT: u16 = 8765;
 const DEFAULT_RECEIVER_PORT: u16 = 8082;
 
 pub struct AporturePairingProtocolState {
@@ -117,7 +118,11 @@ impl AporturePairingProtocol<Start<Receiver>> {
 
 impl<K: Kind + Send> AporturePairingProtocol<Start<K>> {
     pub async fn connect(self) -> Result<AporturePairingProtocol<KeyExchange<K>>, error::Hello> {
-        let server = TcpStream::connect(SERVER_ADDRESS).await?;
+        let server_address = SERVER_ADDRESS.unwrap_or("127.0.0.1");
+
+        log::info!("Connecting to server on {server_address}");
+
+        let server = TcpStream::connect((server_address, DEFAULT_SERVER_PORT)).await?;
 
         let mut server = NetworkPeer::new(server);
 
