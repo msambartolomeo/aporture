@@ -3,6 +3,7 @@ use rand::distributions::{Distribution, Uniform};
 mod wordlist;
 use wordlist::WORDLIST;
 
+#[must_use]
 pub fn generate(word_count: usize) -> String {
     Uniform::new(0, WORDLIST.len())
         .sample_iter(rand::thread_rng())
