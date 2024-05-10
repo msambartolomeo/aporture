@@ -7,7 +7,8 @@ use spake2::{Ed25519Group, Identity, Password, Spake2};
 use tokio::net::TcpStream;
 
 use crate::crypto::Cipher;
-use crate::net::{EncryptedNetworkPeer, EncryptedSerdeNet, NetworkPeer, SerdeNet};
+use crate::net::crypto::{EncryptedNetworkPeer, EncryptedSerdeNetwork};
+use crate::net::{NetworkPeer, SerdeNetwork};
 use crate::protocol::{Hello, KeyExchangePayload, PairKind, PairingResponseCode};
 use crate::upnp::{self, Gateway};
 
@@ -288,11 +289,11 @@ pub struct PairInfo {
 
 impl PairInfo {
     #[must_use]
-    pub fn cipher(&mut self) -> Arc<Cipher> {
+    pub(crate) fn cipher(&mut self) -> Arc<Cipher> {
         self.cipher.clone()
     }
 
-    pub fn fallback(&mut self) -> Option<NetworkPeer> {
+    pub(crate) fn fallback(&mut self) -> Option<NetworkPeer> {
         self.server_fallback.take()
     }
 
@@ -304,6 +305,7 @@ impl PairInfo {
             .collect()
     }
 
+    #[must_use]
     pub fn bind_addresses(&self) -> Vec<(SocketAddr, SocketAddr)> {
         self.transfer_info
             .iter()

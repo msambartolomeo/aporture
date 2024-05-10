@@ -1,5 +1,5 @@
 use crate::crypto::Cipher;
-use crate::net::{EncryptedNetworkPeer, EncryptedSerdeNet};
+use crate::net::crypto::{EncryptedNetworkPeer, EncryptedSerdeNetwork};
 use crate::pairing::PairInfo;
 use crate::protocol::{FileData, KeyConfirmationPayload, TransferResponseCode};
 
