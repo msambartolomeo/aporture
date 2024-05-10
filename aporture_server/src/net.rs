@@ -2,32 +2,24 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use aporture::net::{NetworkPeer, SerdeNetwork};
 use tokio::net::TcpStream;
 use tokio::sync::{Mutex, MutexGuard};
 
-use aporture::protocol::{Hello, PairKind, PairingResponseCode, Parser};
+use aporture::protocol::{Hello, PairKind, PairingResponseCode};
 
 pub struct Connection {
-    pub socket: TcpStream,
+    pub stream: NetworkPeer,
     pub address: SocketAddr,
 }
 
-impl Connection {
-    pub async fn send_response(
-        &mut self,
-        response: PairingResponseCode,
-    ) -> Result<(), std::io::Error> {
-        let response = response.serialize_to();
-
-        self.socket.write_all(&response.len().to_be_bytes()).await?;
-        self.socket.write_all(&response).await
-    }
-}
-
 impl From<(TcpStream, SocketAddr)> for Connection {
-    fn from((socket, address): (TcpStream, SocketAddr)) -> Self {
-        Self { socket, address }
+    fn from((stream, address): (TcpStream, SocketAddr)) -> Self {
+        let peer = NetworkPeer::new(stream);
+        Self {
+            stream: peer,
+            address,
+        }
     }
 }
 
@@ -35,52 +27,29 @@ pub async fn handle_connection(
     mut connection: Connection,
     map: Arc<Mutex<HashMap<[u8; 32], Connection>>>,
 ) {
-    let mut length = [0; 8];
+    let hello = match connection.stream.read_ser::<Hello>().await {
+        Ok(hello) => hello,
+        Err(e) => {
+            log::warn!(
+                "Error reading hello message from {}: {e}",
+                connection.address
+            );
 
-    if let Err(e) = connection.socket.read_exact(&mut length).await {
-        log::warn!("No hello message length received: {e}");
-
-        let _ = connection
-            .send_response(PairingResponseCode::MalformedMessage)
-            .await;
-    }
-
-    let mut buf = Hello::buffer();
-    if buf.len() != usize::from_be_bytes(length) {
-        log::warn!("Invalid hello message length");
-        let _ = connection
-            .send_response(PairingResponseCode::MalformedMessage)
-            .await;
-
-        return;
-    }
-
-    if let Err(e) = connection.socket.read_exact(&mut buf).await {
-        if e.kind() == std::io::ErrorKind::UnexpectedEof {
-            log::warn!("Content does not match APP hello message length: {e}");
             let _ = connection
-                .send_response(PairingResponseCode::MalformedMessage)
+                .stream
+                .write_ser(&PairingResponseCode::MalformedMessage)
                 .await;
-        } else {
-            log::warn!("Error reading APP hello message: {e}");
+
+            return;
         }
-
-        return;
-    };
-
-    let Ok(hello) = Hello::deserialize_from(&buf) else {
-        log::warn!("Hello message does not match APP hello");
-        let _ = connection
-            .send_response(PairingResponseCode::MalformedMessage)
-            .await;
-        return;
     };
 
     if hello.version != aporture::protocol::PROTOCOL_VERSION {
         log::warn!("Not supported protocol version");
 
         let _ = connection
-            .send_response(PairingResponseCode::UnsupportedVersion)
+            .stream
+            .write_ser(&PairingResponseCode::UnsupportedVersion)
             .await;
 
         return;
@@ -117,7 +86,10 @@ async fn handle_receiver<'a>(
 
         log::warn!("Sender must arrive first and has not");
 
-        let _ = receiver.send_response(PairingResponseCode::NoPeer).await;
+        let _ = receiver
+            .stream
+            .write_ser(&PairingResponseCode::NoPeer)
+            .await;
 
         return;
     };
@@ -131,18 +103,21 @@ async fn handle_receiver<'a>(
         PairingResponseCode::Ok
     };
 
-    if sender.send_response(response).await.is_err() {
+    if sender.stream.write_ser(&response).await.is_err() {
         log::warn!("Connection closed from sender");
 
-        let _ = receiver.send_response(PairingResponseCode::NoPeer).await;
+        let _ = receiver
+            .stream
+            .write_ser(&PairingResponseCode::NoPeer)
+            .await;
 
         return;
     }
 
-    if receiver.send_response(response).await.is_err() {
+    if receiver.stream.write_ser(&response).await.is_err() {
         log::warn!("Connection closed from receiver");
 
-        let _ = sender.send_response(PairingResponseCode::NoPeer).await;
+        let _ = sender.stream.write_ser(&PairingResponseCode::NoPeer).await;
 
         return;
     }
@@ -150,7 +125,9 @@ async fn handle_receiver<'a>(
     log::info!("Starting bidirectional APP");
 
     // NOTE: Delegate talking between pairs
-    let result = tokio::io::copy_bidirectional(&mut sender.socket, &mut receiver.socket).await;
+    let result =
+        tokio::io::copy_bidirectional(sender.stream.inner(), receiver.stream.inner()).await;
+
     if result.is_err() {
         log::warn!("Error during pairing");
         return;

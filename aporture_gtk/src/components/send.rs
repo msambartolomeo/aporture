@@ -42,6 +42,8 @@ impl SimpleComponent for SenderPage {
             set_margin_horizontal: 20,
             set_margin_vertical: 50,
 
+            set_width_request: 250,
+
             set_title: "Send",
             set_description: Some("Enter a passphrase or generate a random one"),
             #[wrap(Some)]

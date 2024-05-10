@@ -1,19 +1,22 @@
 use std::marker::PhantomData;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::sync::Arc;
 
 use blake3::Hash;
 use spake2::{Ed25519Group, Identity, Password, Spake2};
 use tokio::net::TcpStream;
 
 use crate::crypto::Cipher;
-use crate::net::NetworkPeer;
+use crate::net::crypto::{EncryptedNetworkPeer, EncryptedSerdeNetwork};
+use crate::net::{NetworkPeer, SerdeNetwork};
 use crate::protocol::{Hello, KeyExchangePayload, PairKind, PairingResponseCode};
 use crate::upnp::{self, Gateway};
 
 pub mod error;
 pub use error::Error;
 
-const SERVER_ADDRESS: &str = "127.0.0.1:8080";
+const SERVER_ADDRESS: Option<&str> = option_env!("SERVER_ADDRESS");
+const DEFAULT_SERVER_PORT: u16 = 8765;
 const DEFAULT_RECEIVER_PORT: u16 = 8082;
 
 pub struct AporturePairingProtocolState {
@@ -117,7 +120,11 @@ impl AporturePairingProtocol<Start<Receiver>> {
 
 impl<K: Kind + Send> AporturePairingProtocol<Start<K>> {
     pub async fn connect(self) -> Result<AporturePairingProtocol<KeyExchange<K>>, error::Hello> {
-        let server = TcpStream::connect(SERVER_ADDRESS).await?;
+        let server_address = SERVER_ADDRESS.unwrap_or("127.0.0.1");
+
+        log::info!("Connecting to server on {server_address}");
+
+        let server = TcpStream::connect((server_address, DEFAULT_SERVER_PORT)).await?;
 
         let mut server = NetworkPeer::new(server);
 
@@ -180,22 +187,22 @@ impl<K: Kind + Send> AporturePairingProtocol<KeyExchange<K>> {
         let key_exchange = self.state.server.read_ser::<KeyExchangePayload>().await?;
 
         let key = spake.finish(&key_exchange.0)?;
-        let cipher = Cipher::new(key);
+        let cipher = Arc::new(Cipher::new(key));
 
         // NOTE: Add cipher to server to encrypt files going forward.
-        self.state.server.add_cipher(cipher);
+        let server = self.state.server.add_cipher(cipher);
 
         // TODO: Exchange associated data and confirm key
 
         Ok(AporturePairingProtocol {
             data: self.data,
-            state: AddressNegotiation::new(self.state.server),
+            state: AddressNegotiation::new(server),
         })
     }
 }
 
 pub struct AddressNegotiation<K: Kind> {
-    server: NetworkPeer,
+    server: EncryptedNetworkPeer,
     addresses: Vec<TransferInfo>,
     marker: PhantomData<K>,
 }
@@ -203,7 +210,7 @@ pub struct AddressNegotiation<K: Kind> {
 impl<K: Kind> State for AddressNegotiation<K> {}
 
 impl<K: Kind> AddressNegotiation<K> {
-    fn new(server: NetworkPeer) -> Self {
+    fn new(server: EncryptedNetworkPeer) -> Self {
         Self {
             server,
             addresses: Vec::new(),
@@ -216,16 +223,12 @@ impl AporturePairingProtocol<AddressNegotiation<Sender>> {
     pub async fn exchange_addr(mut self) -> Result<PairInfo, error::AddressExchange> {
         let addresses = self.state.server.read_ser_enc::<Vec<SocketAddr>>().await?;
 
-        let cipher = self
-            .state
-            .server
-            .extract_cipher()
-            .expect("Cipher was not removed before");
+        let (server, cipher) = self.state.server.extract_cipher();
 
         Ok(PairInfo {
             cipher,
             transfer_info: addresses.into_iter().map(TransferInfo::Address).collect(),
-            server_fallback: Some(self.state.server),
+            server_fallback: Some(server),
         })
     }
 }
@@ -241,16 +244,12 @@ impl AporturePairingProtocol<AddressNegotiation<Receiver>> {
 
         self.state.server.write_ser_enc(&addresses).await?;
 
-        let cipher = self
-            .state
-            .server
-            .extract_cipher()
-            .expect("Cipher was not removed before");
+        let (server, cipher) = self.state.server.extract_cipher();
 
         Ok(PairInfo {
             cipher,
             transfer_info: self.state.addresses,
-            server_fallback: Some(self.state.server),
+            server_fallback: Some(server),
         })
     }
 
@@ -283,18 +282,18 @@ impl AporturePairingProtocol<AddressNegotiation<Receiver>> {
 
 #[derive(Debug)]
 pub struct PairInfo {
-    cipher: Cipher,
+    cipher: Arc<Cipher>,
     transfer_info: Vec<TransferInfo>,
     server_fallback: Option<NetworkPeer>,
 }
 
 impl PairInfo {
     #[must_use]
-    pub fn cipher(&mut self) -> &mut Cipher {
-        &mut self.cipher
+    pub(crate) fn cipher(&mut self) -> Arc<Cipher> {
+        self.cipher.clone()
     }
 
-    pub fn fallback(&mut self) -> Option<NetworkPeer> {
+    pub(crate) fn fallback(&mut self) -> Option<NetworkPeer> {
         self.server_fallback.take()
     }
 
@@ -306,6 +305,7 @@ impl PairInfo {
             .collect()
     }
 
+    #[must_use]
     pub fn bind_addresses(&self) -> Vec<(SocketAddr, SocketAddr)> {
         self.transfer_info
             .iter()

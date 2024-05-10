@@ -1,9 +1,11 @@
-use crate::net::NetworkPeer;
+use crate::crypto::Cipher;
+use crate::net::crypto::{EncryptedNetworkPeer, EncryptedSerdeNetwork};
 use crate::pairing::PairInfo;
-use crate::protocol::{FileData, TransferResponseCode};
+use crate::protocol::{FileData, KeyConfirmationPayload, TransferResponseCode};
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use directories::UserDirs;
@@ -26,13 +28,11 @@ pub async fn send_file(path: &Path, pair_info: &mut PairInfo) -> Result<(), erro
         .addresses()
         .into_iter()
         .fold(JoinSet::new(), |mut set, a| {
-            set.spawn(connect(a));
+            set.spawn(connect(a, pair_info.cipher()));
             set
         });
 
     let mut peer = find_peer(options, pair_info).await;
-
-    peer.add_cipher(pair_info.cipher().clone());
 
     // TODO: Buffer file
     let mut file = tokio::fs::read(path).await?;
@@ -77,13 +77,11 @@ pub async fn receive_file(
         .bind_addresses()
         .into_iter()
         .fold(JoinSet::new(), |mut set, (b, a)| {
-            set.spawn(bind(b, a));
+            set.spawn(bind(b, a, pair_info.cipher()));
             set
         });
 
     let mut peer = find_peer(options, pair_info).await;
-
-    peer.add_cipher(pair_info.cipher().clone());
 
     let file_data = peer.read_ser_enc::<FileData>().await?;
 
@@ -111,25 +109,28 @@ pub async fn receive_file(
 }
 
 async fn find_peer(
-    mut options: JoinSet<Result<(TcpStream, SocketAddr), std::io::Error>>,
+    mut options: JoinSet<Result<EncryptedNetworkPeer, (crate::net::Error, SocketAddr)>>,
     pair_info: &mut PairInfo,
-) -> NetworkPeer {
+) -> EncryptedNetworkPeer {
     loop {
         match options.join_next().await {
-            Some(Ok(Ok((peer, address)))) => {
-                log::info!("Peer connected to {}", address);
-
+            Some(Ok(Ok(peer))) => {
                 // NOTE: Drop fallback if unused
                 drop(pair_info.fallback());
 
-                break NetworkPeer::new(peer);
+                break peer;
+            }
+            Some(Ok(Err((e, a)))) => {
+                log::warn!("Could not connect to peer from ip {a}: {e}");
+                continue;
             }
             Some(_) => continue,
             None => {
-                log::info!("Using server fallback");
+                log::info!("Timeout waiting for peer connection, using server fallback");
                 break pair_info
                     .fallback()
-                    .expect("Connection to server must exist");
+                    .expect("Connection to server must exist")
+                    .add_cipher(pair_info.cipher());
             }
         }
     }
@@ -137,23 +138,62 @@ async fn find_peer(
 
 async fn bind(
     bind_address: SocketAddr,
-    full_address: SocketAddr,
-) -> Result<(TcpStream, SocketAddr), std::io::Error> {
-    log::info!(
-        "Trying bind to {} on port {}",
-        full_address.ip(),
-        full_address.port(),
-    );
+    a: SocketAddr,
+    cipher: Arc<Cipher>,
+) -> Result<EncryptedNetworkPeer, (crate::net::Error, SocketAddr)> {
+    log::info!("Waiting for peer on {}, port {}", a.ip(), a.port(),);
 
-    let listener = TcpListener::bind(bind_address).await?;
+    let listener = TcpListener::bind(bind_address)
+        .await
+        .map_err(|e| (e.into(), a))?;
 
-    let (peer, _) = tokio::time::timeout(Duration::from_secs(5), listener.accept()).await??;
+    let timeout = tokio::time::timeout(Duration::from_secs(10), listener.accept());
 
-    Ok((peer, full_address))
+    let (stream, _) = timeout
+        .await
+        .map_err(|e| (std::io::Error::from(e).into(), a))?
+        .map_err(|e| (e.into(), a))?;
+
+    let peer = EncryptedNetworkPeer::new(stream, cipher);
+
+    exchange_hello(peer, a).await
 }
 
-async fn connect(a: SocketAddr) -> Result<(TcpStream, SocketAddr), std::io::Error> {
-    log::info!("Trying connection to {} on port {}", a.ip(), a.port());
+async fn connect(
+    a: SocketAddr,
+    cipher: Arc<Cipher>,
+) -> Result<EncryptedNetworkPeer, (crate::net::Error, SocketAddr)> {
+    log::info!("Trying to connect to peer on {}, port {}", a.ip(), a.port());
 
-    Ok((TcpStream::connect(a).await?, a))
+    let stream = TcpStream::connect(a).await.map_err(|e| (e.into(), a))?;
+
+    let peer = EncryptedNetworkPeer::new(stream, cipher);
+
+    exchange_hello(peer, a).await
+}
+
+async fn exchange_hello(
+    mut peer: EncryptedNetworkPeer,
+    a: SocketAddr,
+) -> Result<EncryptedNetworkPeer, (crate::net::Error, SocketAddr)> {
+    let hello = KeyConfirmationPayload::default();
+
+    peer.write_ser_enc(&hello).await.map_err(|e| (e, a))?;
+
+    let peer_hello = peer
+        .read_ser_enc::<KeyConfirmationPayload>()
+        .await
+        .map_err(|e| (e, a))?;
+
+    let difference = std::time::SystemTime::now()
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .expect("Now is after unix epoch")
+        .checked_sub(peer_hello.timestamp);
+
+    if &peer_hello.tag == b"aporture" && difference.is_some_and(|s| s.as_secs() < 11) {
+        log::info!("Connected to peer on {}", a);
+        Ok(peer)
+    } else {
+        Err((crate::net::Error::Protocol, a))
+    }
 }

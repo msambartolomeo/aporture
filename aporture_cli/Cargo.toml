@@ -9,8 +9,8 @@ edition = "2021"
 workspace = true
 
 [dependencies]
-clap = { version = "4.5.3", features = ["derive"] }
-anyhow = "1.0.81"
+clap = { version = "4.5.4", features = ["derive"] }
+anyhow = "1.0.83"
 # NOTE: Shared dependencies
 aporture = { workspace = true, features = ["full"] }
 tokio = { workspace = true }

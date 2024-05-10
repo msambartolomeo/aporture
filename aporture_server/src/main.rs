@@ -28,7 +28,7 @@ fn init_logger() {
         .init();
 }
 
-const DEFAULT_PORT: u16 = 8080;
+const DEFAULT_PORT: u16 = 8765;
 
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
@@ -37,6 +37,8 @@ async fn main() -> Result<(), std::io::Error> {
     let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], DEFAULT_PORT))).await?;
 
     let map: Arc<Mutex<HashMap<[u8; 32], Connection>>> = Arc::default();
+
+    log::info!("Server ready to accept connections");
 
     loop {
         let connection = Connection::from(listener.accept().await?);
