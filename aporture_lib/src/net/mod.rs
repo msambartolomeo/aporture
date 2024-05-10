@@ -1,3 +1,6 @@
+use std::ops::{Deref, DerefMut};
+use std::sync::Arc;
+
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
@@ -7,29 +10,40 @@ use crate::protocol::Parser;
 mod error;
 pub use error::Error;
 
+pub(crate) trait SerdeNet {
+    async fn write_ser<P: Parser + Sync>(&mut self, input: &P) -> Result<(), Error>;
+    async fn read_ser<P: Parser + Sync>(&mut self) -> Result<P, Error>;
+}
+
+pub(crate) trait EncryptedSerdeNet: SerdeNet {
+    async fn write_ser_enc<P: Parser + Sync>(&mut self, input: &P) -> Result<(), Error>;
+    async fn write_enc(&mut self, input: &mut [u8]) -> Result<(), Error>;
+    async fn read_ser_enc<P: Parser + Sync>(&mut self) -> Result<P, Error>;
+    async fn read_enc(&mut self, buffer: &mut [u8]) -> Result<(), Error>;
+}
+
 #[derive(Debug)]
 pub struct NetworkPeer {
-    cipher: Option<Cipher>,
     stream: TcpStream,
+}
+
+pub struct EncryptedNetworkPeer {
+    cipher: Arc<Cipher>,
+    peer: NetworkPeer,
 }
 
 impl NetworkPeer {
     pub const fn new(stream: TcpStream) -> Self {
-        Self {
-            cipher: None,
-            stream,
-        }
+        Self { stream }
     }
 
-    pub fn add_cipher(&mut self, cipher: Cipher) {
-        self.cipher = Some(cipher);
+    pub fn add_cipher(self, cipher: Arc<Cipher>) -> EncryptedNetworkPeer {
+        EncryptedNetworkPeer { cipher, peer: self }
     }
+}
 
-    pub fn extract_cipher(&mut self) -> Option<Cipher> {
-        self.cipher.take()
-    }
-
-    pub async fn write_ser<P: Parser + Sync>(&mut self, input: &P) -> Result<(), Error> {
+impl SerdeNet for NetworkPeer {
+    async fn write_ser<P: Parser + Sync>(&mut self, input: &P) -> Result<(), Error> {
         let in_buf = input.serialize_to();
 
         self.stream.write_all(&in_buf.len().to_be_bytes()).await?;
@@ -39,7 +53,7 @@ impl NetworkPeer {
         Ok(())
     }
 
-    pub async fn read_ser<P: Parser + Sync>(&mut self) -> Result<P, Error> {
+    async fn read_ser<P: Parser + Sync>(&mut self) -> Result<P, Error> {
         let mut length = [0; 8];
 
         self.stream.read_exact(&mut length).await?;
@@ -64,27 +78,57 @@ impl NetworkPeer {
             Ok(deserialized)
         }
     }
+}
 
-    pub async fn write_ser_enc<P: Parser + Sync>(&mut self, input: &P) -> Result<(), Error> {
-        if self.cipher.is_none() {
-            return Err(Error::NoCipher);
-        }
+impl EncryptedNetworkPeer {
+    pub fn new(stream: TcpStream, cipher: Arc<Cipher>) -> Self {
+        let peer = NetworkPeer::new(stream);
 
+        peer.add_cipher(cipher)
+    }
+
+    pub fn extract_cipher(self) -> (NetworkPeer, Arc<Cipher>) {
+        (self.peer, self.cipher)
+    }
+}
+
+impl Deref for EncryptedNetworkPeer {
+    type Target = NetworkPeer;
+
+    fn deref(&self) -> &Self::Target {
+        &self.peer
+    }
+}
+
+impl DerefMut for EncryptedNetworkPeer {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.peer
+    }
+}
+
+impl SerdeNet for EncryptedNetworkPeer {
+    async fn write_ser<P: Parser + Sync>(&mut self, input: &P) -> Result<(), Error> {
+        self.peer.write_ser(input).await
+    }
+
+    async fn read_ser<P: Parser + Sync>(&mut self) -> Result<P, Error> {
+        self.peer.read_ser().await
+    }
+}
+
+impl EncryptedSerdeNet for EncryptedNetworkPeer {
+    async fn write_ser_enc<P: Parser + Sync>(&mut self, input: &P) -> Result<(), Error> {
         let mut buf = input.serialize_to();
 
-        self.stream.write_all(&buf.len().to_be_bytes()).await?;
+        self.peer.stream.write_all(&buf.len().to_be_bytes()).await?;
 
         self.write_enc(&mut buf).await?;
 
         Ok(())
     }
 
-    pub async fn write_enc(&mut self, input: &mut [u8]) -> Result<(), Error> {
-        let Some(cipher) = &mut self.cipher else {
-            return Err(Error::NoCipher);
-        };
-
-        let (nonce, tag) = cipher.encrypt(input);
+    async fn write_enc(&mut self, input: &mut [u8]) -> Result<(), Error> {
+        let (nonce, tag) = self.cipher.encrypt(input);
 
         self.stream.write_all(&nonce).await?;
         self.stream.write_all(input).await?;
@@ -93,11 +137,7 @@ impl NetworkPeer {
         Ok(())
     }
 
-    pub async fn read_ser_enc<P: Parser + Sync>(&mut self) -> Result<P, Error> {
-        if self.cipher.is_none() {
-            return Err(Error::NoCipher);
-        }
-
+    async fn read_ser_enc<P: Parser + Sync>(&mut self) -> Result<P, Error> {
         let mut length = [0; 8];
 
         self.stream.read_exact(&mut length).await?;
@@ -123,11 +163,7 @@ impl NetworkPeer {
         }
     }
 
-    pub async fn read_enc(&mut self, buffer: &mut [u8]) -> Result<(), Error> {
-        let Some(cipher) = &mut self.cipher else {
-            return Err(Error::NoCipher);
-        };
-
+    async fn read_enc(&mut self, buffer: &mut [u8]) -> Result<(), Error> {
         let mut nonce = [0; 12];
         let mut tag = [0; 16];
 
@@ -135,7 +171,7 @@ impl NetworkPeer {
         self.stream.read_exact(buffer).await?;
         self.stream.read_exact(&mut tag).await?;
 
-        cipher.decrypt(buffer, &nonce, &tag)?;
+        self.cipher.decrypt(buffer, &nonce, &tag)?;
 
         Ok(())
     }

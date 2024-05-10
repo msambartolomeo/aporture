@@ -11,8 +11,8 @@ pub enum Error {
     #[error("Cipher error: {0}")]
     Cipher(crate::crypto::Error),
 
-    #[error("No cipher configured for this method.")]
-    NoCipher,
+    #[error("External protocol error")]
+    Protocol,
 }
 
 impl From<std::io::Error> for Error {

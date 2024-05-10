@@ -44,15 +44,12 @@ impl Cipher {
     }
 
     #[must_use]
-    pub fn encrypt(&mut self, plain: &mut [u8]) -> ([u8; 12], [u8; 16]) {
+    pub fn encrypt(&self, plain: &mut [u8]) -> ([u8; 12], [u8; 16]) {
         let mut nonce = GenericArray::default();
 
         rand::thread_rng().fill_bytes(&mut nonce);
 
-        let associated_data = match self.associated_data {
-            Some(ref ad) => ad,
-            None => &self.key,
-        };
+        let associated_data = self.associated_data.as_ref().unwrap_or(&self.key);
 
         let tag = self
             .aead
@@ -63,15 +60,13 @@ impl Cipher {
     }
 
     pub fn decrypt(
-        &mut self,
+        &self,
         cipher: &mut [u8],
         nonce: &[u8; 12],
         tag: &[u8; 16],
     ) -> Result<(), Error> {
-        let associated_data = match self.associated_data {
-            Some(ref ad) => ad,
-            None => &self.key,
-        };
+        let associated_data = self.associated_data.as_ref().unwrap_or(&self.key);
+
         self.aead
             .decrypt_in_place_detached(nonce.into(), associated_data, cipher, tag.into())?;
 

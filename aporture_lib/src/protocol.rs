@@ -1,5 +1,6 @@
 use std::ffi::OsString;
 use std::net::SocketAddr;
+use std::time::Duration;
 
 use generic_array::typenum::Unsigned;
 use generic_array::{ArrayLength, GenericArray};
@@ -64,8 +65,8 @@ pub struct KeyConfirmationPayload {
     pub tag: [u8; 8],
 
     // NOTE: milis from epoch as bytes
-    #[serde_as(as = "Bytes")]
-    pub timestamp: [u8; 16],
+    // #[serde_as(as = "Bytes")]
+    pub timestamp: Duration,
 }
 
 impl Default for KeyConfirmationPayload {
@@ -74,9 +75,7 @@ impl Default for KeyConfirmationPayload {
             tag: b"aporture".to_owned(),
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::SystemTime::UNIX_EPOCH)
-                .expect("Now is after unix epoch")
-                .as_millis()
-                .to_be_bytes(),
+                .expect("Now is after unix epoch"),
         }
     }
 }

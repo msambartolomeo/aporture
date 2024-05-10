@@ -38,6 +38,8 @@ async fn main() -> Result<(), std::io::Error> {
 
     let map: Arc<Mutex<HashMap<[u8; 32], Connection>>> = Arc::default();
 
+    log::info!("Server ready to accept connections");
+
     loop {
         let connection = Connection::from(listener.accept().await?);
 
