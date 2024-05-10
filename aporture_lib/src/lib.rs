@@ -2,12 +2,13 @@ pub mod net;
 pub mod protocol;
 
 #[cfg(feature = "full")]
-mod crypto;
-#[cfg(feature = "full")]
 pub mod pairing;
 #[cfg(feature = "full")]
+pub mod passphrase;
+#[cfg(feature = "full")]
 pub mod transfer;
+
+#[cfg(feature = "full")]
+mod crypto;
 #[cfg(feature = "full")]
 mod upnp;
-
-pub mod passphrase;

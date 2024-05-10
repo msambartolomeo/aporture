@@ -5,15 +5,13 @@ use crate::components::dialog::{AportureInput, AportureTransfer, Purpose};
 
 #[derive(Debug)]
 pub struct ReceiverPage {
-    passphrase: gtk::EntryBuffer,
-    passphrase_empty: bool,
+    passphrase_entry: adw::EntryRow,
     aporture_dialog: Controller<AportureTransfer>,
     form_disabled: bool,
 }
 
 #[derive(Debug)]
 pub enum Msg {
-    PassphraseChanged,
     ReceiveFile,
     ReceiveFileFinished,
 }
@@ -37,22 +35,19 @@ impl SimpleComponent for ReceiverPage {
             set_header_suffix = &gtk::Button {
                 set_label: "Connect",
                 #[watch]
-                set_sensitive: !model.form_disabled && !model.passphrase_empty,
+                set_sensitive: !model.form_disabled && passphrase_entry.text_length() != 0,
 
                 connect_clicked[sender] => move |_| {
                     sender.input(Msg::ReceiveFile);
                 },
             },
 
-            gtk::Entry {
-                set_tooltip_text: Some("Passphrase"),
-                set_buffer: &model.passphrase,
+            #[local_ref]
+            passphrase_entry -> adw::EntryRow {
+                set_title: "Passphrase",
                 #[watch]
                 set_sensitive: !model.form_disabled,
 
-                connect_changed[sender] => move |_| {
-                    sender.input(Msg::PassphraseChanged);
-                },
             },
         }
     }
@@ -68,11 +63,12 @@ impl SimpleComponent for ReceiverPage {
             .forward(sender.input_sender(), |_| Msg::ReceiveFileFinished); // TODO: Handle Errors
 
         let model = Self {
-            passphrase: gtk::EntryBuffer::default(),
-            passphrase_empty: true,
+            passphrase_entry: adw::EntryRow::default(),
             aporture_dialog,
             form_disabled: false,
         };
+
+        let passphrase_entry = &model.passphrase_entry;
 
         let widgets = view_output!();
 
@@ -81,12 +77,14 @@ impl SimpleComponent for ReceiverPage {
 
     fn update(&mut self, msg: Self::Input, _sender: ComponentSender<Self>) {
         match msg {
-            Msg::PassphraseChanged => self.passphrase_empty = self.passphrase.length() == 0,
             Msg::ReceiveFile => {
                 self.form_disabled = true;
-                log::info!("Selected passphrase is {}", self.passphrase.text());
 
-                let passphrase = self.passphrase.text().into_bytes();
+                let passphrase = self.passphrase_entry.text();
+
+                log::info!("Selected passphrase is {}", passphrase);
+
+                let passphrase = passphrase.into_bytes();
 
                 log::info!("Starting receiver worker");
 

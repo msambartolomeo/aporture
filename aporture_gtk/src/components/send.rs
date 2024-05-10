@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use adw::prelude::*;
+use aporture::passphrase;
 use relm4::prelude::*;
 use relm4_components::open_dialog::{
     OpenDialog, OpenDialogMsg, OpenDialogResponse, OpenDialogSettings,
@@ -9,10 +10,11 @@ use relm4_icons::icon_names;
 
 use crate::components::dialog::{AportureInput, AportureTransfer, Purpose};
 
+const PASSPHRASE_WORD_COUNT: usize = 3;
+
 #[derive(Debug)]
 pub struct SenderPage {
-    passphrase: gtk::EntryBuffer,
-    passphrase_empty: bool,
+    passphrase_entry: adw::EntryRow,
     file_path: Option<PathBuf>,
     file_name: Option<String>,
     file_picker_dialog: Controller<OpenDialog>,
@@ -22,7 +24,6 @@ pub struct SenderPage {
 
 #[derive(Debug)]
 pub enum Msg {
-    PassphraseChanged,
     GeneratePassphrase,
     FilePickerOpen,
     FilePickerResponse(PathBuf),
@@ -50,28 +51,25 @@ impl SimpleComponent for SenderPage {
             set_header_suffix = &gtk::Button {
                 set_label: "Connect",
                 #[watch]
-                set_sensitive: !model.form_disabled && !model.passphrase_empty && model.file_path.is_some(),
-
+                set_sensitive: !model.form_disabled && passphrase_entry.text_length() != 0 && model.file_path.is_some(),
                 connect_clicked[sender] => move |_| {
                     sender.input(Msg::SendFile);
                 },
             },
 
-            gtk::Entry {
-                set_margin_vertical: 10,
-
-                set_tooltip_text: Some("Passphrase"),
-                set_buffer: &model.passphrase,
-                set_icon_from_icon_name: (gtk::EntryIconPosition::Secondary, Some(icon_names::UPDATE)),
+            #[local_ref]
+            passphrase_entry -> adw::EntryRow {
+                set_title: "Passphrase",
+                set_text: &passphrase::generate(PASSPHRASE_WORD_COUNT),
                 #[watch]
                 set_sensitive: !model.form_disabled,
 
-                connect_changed[sender] => move |_| {
-                    sender.input(Msg::PassphraseChanged);
-                },
+                add_suffix = &gtk::Button {
+                    set_icon_name: icon_names::UPDATE,
 
-                connect_icon_press[sender] => move |_, _| {
-                    sender.input(Msg::GeneratePassphrase);
+                    connect_clicked[sender] => move |_| {
+                        sender.input(Msg::GeneratePassphrase);
+                    }
                 }
             },
 
@@ -117,14 +115,15 @@ impl SimpleComponent for SenderPage {
             .forward(sender.input_sender(), |_| Msg::SendFileFinished); // TODO: Handle Errors
 
         let model = Self {
-            passphrase: gtk::EntryBuffer::default(),
-            passphrase_empty: true,
+            passphrase_entry: adw::EntryRow::default(),
             file_path: None,
             file_name: None,
             file_picker_dialog,
             aporture_dialog,
             form_disabled: false,
         };
+
+        let passphrase_entry = &model.passphrase_entry;
 
         let widgets = view_output!();
 
@@ -133,9 +132,12 @@ impl SimpleComponent for SenderPage {
 
     fn update(&mut self, msg: Self::Input, _sender: ComponentSender<Self>) {
         match msg {
-            Msg::PassphraseChanged => self.passphrase_empty = self.passphrase.length() == 0,
-            Msg::GeneratePassphrase => todo!("Generate random passphrase"),
+            Msg::GeneratePassphrase => self
+                .passphrase_entry
+                .set_text(&passphrase::generate(PASSPHRASE_WORD_COUNT)),
+
             Msg::FilePickerOpen => self.file_picker_dialog.emit(OpenDialogMsg::Open),
+
             Msg::FilePickerResponse(path) => {
                 self.file_name = Some(
                     path.file_name()
@@ -145,12 +147,15 @@ impl SimpleComponent for SenderPage {
                 );
                 self.file_path = Some(path);
             }
+
             Msg::SendFile => {
                 self.form_disabled = true;
 
-                log::info!("Selected passphrase is {}", self.passphrase.text());
+                let passphrase = self.passphrase_entry.text();
 
-                let passphrase = self.passphrase.text().into_bytes();
+                log::info!("Selected passphrase is {}", passphrase);
+
+                let passphrase = passphrase.into_bytes();
 
                 log::info!("Starting sender worker");
                 self.aporture_dialog.emit(AportureInput::SendFile {
@@ -158,11 +163,13 @@ impl SimpleComponent for SenderPage {
                     path: self.file_path.clone().expect("Button disabled if None"),
                 });
             }
+
             Msg::SendFileFinished => {
                 log::info!("Finished sender worker");
 
                 self.form_disabled = false;
             }
+
             Msg::Ignore => (),
         }
     }
