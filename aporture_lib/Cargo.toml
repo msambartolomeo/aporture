@@ -17,15 +17,15 @@ local-ip-address = { version = "0.6.1", optional = true }
 igd = { version = "0.14.3", package = "igd-next", optional = true, features = [
     "aio_tokio",
 ] }
-thiserror = { version = "1.0.59", optional = true }
 
 # NOTE: Protocol dependencies
-serde = { version = "1.0.199", features = ["derive"] }
+serde = { version = "1.0.201", features = ["derive"] }
 serde_bencode = "0.2.4"
 serde_with = "3.8.1"
 serde_repr = "0.1.19"
 generic-array = "1.0.0"
 rand = "0.8.5"
+thiserror = { version = "1.0.60" }
 
 # NOTE: Shared dependencies
 tokio = { workspace = true }
@@ -34,11 +34,10 @@ log = { workspace = true }
 [features]
 default = ["full"]
 full = [
-    "dep:blake3",
-    "dep:aes-gcm-siv",
-    "dep:spake2",
-    "dep:directories",
-    "dep:local-ip-address",
-    "dep:igd",
-    "dep:thiserror",
+    "blake3",
+    "aes-gcm-siv",
+    "spake2",
+    "directories",
+    "local-ip-address",
+    "igd",
 ]
