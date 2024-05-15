@@ -4,21 +4,14 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
-use crate::{crypto::Cipher, protocol::Parser};
+use crate::parser::EncryptedSerdeIO;
+use crate::{crypto::Cipher, parser::Parser};
 
-use super::{Error, NetworkPeer, SerdeNetwork};
+use super::{Error, NetworkPeer, SerdeIO};
 
 pub struct EncryptedNetworkPeer {
     cipher: Arc<Cipher>,
     peer: NetworkPeer,
-}
-
-#[allow(async_fn_in_trait)]
-pub trait EncryptedSerdeNetwork: SerdeNetwork {
-    async fn write_ser_enc<P: Parser + Sync>(&mut self, input: &P) -> Result<(), Error>;
-    async fn write_enc(&mut self, input: &mut [u8]) -> Result<(), Error>;
-    async fn read_ser_enc<P: Parser + Sync>(&mut self) -> Result<P, Error>;
-    async fn read_enc(&mut self, buffer: &mut [u8]) -> Result<(), Error>;
 }
 
 impl EncryptedNetworkPeer {
@@ -47,7 +40,7 @@ impl DerefMut for EncryptedNetworkPeer {
     }
 }
 
-impl SerdeNetwork for EncryptedNetworkPeer {
+impl SerdeIO for EncryptedNetworkPeer {
     async fn write_ser<P: Parser + Sync>(&mut self, input: &P) -> Result<(), Error> {
         self.peer.write_ser(input).await
     }
@@ -57,7 +50,7 @@ impl SerdeNetwork for EncryptedNetworkPeer {
     }
 }
 
-impl EncryptedSerdeNetwork for EncryptedNetworkPeer {
+impl EncryptedSerdeIO for EncryptedNetworkPeer {
     async fn write_ser_enc<P: Parser + Sync>(&mut self, input: &P) -> Result<(), Error> {
         let mut buf = input.serialize_to();
 

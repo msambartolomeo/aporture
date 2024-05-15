@@ -1,8 +1,3 @@
-use crate::crypto::Cipher;
-use crate::net::crypto::{EncryptedNetworkPeer, EncryptedSerdeNetwork};
-use crate::pairing::PairInfo;
-use crate::protocol::{FileData, KeyConfirmationPayload, TransferResponseCode};
-
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -11,6 +6,12 @@ use std::time::Duration;
 use directories::UserDirs;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
+
+use crate::crypto::Cipher;
+use crate::net::crypto::EncryptedNetworkPeer;
+use crate::pairing::PairInfo;
+use crate::parser::EncryptedSerdeIO;
+use crate::protocol::{FileData, KeyConfirmationPayload, TransferResponseCode};
 
 mod error;
 pub use error::{Receive as ReceiveError, Send as SendError};

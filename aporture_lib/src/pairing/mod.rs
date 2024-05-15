@@ -7,8 +7,9 @@ use spake2::{Ed25519Group, Identity, Password, Spake2};
 use tokio::net::TcpStream;
 
 use crate::crypto::Cipher;
-use crate::net::crypto::{EncryptedNetworkPeer, EncryptedSerdeNetwork};
-use crate::net::{NetworkPeer, SerdeNetwork};
+use crate::net::crypto::EncryptedNetworkPeer;
+use crate::net::NetworkPeer;
+use crate::parser::{EncryptedSerdeIO, SerdeIO};
 use crate::protocol::{Hello, KeyExchangePayload, PairKind, PairingResponseCode};
 use crate::upnp::{self, Gateway};
 

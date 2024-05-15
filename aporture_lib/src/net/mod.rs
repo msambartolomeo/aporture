@@ -1,21 +1,13 @@
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
-use crate::protocol::Parser;
-
-mod error;
-pub use error::Error;
+pub use crate::parser::Error;
+use crate::parser::{Parser, SerdeIO};
 
 #[cfg(feature = "full")]
 pub mod crypto;
 #[cfg(feature = "full")]
 use {crate::crypto::Cipher, crypto::EncryptedNetworkPeer, std::sync::Arc};
-
-#[allow(async_fn_in_trait)]
-pub trait SerdeNetwork {
-    async fn write_ser<P: Parser + Sync>(&mut self, input: &P) -> Result<(), Error>;
-    async fn read_ser<P: Parser + Sync>(&mut self) -> Result<P, Error>;
-}
 
 #[derive(Debug)]
 pub struct NetworkPeer {
@@ -37,7 +29,7 @@ impl NetworkPeer {
     }
 }
 
-impl SerdeNetwork for NetworkPeer {
+impl SerdeIO for NetworkPeer {
     async fn write_ser<P: Parser + Sync>(&mut self, input: &P) -> Result<(), Error> {
         let in_buf = input.serialize_to();
 

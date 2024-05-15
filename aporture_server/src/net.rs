@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use aporture::net::{NetworkPeer, SerdeNetwork};
+use aporture::net::NetworkPeer;
+use aporture::parser::SerdeIO;
 use tokio::net::TcpStream;
 use tokio::sync::{Mutex, MutexGuard};
 

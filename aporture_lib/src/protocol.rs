@@ -2,11 +2,11 @@ use std::ffi::OsString;
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use generic_array::typenum::Unsigned;
-use generic_array::{ArrayLength, GenericArray};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use serde_with::{serde_as, Bytes};
+
+use crate::parser::Parser;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize_repr, Serialize_repr)]
 #[repr(u8)]
@@ -98,30 +98,6 @@ pub struct FileData {
 pub enum TransferResponseCode {
     Ok = 0,
     HashMismatch = 1,
-}
-
-pub trait Parser: Serialize + for<'a> Deserialize<'a> {
-    type MinimumSerializedSize: ArrayLength;
-
-    #[must_use]
-    fn buffer() -> GenericArray<u8, Self::MinimumSerializedSize> {
-        GenericArray::default()
-    }
-
-    #[must_use]
-    fn serialized_size() -> usize {
-        <Self::MinimumSerializedSize as Unsigned>::to_usize()
-    }
-
-    fn serialize_to(&self) -> Vec<u8> {
-        serde_bencode::to_bytes(self)
-            .inspect_err(|e| log::error!("Unknown error when serializing type {e}"))
-            .expect("Serialization should not fail because the type is valid")
-    }
-
-    fn deserialize_from(buffer: &[u8]) -> Result<Self, serde_bencode::Error> {
-        serde_bencode::from_bytes(buffer)
-    }
 }
 
 impl Parser for PairKind {

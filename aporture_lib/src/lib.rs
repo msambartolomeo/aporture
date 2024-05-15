@@ -1,4 +1,5 @@
 pub mod net;
+pub mod parser;
 pub mod protocol;
 
 #[cfg(feature = "full")]
