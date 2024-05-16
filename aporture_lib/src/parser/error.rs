@@ -2,7 +2,7 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Network failure: {0}")]
+    #[error("IO failure: {0}")]
     IO(std::io::Error),
 
     #[error("Serde error: {0}")]
@@ -13,8 +13,8 @@ pub enum Error {
     Cipher(crate::crypto::Error),
 
     #[cfg(feature = "full")]
-    #[error("External protocol error")]
-    Protocol,
+    #[error("{0}")]
+    Custom(&'static str),
 }
 
 impl From<std::io::Error> for Error {
@@ -33,5 +33,11 @@ impl From<serde_bencode::Error> for Error {
 impl From<crate::crypto::Error> for Error {
     fn from(value: crate::crypto::Error) -> Self {
         Self::Cipher(value)
+    }
+}
+
+impl From<&'static str> for Error {
+    fn from(value: &'static str) -> Self {
+        Self::Custom(value)
     }
 }

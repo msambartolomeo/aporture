@@ -195,6 +195,6 @@ async fn exchange_hello(
         log::info!("Connected to peer on {}", a);
         Ok(peer)
     } else {
-        Err((crate::net::Error::Protocol, a))
+        Err((crate::net::Error::Custom("Invalid tag and timestamp"), a))
     }
 }

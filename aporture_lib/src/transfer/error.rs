@@ -47,7 +47,7 @@ impl From<crate::net::Error> for Receive {
         match value {
             crate::net::Error::IO(_) | crate::net::Error::SerDe(_) => Self::Network(value),
             crate::net::Error::Cipher(e) => Self::Cipher(e),
-            crate::net::Error::Protocol => unreachable!(),
+            crate::net::Error::Custom(_) => unreachable!(),
         }
     }
 }
