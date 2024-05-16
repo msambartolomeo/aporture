@@ -17,7 +17,7 @@ impl Parser for Contacts {
 }
 
 impl Contacts {
-    pub async fn load(cipher: Arc<Cipher>) -> Result<Self, crate::parser::Error> {
+    pub async fn load(cipher: Arc<Cipher>) -> Result<Self, crate::io::Error> {
         let dirs = directories::ProjectDirs::from("dev", "msambartolomeo", "aporture")
             .ok_or("Cannot find valid project directory")?;
         let mut config_dir = dirs.config_dir().to_path_buf();
@@ -30,7 +30,7 @@ impl Contacts {
         Ok(config)
     }
 
-    pub async fn save(self, cipher: Arc<Cipher>) -> Result<(), crate::parser::Error> {
+    pub async fn save(self, cipher: Arc<Cipher>) -> Result<(), crate::io::Error> {
         let dirs = directories::ProjectDirs::from("dev", "msambartolomeo", "aporture")
             .ok_or("Cannot find valid project directory")?;
         let mut config_dir = dirs.config_dir().to_path_buf();

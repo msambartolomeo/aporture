@@ -1,5 +1,11 @@
 use thiserror::Error;
 
+pub mod net;
+pub mod parser;
+
+#[cfg(feature = "full")]
+pub mod fs;
+
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("IO failure: {0}")]
@@ -12,7 +18,6 @@ pub enum Error {
     #[error("Cipher error: {0}")]
     Cipher(crate::crypto::Error),
 
-    #[cfg(feature = "full")]
     #[error("{0}")]
     Custom(&'static str),
 }

@@ -8,11 +8,11 @@ use tokio::net::TcpStream;
 
 use crate::crypto::Cipher;
 use crate::fs::config::Config;
-use crate::net::crypto::EncryptedNetworkPeer;
-use crate::net::NetworkPeer;
+use crate::net::{EncryptedNetworkPeer, NetworkPeer};
 use crate::parser::{EncryptedSerdeIO, SerdeIO};
 use crate::protocol::{Hello, KeyExchangePayload, PairKind, PairingResponseCode};
-use crate::upnp::{self, Gateway};
+
+mod upnp;
 
 pub mod error;
 pub use error::Error;
@@ -257,7 +257,7 @@ impl AporturePairingProtocol<AddressNegotiation<Receiver>> {
         })
     }
 
-    pub async fn add_upnp(&mut self) -> Result<(), crate::upnp::Error> {
+    pub async fn add_upnp(&mut self) -> Result<(), upnp::Error> {
         let mut gateway = upnp::Gateway::new().await?;
 
         let external_address = gateway.open_port(DEFAULT_RECEIVER_PORT).await?;
@@ -330,7 +330,7 @@ pub enum TransferInfo {
     UPnP {
         local_port: u16,
         external_address: SocketAddr,
-        gateway: Gateway,
+        gateway: upnp::Gateway,
     },
 }
 

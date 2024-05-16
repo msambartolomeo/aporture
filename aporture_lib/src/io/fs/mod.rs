@@ -3,7 +3,7 @@ use std::{path::Path, sync::Arc};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::crypto::Cipher;
-use crate::parser::{EncryptedSerdeIO, Error, Parser, SerdeIO};
+use crate::parser::{EncryptedSerdeIO, Parser, SerdeIO};
 
 pub mod config;
 pub mod contacts;
@@ -19,7 +19,7 @@ impl<'a> FileManager<'a> {
 }
 
 impl<'a> SerdeIO for FileManager<'a> {
-    async fn write_ser<P: Parser + Sync>(&mut self, input: &P) -> Result<(), Error> {
+    async fn write_ser<P: Parser + Sync>(&mut self, input: &P) -> Result<(), crate::io::Error> {
         let buffer = input.serialize_to();
 
         tokio::fs::write(self.path, buffer).await?;
@@ -27,7 +27,7 @@ impl<'a> SerdeIO for FileManager<'a> {
         Ok(())
     }
 
-    async fn read_ser<P: Parser + Sync>(&mut self) -> Result<P, Error> {
+    async fn read_ser<P: Parser + Sync>(&mut self) -> Result<P, crate::io::Error> {
         let buffer = tokio::fs::read(self.path).await?;
 
         let deserialized = P::deserialize_from(&buffer)?;
@@ -49,17 +49,17 @@ impl<'a> EncryptedFileManager<'a> {
 }
 
 impl<'a> SerdeIO for EncryptedFileManager<'a> {
-    async fn write_ser<P: Parser + Sync>(&mut self, input: &P) -> Result<(), Error> {
+    async fn write_ser<P: Parser + Sync>(&mut self, input: &P) -> Result<(), crate::io::Error> {
         self.manager.write_ser(input).await
     }
 
-    async fn read_ser<P: Parser + Sync>(&mut self) -> Result<P, Error> {
+    async fn read_ser<P: Parser + Sync>(&mut self) -> Result<P, crate::io::Error> {
         self.manager.read_ser().await
     }
 }
 
 impl<'a> EncryptedSerdeIO for EncryptedFileManager<'a> {
-    async fn write_ser_enc<P: Parser + Sync>(&mut self, input: &P) -> Result<(), Error> {
+    async fn write_ser_enc<P: Parser + Sync>(&mut self, input: &P) -> Result<(), crate::io::Error> {
         let mut buffer = input.serialize_to();
 
         self.write_enc(&mut buffer).await?;
@@ -67,7 +67,7 @@ impl<'a> EncryptedSerdeIO for EncryptedFileManager<'a> {
         Ok(())
     }
 
-    async fn write_enc(&mut self, input: &mut [u8]) -> Result<(), Error> {
+    async fn write_enc(&mut self, input: &mut [u8]) -> Result<(), crate::io::Error> {
         let (nonce, tag) = self.cipher.encrypt(input);
 
         let mut file = tokio::fs::File::create(self.manager.path).await?;
@@ -78,7 +78,7 @@ impl<'a> EncryptedSerdeIO for EncryptedFileManager<'a> {
         Ok(())
     }
 
-    async fn read_ser_enc<P: Parser + Sync>(&mut self) -> Result<P, Error> {
+    async fn read_ser_enc<P: Parser + Sync>(&mut self) -> Result<P, crate::io::Error> {
         let len = tokio::fs::metadata(self.manager.path).await?.len();
         let len = usize::try_from(len).expect("File size is bigger than system usize") - 12 - 16;
 
@@ -91,7 +91,7 @@ impl<'a> EncryptedSerdeIO for EncryptedFileManager<'a> {
         Ok(deserialized)
     }
 
-    async fn read_enc(&mut self, buffer: &mut [u8]) -> Result<(), Error> {
+    async fn read_enc(&mut self, buffer: &mut [u8]) -> Result<(), crate::io::Error> {
         let mut nonce = [0; 12];
         let mut tag = [0; 16];
 

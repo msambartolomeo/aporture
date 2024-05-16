@@ -1,9 +1,6 @@
 use generic_array::{typenum::Unsigned, ArrayLength, GenericArray};
 use serde::{Deserialize, Serialize};
 
-mod error;
-pub use error::Error;
-
 pub trait Parser: Serialize + for<'a> Deserialize<'a> {
     type MinimumSerializedSize: ArrayLength;
 
@@ -30,15 +27,15 @@ pub trait Parser: Serialize + for<'a> Deserialize<'a> {
 
 #[allow(async_fn_in_trait)]
 pub trait SerdeIO {
-    async fn write_ser<P: Parser + Sync>(&mut self, input: &P) -> Result<(), Error>;
-    async fn read_ser<P: Parser + Sync>(&mut self) -> Result<P, Error>;
+    async fn write_ser<P: Parser + Sync>(&mut self, input: &P) -> Result<(), crate::io::Error>;
+    async fn read_ser<P: Parser + Sync>(&mut self) -> Result<P, crate::io::Error>;
 }
 
 #[cfg(feature = "full")]
 #[allow(async_fn_in_trait)]
 pub trait EncryptedSerdeIO: SerdeIO {
-    async fn write_ser_enc<P: Parser + Sync>(&mut self, input: &P) -> Result<(), Error>;
-    async fn write_enc(&mut self, input: &mut [u8]) -> Result<(), Error>;
-    async fn read_ser_enc<P: Parser + Sync>(&mut self) -> Result<P, Error>;
-    async fn read_enc(&mut self, buffer: &mut [u8]) -> Result<(), Error>;
+    async fn write_ser_enc<P: Parser + Sync>(&mut self, input: &P) -> Result<(), crate::io::Error>;
+    async fn write_enc(&mut self, input: &mut [u8]) -> Result<(), crate::io::Error>;
+    async fn read_ser_enc<P: Parser + Sync>(&mut self) -> Result<P, crate::io::Error>;
+    async fn read_enc(&mut self, buffer: &mut [u8]) -> Result<(), crate::io::Error>;
 }

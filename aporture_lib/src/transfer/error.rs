@@ -7,7 +7,7 @@ pub enum Send {
     #[error("Could not open file to send")]
     File(std::io::Error),
     #[error("Could not send file to peer over the network")]
-    Network(crate::net::Error),
+    Network(crate::io::Error),
     #[error("Hash mismatch informed by the receiver")]
     HashMismatch,
 }
@@ -18,8 +18,8 @@ impl From<std::io::Error> for Send {
     }
 }
 
-impl From<crate::net::Error> for Send {
-    fn from(value: crate::net::Error) -> Self {
+impl From<crate::io::Error> for Send {
+    fn from(value: crate::io::Error) -> Self {
         Self::Network(value)
     }
 }
@@ -29,7 +29,7 @@ pub enum Receive {
     #[error("Could not write file to disk")]
     File(std::io::Error),
     #[error("Could not received file to peer over the network")]
-    Network(crate::net::Error),
+    Network(crate::io::Error),
     #[error("Error in cryptography: {0}")]
     Cipher(crate::crypto::Error),
     #[error("The hash of the transefered file and the received hash are not the same")]
@@ -42,12 +42,12 @@ impl From<std::io::Error> for Receive {
     }
 }
 
-impl From<crate::net::Error> for Receive {
-    fn from(value: crate::net::Error) -> Self {
+impl From<crate::io::Error> for Receive {
+    fn from(value: crate::io::Error) -> Self {
         match value {
-            crate::net::Error::IO(_) | crate::net::Error::SerDe(_) => Self::Network(value),
-            crate::net::Error::Cipher(e) => Self::Cipher(e),
-            crate::net::Error::Custom(_) => unreachable!(),
+            crate::io::Error::IO(_) | crate::io::Error::SerDe(_) => Self::Network(value),
+            crate::io::Error::Cipher(e) => Self::Cipher(e),
+            crate::io::Error::Custom(_) => unreachable!(),
         }
     }
 }
