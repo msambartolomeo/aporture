@@ -1,15 +1,22 @@
+use std::path::PathBuf;
 use std::{collections::HashMap, sync::Arc};
 
+use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 
 use crate::crypto::Cipher;
+use crate::fs::EncryptedFileManager;
 use crate::parser::{EncryptedSerdeIO, Parser};
 
-use super::EncryptedFileManager;
-
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Contacts {
-    key_map: HashMap<String, Vec<u8>>,
+    map: HashMap<String, Contact>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Contact {
+    pub key: Vec<u8>,
+    pub timestamp: DateTime<Local>,
 }
 
 impl Parser for Contacts {
@@ -17,29 +24,35 @@ impl Parser for Contacts {
 }
 
 impl Contacts {
-    pub async fn load(cipher: Arc<Cipher>) -> Result<Self, crate::io::Error> {
+    fn path() -> PathBuf {
         let dirs = directories::ProjectDirs::from("dev", "msambartolomeo", "aporture")
-            .ok_or("Cannot find valid project directory")?;
+            .expect("PC must have valid home directory");
         let mut config_dir = dirs.config_dir().to_path_buf();
         config_dir.push("contacts");
 
-        let mut manager = EncryptedFileManager::new(&config_dir, cipher);
+        config_dir
+    }
+
+    pub async fn load(cipher: Arc<Cipher>) -> Result<Self, crate::io::Error> {
+        let path = Contacts::path();
+
+        let mut manager = EncryptedFileManager::new(&path, cipher);
 
         let config = manager.read_ser_enc().await?;
 
         Ok(config)
     }
 
+    pub fn exists() -> bool {
+        Contacts::path().exists()
+    }
+
     pub async fn save(self, cipher: Arc<Cipher>) -> Result<(), crate::io::Error> {
-        let dirs = directories::ProjectDirs::from("dev", "msambartolomeo", "aporture")
-            .ok_or("Cannot find valid project directory")?;
-        let mut config_dir = dirs.config_dir().to_path_buf();
+        let path = Contacts::path();
 
-        tokio::fs::create_dir_all(&config_dir).await?;
+        tokio::fs::create_dir_all(&path).await?;
 
-        config_dir.push("config");
-
-        let mut manager = EncryptedFileManager::new(&config_dir, cipher);
+        let mut manager = EncryptedFileManager::new(&path, cipher);
 
         manager.write_ser_enc(&self).await.ok();
 
@@ -47,11 +60,23 @@ impl Contacts {
     }
 
     #[must_use]
-    pub fn get_key(&self, contact: &str) -> Option<&Vec<u8>> {
-        self.key_map.get(contact)
+    pub fn get(&self, name: &str) -> Option<&Contact> {
+        self.map.get(name)
     }
 
-    pub fn store_key(&mut self, contact: String, key: Vec<u8>) {
-        self.key_map.insert(contact, key);
+    pub fn add(&mut self, name: String, key: Vec<u8>) {
+        let timestamp = chrono::Local::now();
+
+        let contact = Contact { key, timestamp };
+
+        self.map.insert(name, contact);
+    }
+
+    pub fn delete(&mut self, name: &str) {
+        self.map.remove(name);
+    }
+
+    pub fn list(&self) -> impl Iterator<Item = (&String, &Contact)> {
+        self.map.iter()
     }
 }

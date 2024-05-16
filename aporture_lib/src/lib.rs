@@ -9,8 +9,7 @@ pub use io::parser;
 pub use io::fs;
 
 #[cfg(feature = "full")]
-mod crypto;
-
+pub mod crypto;
 #[cfg(feature = "full")]
 pub mod pairing;
 #[cfg(feature = "full")]
