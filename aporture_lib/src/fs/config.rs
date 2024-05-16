@@ -28,7 +28,7 @@ impl Default for Config {
             server_address: DEFAULT_SERVER_ADDRESS
                 .unwrap_or("127.0.0.1")
                 .parse()
-                .unwrap_or(IpAddr::from([127, 0, 0, 1])),
+                .unwrap_or_else(|_| IpAddr::from([127, 0, 0, 1])),
             server_port: DEFAULT_SERVER_PORT,
         }
     }

@@ -46,6 +46,7 @@ impl Contacts {
         Ok(())
     }
 
+    #[must_use]
     pub fn get_key(&self, contact: &str) -> Option<&Vec<u8>> {
         self.key_map.get(contact)
     }
