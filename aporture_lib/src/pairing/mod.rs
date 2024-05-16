@@ -7,6 +7,7 @@ use spake2::{Ed25519Group, Identity, Password, Spake2};
 use tokio::net::TcpStream;
 
 use crate::crypto::Cipher;
+use crate::fs::config::Config;
 use crate::net::crypto::EncryptedNetworkPeer;
 use crate::net::NetworkPeer;
 use crate::parser::{EncryptedSerdeIO, SerdeIO};
@@ -16,8 +17,6 @@ use crate::upnp::{self, Gateway};
 pub mod error;
 pub use error::Error;
 
-const SERVER_ADDRESS: Option<&str> = option_env!("SERVER_ADDRESS");
-const DEFAULT_SERVER_PORT: u16 = 8765;
 const DEFAULT_RECEIVER_PORT: u16 = 8082;
 
 pub struct AporturePairingProtocolState {
@@ -121,11 +120,15 @@ impl AporturePairingProtocol<Start<Receiver>> {
 
 impl<K: Kind + Send> AporturePairingProtocol<Start<K>> {
     pub async fn connect(self) -> Result<AporturePairingProtocol<KeyExchange<K>>, error::Hello> {
-        let server_address = SERVER_ADDRESS.unwrap_or("127.0.0.1");
+        let config = Config::get().await;
 
-        log::info!("Connecting to server on {server_address}");
+        log::info!(
+            "Connecting to server at {}:{}",
+            config.server_address,
+            config.server_port
+        );
 
-        let server = TcpStream::connect((server_address, DEFAULT_SERVER_PORT)).await?;
+        let server = TcpStream::connect((config.server_address, config.server_port)).await?;
 
         let mut server = NetworkPeer::new(server);
 

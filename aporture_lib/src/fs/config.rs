@@ -1,3 +1,4 @@
+use std::net::IpAddr;
 use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
@@ -13,7 +14,7 @@ static CONFIG: OnceLock<Config> = OnceLock::new();
 
 #[derive(Serialize, Deserialize)]
 pub struct Config {
-    pub server_address: String,
+    pub server_address: IpAddr,
     pub server_port: u16,
 }
 
@@ -24,7 +25,10 @@ impl Parser for Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            server_address: DEFAULT_SERVER_ADDRESS.unwrap_or("127.0.0.1").to_owned(),
+            server_address: DEFAULT_SERVER_ADDRESS
+                .unwrap_or("127.0.0.1")
+                .parse()
+                .unwrap_or(IpAddr::from([127, 0, 0, 1])),
             server_port: DEFAULT_SERVER_PORT,
         }
     }
