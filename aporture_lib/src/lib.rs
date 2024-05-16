@@ -13,4 +13,6 @@ pub mod crypto;
 #[cfg(feature = "full")]
 pub mod pairing;
 #[cfg(feature = "full")]
+pub mod passphrase;
+#[cfg(feature = "full")]
 pub mod transfer;

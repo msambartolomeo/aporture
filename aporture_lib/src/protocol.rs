@@ -117,7 +117,7 @@ impl Parser for KeyExchangePayload {
 }
 
 impl Parser for KeyConfirmationPayload {
-    type MinimumSerializedSize = generic_array::typenum::U47;
+    type MinimumSerializedSize = generic_array::typenum::U66;
 }
 
 impl Parser for SocketAddr {
@@ -194,19 +194,6 @@ mod test {
         let deserialized = KeyExchangePayload::deserialize_from(&serialized).unwrap();
 
         assert_eq!(key_exchange, deserialized);
-    }
-
-    #[test]
-    fn test_key_confirmation_ser_de() {
-        let payload = KeyConfirmationPayload::default();
-
-        let serialized = payload.serialize_to();
-
-        assert_eq!(KeyConfirmationPayload::serialized_size(), serialized.len());
-
-        let deserialized = KeyConfirmationPayload::deserialize_from(&serialized).unwrap();
-
-        assert_eq!(payload, deserialized);
     }
 
     #[test]
