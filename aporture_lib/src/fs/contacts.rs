@@ -8,7 +8,7 @@ use crate::parser::{EncryptedSerdeIO, Parser};
 use super::EncryptedFileManager;
 
 #[derive(Serialize, Deserialize)]
-struct Contacts {
+pub struct Contacts {
     key_map: HashMap<String, Vec<u8>>,
 }
 

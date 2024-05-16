@@ -8,7 +8,7 @@ use crate::parser::{EncryptedSerdeIO, Error, Parser, SerdeIO};
 pub mod config;
 pub mod contacts;
 
-pub struct FileManager<'a> {
+struct FileManager<'a> {
     path: &'a Path,
 }
 
@@ -36,7 +36,7 @@ impl<'a> SerdeIO for FileManager<'a> {
     }
 }
 
-pub struct EncryptedFileManager<'a> {
+struct EncryptedFileManager<'a> {
     manager: FileManager<'a>,
     cipher: Arc<Cipher>,
 }
