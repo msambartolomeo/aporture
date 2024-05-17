@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use anyhow::bail;
 use clap::Parser;
 
 use aporture::crypto::Cipher;
@@ -52,23 +53,27 @@ async fn main() -> anyhow::Result<()> {
             };
             let passphrase = passphrase::get(passphrase_method)?;
 
-            let app = AporturePairingProtocol::<Sender>::new(passphrase);
+            let app = AporturePairingProtocol::<Sender>::new(passphrase, save.is_some());
 
             let mut pair_info = app.pair().await?;
 
             aporture::transfer::send_file(&path, &mut pair_info).await?;
 
             if let Some(name) = save {
-                let contacts = contacts_holder.get_or_init().await?;
+                if pair_info.save_contact {
+                    let contacts = contacts_holder.get_or_init().await?;
 
-                if let Some(name) = method.contact {
-                    contacts.delete(&name);
+                    if let Some(name) = method.contact {
+                        contacts.delete(&name);
+                    }
+
+                    let pair_cipher = pair_info.cipher();
+                    let key = pair_cipher.get_key().clone();
+
+                    contacts.add(name, key);
+                } else {
+                    println!("Warning: Not saving contact because peer refused");
                 }
-
-                let pair_cipher = pair_info.cipher();
-                let key = pair_cipher.get_key().clone();
-
-                contacts.add(name, key);
             }
 
             pair_info.finalize().await;
@@ -93,23 +98,27 @@ async fn main() -> anyhow::Result<()> {
 
             let passphrase = passphrase::get(passphrase_method)?;
 
-            let app = AporturePairingProtocol::<Receiver>::new(passphrase);
+            let app = AporturePairingProtocol::<Receiver>::new(passphrase, save.is_some());
 
             let mut pair_info = app.pair().await?;
 
             aporture::transfer::receive_file(destination, &mut pair_info).await?;
 
             if let Some(name) = save {
-                let contacts = contacts_holder.get_or_init().await?;
+                if pair_info.save_contact {
+                    let contacts = contacts_holder.get_or_init().await?;
 
-                if let Some(name) = method.contact {
-                    contacts.delete(&name);
+                    if let Some(name) = method.contact {
+                        contacts.delete(&name);
+                    }
+
+                    let pair_cipher = pair_info.cipher();
+                    let key = pair_cipher.get_key().clone();
+
+                    contacts.add(name, key);
+                } else {
+                    println!("Warning: Not saving contact because peer refused");
                 }
-
-                let pair_cipher = pair_info.cipher();
-                let key = pair_cipher.get_key().clone();
-
-                contacts.add(name, key);
             }
 
             pair_info.finalize().await;
@@ -138,9 +147,13 @@ async fn main() -> anyhow::Result<()> {
 
                 let passphrase = passphrase::get(method)?;
 
-                let app = AporturePairingProtocol::<Sender>::new(passphrase);
+                let app = AporturePairingProtocol::<Sender>::new(passphrase, true);
 
                 let mut pair_info = app.pair().await?;
+
+                if pair_info.save_contact {
+                    bail!("Peer refused to save contact");
+                }
 
                 let mut contacts_holder = contacts::Holder::default();
                 let contacts = contacts_holder.get_or_init().await?;
@@ -155,9 +168,13 @@ async fn main() -> anyhow::Result<()> {
             PairCommand::Complete { passphrase, name } => {
                 let passphrase = passphrase::get(Method::Direct(passphrase))?;
 
-                let app = AporturePairingProtocol::<Receiver>::new(passphrase);
+                let app = AporturePairingProtocol::<Receiver>::new(passphrase, true);
 
                 let mut pair_info = app.pair().await?;
+
+                if pair_info.save_contact {
+                    bail!("Peer refused to save contact");
+                }
 
                 let mut contacts_holder = contacts::Holder::default();
 

@@ -10,7 +10,9 @@ use crate::crypto::Cipher;
 use crate::fs::config::Config;
 use crate::net::{EncryptedNetworkPeer, NetworkPeer};
 use crate::parser::{EncryptedSerdeIO, SerdeIO};
-use crate::protocol::{Hello, KeyExchangePayload, PairKind, PairingResponseCode};
+use crate::protocol::{
+    Hello, KeyExchangePayload, NegotiationPayload, PairKind, PairingResponseCode,
+};
 
 mod upnp;
 
@@ -23,6 +25,7 @@ pub struct AporturePairingProtocolState {
     protocol_version: u8,
     kind: PairKind,
     passphrase: Vec<u8>,
+    save_contact: bool,
     same_public_ip: bool,
 }
 
@@ -41,12 +44,13 @@ impl Kind for Sender {}
 
 impl AporturePairingProtocol<Sender> {
     #[must_use]
-    pub fn new(passphrase: Vec<u8>) -> AporturePairingProtocol<Start<Sender>> {
+    pub fn new(passphrase: Vec<u8>, save_contact: bool) -> AporturePairingProtocol<Start<Sender>> {
         let state = AporturePairingProtocolState {
             protocol_version: crate::protocol::PROTOCOL_VERSION,
             kind: PairKind::Sender,
             passphrase,
             same_public_ip: false,
+            save_contact,
         };
 
         AporturePairingProtocol {
@@ -62,12 +66,16 @@ impl Kind for Receiver {}
 
 impl AporturePairingProtocol<Receiver> {
     #[must_use]
-    pub fn new(passphrase: Vec<u8>) -> AporturePairingProtocol<Start<Receiver>> {
+    pub fn new(
+        passphrase: Vec<u8>,
+        save_contact: bool,
+    ) -> AporturePairingProtocol<Start<Receiver>> {
         let state = AporturePairingProtocolState {
             protocol_version: crate::protocol::PROTOCOL_VERSION,
             kind: PairKind::Receiver,
             passphrase,
             same_public_ip: false,
+            save_contact,
         };
 
         AporturePairingProtocol {
@@ -88,7 +96,7 @@ impl AporturePairingProtocol<Start<Sender>> {
             .await?
             .exchange_key()
             .await?
-            .exchange_addr()
+            .exchange()
             .await?;
 
         Ok(pair_info)
@@ -112,7 +120,7 @@ impl AporturePairingProtocol<Start<Receiver>> {
             }
         }
 
-        let pair_info = address_collector.exchange_addr().await?;
+        let pair_info = address_collector.exchange().await?;
 
         Ok(pair_info)
     }
@@ -177,7 +185,7 @@ impl<K: Kind> State for KeyExchange<K> {}
 impl<K: Kind + Send> AporturePairingProtocol<KeyExchange<K>> {
     pub async fn exchange_key(
         mut self,
-    ) -> Result<AporturePairingProtocol<AddressNegotiation<K>>, error::KeyExchange> {
+    ) -> Result<AporturePairingProtocol<Negotiation<K>>, error::KeyExchange> {
         let password = &Password::new(&self.data.passphrase);
         let identity = &Identity::new(self.state.id.as_bytes());
 
@@ -196,24 +204,22 @@ impl<K: Kind + Send> AporturePairingProtocol<KeyExchange<K>> {
         // NOTE: Add cipher to server to encrypt files going forward.
         let server = self.state.server.add_cipher(cipher);
 
-        // TODO: Exchange associated data and confirm key
-
         Ok(AporturePairingProtocol {
             data: self.data,
-            state: AddressNegotiation::new(server),
+            state: Negotiation::new(server),
         })
     }
 }
 
-pub struct AddressNegotiation<K: Kind> {
+pub struct Negotiation<K: Kind> {
     server: EncryptedNetworkPeer,
     addresses: Vec<TransferInfo>,
     marker: PhantomData<K>,
 }
 
-impl<K: Kind> State for AddressNegotiation<K> {}
+impl<K: Kind> State for Negotiation<K> {}
 
-impl<K: Kind> AddressNegotiation<K> {
+impl<K: Kind> Negotiation<K> {
     fn new(server: EncryptedNetworkPeer) -> Self {
         Self {
             server,
@@ -223,22 +229,34 @@ impl<K: Kind> AddressNegotiation<K> {
     }
 }
 
-impl AporturePairingProtocol<AddressNegotiation<Sender>> {
-    pub async fn exchange_addr(mut self) -> Result<PairInfo, error::AddressExchange> {
-        let addresses = self.state.server.read_ser_enc::<Vec<SocketAddr>>().await?;
+impl AporturePairingProtocol<Negotiation<Sender>> {
+    pub async fn exchange(mut self) -> Result<PairInfo, error::Negotiation> {
+        let write = NegotiationPayload {
+            addresses: Vec::new(),
+            save_contact: self.data.save_contact,
+        };
+
+        self.state.server.write_ser_enc(&write).await?;
+
+        let read: NegotiationPayload = self.state.server.read_ser_enc().await?;
 
         let (server, cipher) = self.state.server.extract_cipher();
 
         Ok(PairInfo {
             cipher,
-            transfer_info: addresses.into_iter().map(TransferInfo::Address).collect(),
+            transfer_info: read
+                .addresses
+                .into_iter()
+                .map(TransferInfo::Address)
+                .collect(),
             server_fallback: Some(server),
+            save_contact: read.save_contact,
         })
     }
 }
 
-impl AporturePairingProtocol<AddressNegotiation<Receiver>> {
-    pub async fn exchange_addr(mut self) -> Result<PairInfo, error::AddressExchange> {
+impl AporturePairingProtocol<Negotiation<Receiver>> {
+    pub async fn exchange(mut self) -> Result<PairInfo, error::Negotiation> {
         let addresses = self
             .state
             .addresses
@@ -246,7 +264,14 @@ impl AporturePairingProtocol<AddressNegotiation<Receiver>> {
             .map(TransferInfo::get_connection_address)
             .collect::<Vec<_>>();
 
-        self.state.server.write_ser_enc(&addresses).await?;
+        let write = NegotiationPayload {
+            addresses,
+            save_contact: self.data.save_contact,
+        };
+
+        self.state.server.write_ser_enc(&write).await?;
+
+        let read: NegotiationPayload = self.state.server.read_ser_enc().await?;
 
         let (server, cipher) = self.state.server.extract_cipher();
 
@@ -254,6 +279,7 @@ impl AporturePairingProtocol<AddressNegotiation<Receiver>> {
             cipher,
             transfer_info: self.state.addresses,
             server_fallback: Some(server),
+            save_contact: read.save_contact,
         })
     }
 
@@ -289,6 +315,7 @@ pub struct PairInfo {
     cipher: Arc<Cipher>,
     transfer_info: Vec<TransferInfo>,
     server_fallback: Option<NetworkPeer>,
+    pub save_contact: bool,
 }
 
 impl PairInfo {

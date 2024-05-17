@@ -11,7 +11,7 @@ use crate::crypto::Cipher;
 use crate::net::EncryptedNetworkPeer;
 use crate::pairing::PairInfo;
 use crate::parser::EncryptedSerdeIO;
-use crate::protocol::{FileData, KeyConfirmationPayload, TransferResponseCode};
+use crate::protocol::{FileData, TransferHello, TransferResponseCode};
 
 mod error;
 pub use error::{Receive as ReceiveError, Send as SendError};
@@ -177,12 +177,12 @@ async fn exchange_hello(
     mut peer: EncryptedNetworkPeer,
     a: SocketAddr,
 ) -> Result<EncryptedNetworkPeer, (crate::io::Error, SocketAddr)> {
-    let hello = KeyConfirmationPayload::default();
+    let hello = TransferHello::default();
 
     peer.write_ser_enc(&hello).await.map_err(|e| (e, a))?;
 
     let peer_hello = peer
-        .read_ser_enc::<KeyConfirmationPayload>()
+        .read_ser_enc::<TransferHello>()
         .await
         .map_err(|e| (e, a))?;
 

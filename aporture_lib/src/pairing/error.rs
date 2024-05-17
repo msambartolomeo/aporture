@@ -9,7 +9,7 @@ pub enum Error {
     #[error("{0}")]
     KeyExchange(KeyExchange),
     #[error("{0}")]
-    AddressExchange(AddressExchange),
+    AddressExchange(Negotiation),
 }
 
 impl From<Hello> for Error {
@@ -24,8 +24,8 @@ impl From<KeyExchange> for Error {
     }
 }
 
-impl From<AddressExchange> for Error {
-    fn from(value: AddressExchange) -> Self {
+impl From<Negotiation> for Error {
+    fn from(value: Negotiation) -> Self {
         Self::AddressExchange(value)
     }
 }
@@ -78,9 +78,9 @@ impl From<spake2::Error> for KeyExchange {
 
 #[derive(Debug, Error)]
 #[error("Error exchanging defined addresses with peer: {0}")]
-pub struct AddressExchange(crate::io::Error);
+pub struct Negotiation(crate::io::Error);
 
-impl From<crate::io::Error> for AddressExchange {
+impl From<crate::io::Error> for Negotiation {
     fn from(value: crate::io::Error) -> Self {
         Self(value)
     }

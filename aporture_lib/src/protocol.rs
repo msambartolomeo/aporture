@@ -57,19 +57,24 @@ pub enum PairingResponseCode {
 #[derive(Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct KeyExchangePayload(#[serde_as(as = "Bytes")] pub [u8; 33]);
 
+#[derive(Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub struct NegotiationPayload {
+    pub addresses: Vec<SocketAddr>,
+    pub save_contact: bool,
+}
+
 #[serde_as]
 #[derive(Debug, PartialEq, Eq, Deserialize, Serialize)]
-pub struct KeyConfirmationPayload {
+pub struct TransferHello {
     #[serde_as(as = "Bytes")]
     // NOTE: Must be aporture
     pub tag: [u8; 8],
 
     // NOTE: milis from epoch as bytes
-    // #[serde_as(as = "Bytes")]
     pub timestamp: Duration,
 }
 
-impl Default for KeyConfirmationPayload {
+impl Default for TransferHello {
     fn default() -> Self {
         Self {
             tag: b"aporture".to_owned(),
@@ -116,12 +121,20 @@ impl Parser for KeyExchangePayload {
     type MinimumSerializedSize = generic_array::typenum::U36;
 }
 
-impl Parser for KeyConfirmationPayload {
+impl Parser for TransferHello {
     type MinimumSerializedSize = generic_array::typenum::U66;
 }
 
 impl Parser for SocketAddr {
     type MinimumSerializedSize = generic_array::typenum::U11;
+}
+
+impl Parser for bool {
+    type MinimumSerializedSize = generic_array::typenum::U3;
+}
+
+impl Parser for NegotiationPayload {
+    type MinimumSerializedSize = generic_array::typenum::U0;
 }
 
 impl Parser for FileData {
