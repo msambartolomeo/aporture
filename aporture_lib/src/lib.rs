@@ -1,6 +1,5 @@
+pub mod io;
 pub mod protocol;
-
-mod io;
 
 pub use io::net;
 pub use io::parser;

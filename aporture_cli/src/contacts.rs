@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::{Context, Ok, Result};
+use anyhow::{bail, Result};
 
 use aporture::crypto::Cipher;
 use aporture::fs::contacts::Contacts;
@@ -13,16 +13,35 @@ impl ContactsHolder {
         if self.0.is_none() {
             if !Contacts::exists() {
                 println!("No contacts registered, creating database...");
-                let passphrase = rpassword::prompt_password("Insert password to encrypt contacts")?;
-                let cipher = Arc::new(Cipher::new(passphrase.into_bytes()));
+                let password = loop {
+                    let p1 = rpassword::prompt_password("Enter password to encrypt contacts:")?;
+                    let p2 = rpassword::prompt_password("Reenter password to encrypt contacts:")?;
+
+                    if p1 != p2 {
+                        println!("Password does not match, retrying..");
+                    }
+                    break p1;
+                };
+
+                let cipher = Arc::new(Cipher::new(password.into_bytes()));
                 self.0 = Some((cipher, Contacts::default()));
             } else {
-                let passphrase = rpassword::prompt_password("Insert password to read contacts")?;
-                let cipher = Arc::new(Cipher::new(passphrase.into_bytes()));
-                let contacts = Contacts::load(cipher.clone())
-                    .await
-                    .context("Could not find or create contacts file")?;
-                self.0 = Some((cipher.clone(), contacts));
+                loop {
+                    let password = rpassword::prompt_password("Insert password to read contacts")?;
+                    let cipher = Arc::new(Cipher::new(password.into_bytes()));
+                    let contacts = match Contacts::load(cipher.clone()).await {
+                        Ok(contacts) => contacts,
+                        Err(aporture::io::Error::Cipher(_)) => {
+                            println!("Incorrect password, retrying");
+                            continue;
+                        }
+                        Err(_) => bail!("Could not find or create contacts file"),
+                    };
+
+                    self.0 = Some((cipher.clone(), contacts));
+
+                    break;
+                }
             }
         }
 
