@@ -8,13 +8,13 @@ use crate::crypto::Cipher;
 use crate::fs::EncryptedFileManager;
 use crate::parser::{EncryptedSerdeIO, Parser};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct Contacts {
     map: HashMap<String, Contact>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Contact {
+struct Contact {
     pub key: Vec<u8>,
     pub timestamp: DateTime<Local>,
 }
@@ -33,6 +33,10 @@ impl Contacts {
         config_dir
     }
 
+    pub fn exists() -> bool {
+        Contacts::path().exists()
+    }
+
     pub async fn load(cipher: Arc<Cipher>) -> Result<Self, crate::io::Error> {
         let path = Contacts::path();
 
@@ -41,10 +45,6 @@ impl Contacts {
         let config = manager.read_ser_enc().await?;
 
         Ok(config)
-    }
-
-    pub fn exists() -> bool {
-        Contacts::path().exists()
     }
 
     pub async fn save(self, cipher: Arc<Cipher>) -> Result<(), crate::io::Error> {
@@ -60,8 +60,8 @@ impl Contacts {
     }
 
     #[must_use]
-    pub fn get(&self, name: &str) -> Option<&Contact> {
-        self.map.get(name)
+    pub fn get(&self, name: &str) -> Option<&Vec<u8>> {
+        self.map.get(name).map(|c| &c.key)
     }
 
     pub fn add(&mut self, name: String, key: Vec<u8>) {
@@ -76,7 +76,7 @@ impl Contacts {
         self.map.remove(name);
     }
 
-    pub fn list(&self) -> impl Iterator<Item = (&String, &Contact)> {
-        self.map.iter()
+    pub fn list(&self) -> impl Iterator<Item = (&String, DateTime<Local>)> {
+        self.map.iter().map(|(n, c)| (n, c.timestamp))
     }
 }

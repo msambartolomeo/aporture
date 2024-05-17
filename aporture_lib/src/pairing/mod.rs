@@ -293,7 +293,7 @@ pub struct PairInfo {
 
 impl PairInfo {
     #[must_use]
-    pub(crate) fn cipher(&mut self) -> Arc<Cipher> {
+    pub fn cipher(&mut self) -> Arc<Cipher> {
         self.cipher.clone()
     }
 

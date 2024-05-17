@@ -16,3 +16,4 @@ aporture = { workspace = true, features = ["full"] }
 tokio = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }
+rpassword = "7.3.1"
