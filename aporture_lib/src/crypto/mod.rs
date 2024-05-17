@@ -35,6 +35,7 @@ impl Cipher {
         }
     }
 
+    #[must_use]
     pub const fn get_key(&self) -> &Vec<u8> {
         &self.key
     }

@@ -6,26 +6,12 @@ use aporture::crypto::Cipher;
 use aporture::fs::contacts::Contacts;
 
 #[derive(Default)]
-pub struct ContactsHolder(Option<(Arc<Cipher>, Contacts)>);
+pub struct Holder(Option<(Arc<Cipher>, Contacts)>);
 
-impl ContactsHolder {
+impl Holder {
     pub async fn get_or_init(&mut self) -> Result<&mut Contacts> {
         if self.0.is_none() {
-            if !Contacts::exists() {
-                println!("No contacts registered, creating database...");
-                let password = loop {
-                    let p1 = rpassword::prompt_password("Enter password to encrypt contacts:")?;
-                    let p2 = rpassword::prompt_password("Reenter password to encrypt contacts:")?;
-
-                    if p1 != p2 {
-                        println!("Password does not match, retrying..");
-                    }
-                    break p1;
-                };
-
-                let cipher = Arc::new(Cipher::new(password.into_bytes()));
-                self.0 = Some((cipher, Contacts::default()));
-            } else {
+            if Contacts::exists() {
                 loop {
                     let password = rpassword::prompt_password("Insert password to read contacts")?;
                     let cipher = Arc::new(Cipher::new(password.into_bytes()));
@@ -42,6 +28,21 @@ impl ContactsHolder {
 
                     break;
                 }
+            } else {
+                println!("No contacts registered, creating database...");
+                let password = loop {
+                    let p1 = rpassword::prompt_password("Enter password to encrypt contacts:")?;
+                    let p2 = rpassword::prompt_password("Reenter password to encrypt contacts:")?;
+
+                    if p1 != p2 {
+                        println!("Password does not match, retrying..");
+                        continue;
+                    }
+                    break p1;
+                };
+
+                let cipher = Arc::new(Cipher::new(password.into_bytes()));
+                self.0 = Some((cipher, Contacts::default()));
             }
         }
 

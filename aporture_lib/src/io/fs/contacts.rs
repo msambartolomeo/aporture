@@ -24,6 +24,7 @@ impl Parser for Contacts {
 }
 
 impl Contacts {
+    #[must_use]
     fn path() -> PathBuf {
         let dirs = directories::ProjectDirs::from("dev", "msambartolomeo", "aporture")
             .expect("PC must have valid home directory");
@@ -33,12 +34,13 @@ impl Contacts {
         config_dir
     }
 
+    #[must_use]
     pub fn exists() -> bool {
-        Contacts::path().exists()
+        Self::path().exists()
     }
 
     pub async fn load(cipher: Arc<Cipher>) -> Result<Self, crate::io::Error> {
-        let path = Contacts::path();
+        let path = Self::path();
 
         let mut manager = EncryptedFileManager::new(&path, cipher);
 
@@ -48,7 +50,7 @@ impl Contacts {
     }
 
     pub async fn save(self, cipher: Arc<Cipher>) -> Result<(), crate::io::Error> {
-        let path = Contacts::path();
+        let path = Self::path();
 
         tokio::fs::create_dir_all(&path).await?;
 

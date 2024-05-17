@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
+use clap::Parser;
+
 use aporture::crypto::Cipher;
 use aporture::fs::contacts::Contacts;
 use aporture::pairing::{AporturePairingProtocol, Receiver, Sender};
 use args::{Cli, Commands, PairCommand};
-
-use clap::Parser;
-use contacts::ContactsHolder;
-use passphrase::PassphraseMethod;
+use passphrase::Method;
 
 mod args;
 mod contacts;
@@ -41,18 +40,17 @@ async fn main() -> anyhow::Result<()> {
 
     match args.command {
         Commands::Send { path, method, save } => {
-            let mut contacts_holder = ContactsHolder::default();
+            let mut contacts_holder = contacts::Holder::default();
 
             let passphrase_method = if let Some(passphrase) = method.passphrase {
-                PassphraseMethod::Direct(passphrase)
+                Method::Direct(passphrase)
             } else if let Some(ref name) = method.contact {
                 let contacts = contacts_holder.get_or_init().await?;
-                PassphraseMethod::Contact(name, contacts)
+                Method::Contact(name, contacts)
             } else {
-                PassphraseMethod::Generate
+                Method::Generate
             };
-
-            let passphrase = passphrase::get_passphrase(passphrase_method)?;
+            let passphrase = passphrase::get(passphrase_method)?;
 
             let app = AporturePairingProtocol::<Sender>::new(passphrase);
 
@@ -64,7 +62,7 @@ async fn main() -> anyhow::Result<()> {
                 let contacts = contacts_holder.get_or_init().await?;
 
                 if let Some(name) = method.contact {
-                    contacts.delete(&name)
+                    contacts.delete(&name);
                 }
 
                 let pair_cipher = pair_info.cipher();
@@ -82,18 +80,18 @@ async fn main() -> anyhow::Result<()> {
             method,
             save,
         } => {
-            let mut contacts_holder = ContactsHolder::default();
+            let mut contacts_holder = contacts::Holder::default();
 
             let passphrase_method = if let Some(passphrase) = method.passphrase {
-                PassphraseMethod::Direct(passphrase)
+                Method::Direct(passphrase)
             } else if let Some(ref name) = method.contact {
                 let contacts = contacts_holder.get_or_init().await?;
-                PassphraseMethod::Contact(name, contacts)
+                Method::Contact(name, contacts)
             } else {
                 unreachable!("Guaranteed by clap");
             };
 
-            let passphrase = passphrase::get_passphrase(passphrase_method)?;
+            let passphrase = passphrase::get(passphrase_method)?;
 
             let app = AporturePairingProtocol::<Receiver>::new(passphrase);
 
@@ -105,7 +103,7 @@ async fn main() -> anyhow::Result<()> {
                 let contacts = contacts_holder.get_or_init().await?;
 
                 if let Some(name) = method.contact {
-                    contacts.delete(&name)
+                    contacts.delete(&name);
                 }
 
                 let pair_cipher = pair_info.cipher();
@@ -119,9 +117,7 @@ async fn main() -> anyhow::Result<()> {
             contacts_holder.save().await?;
         }
         Commands::Contacts => {
-            if !Contacts::exists() {
-                println!("No contacts found");
-            } else {
+            if Contacts::exists() {
                 let password = rpassword::prompt_password("Insert contact password here:")?;
 
                 let cipher = Arc::new(Cipher::new(password.into_bytes()));
@@ -132,24 +128,21 @@ async fn main() -> anyhow::Result<()> {
                 for (name, timestamp) in contacts.list() {
                     println!("Name: {name} \t\t Added: {timestamp}");
                 }
+            } else {
+                println!("No contacts found");
             }
         }
         Commands::Pair { command } => match command {
             PairCommand::Start { passphrase, name } => {
-                let method = if let Some(passphrase) = passphrase {
-                    PassphraseMethod::Direct(passphrase)
-                } else {
-                    PassphraseMethod::Generate
-                };
+                let method = passphrase.map_or(Method::Generate, Method::Direct);
 
-                let passphrase = passphrase::get_passphrase(method)?;
+                let passphrase = passphrase::get(method)?;
 
                 let app = AporturePairingProtocol::<Sender>::new(passphrase);
 
                 let mut pair_info = app.pair().await?;
 
-                let mut contacts_holder = ContactsHolder::default();
-
+                let mut contacts_holder = contacts::Holder::default();
                 let contacts = contacts_holder.get_or_init().await?;
 
                 let cipher = pair_info.cipher();
@@ -160,15 +153,13 @@ async fn main() -> anyhow::Result<()> {
                 pair_info.finalize().await;
             }
             PairCommand::Complete { passphrase, name } => {
-                let method = PassphraseMethod::Direct(passphrase);
-
-                let passphrase = passphrase::get_passphrase(method)?;
+                let passphrase = passphrase::get(Method::Direct(passphrase))?;
 
                 let app = AporturePairingProtocol::<Receiver>::new(passphrase);
 
                 let mut pair_info = app.pair().await?;
 
-                let mut contacts_holder = ContactsHolder::default();
+                let mut contacts_holder = contacts::Holder::default();
 
                 let contacts = contacts_holder.get_or_init().await?;
 
