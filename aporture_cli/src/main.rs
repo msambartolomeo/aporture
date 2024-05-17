@@ -63,8 +63,6 @@ async fn main() -> anyhow::Result<()> {
             if let Some(name) = save {
                 let contacts = contacts_holder.get_or_init().await?;
 
-                let mut contacts = contacts.borrow_mut();
-
                 if let Some(name) = method.contact {
                     contacts.delete(&name)
                 }
@@ -105,8 +103,6 @@ async fn main() -> anyhow::Result<()> {
 
             if let Some(name) = save {
                 let contacts = contacts_holder.get_or_init().await?;
-
-                let mut contacts = contacts.borrow_mut();
 
                 if let Some(name) = method.contact {
                     contacts.delete(&name)
