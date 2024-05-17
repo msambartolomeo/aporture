@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use serde_with::{serde_as, Bytes};
+use serde_with::{serde_as, Bytes, DisplayFromStr};
 
 use crate::parser::Parser;
 
@@ -57,9 +57,11 @@ pub enum PairingResponseCode {
 #[derive(Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct KeyExchangePayload(#[serde_as(as = "Bytes")] pub [u8; 33]);
 
+#[serde_as]
 #[derive(Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct NegotiationPayload {
     pub addresses: Vec<SocketAddr>,
+    #[serde_as(as = "DisplayFromStr")]
     pub save_contact: bool,
 }
 
@@ -123,14 +125,6 @@ impl Parser for KeyExchangePayload {
 
 impl Parser for TransferHello {
     type MinimumSerializedSize = generic_array::typenum::U66;
-}
-
-impl Parser for SocketAddr {
-    type MinimumSerializedSize = generic_array::typenum::U11;
-}
-
-impl Parser for bool {
-    type MinimumSerializedSize = generic_array::typenum::U3;
 }
 
 impl Parser for NegotiationPayload {
@@ -210,16 +204,17 @@ mod test {
     }
 
     #[test]
-    fn test_address_ser_de() {
-        let address = SocketAddr::from(([0, 0, 0, 0], 0));
+    fn test_negotiation_ser_de() {
+        let negotiation = NegotiationPayload {
+            addresses: vec![SocketAddr::from(([0, 0, 0, 0], 0))],
+            save_contact: true,
+        };
 
-        let serialized = address.serialize_to();
+        let serialized = negotiation.serialize_to();
 
-        assert_eq!(SocketAddr::serialized_size(), serialized.len());
+        let deserialized = NegotiationPayload::deserialize_from(&serialized).unwrap();
 
-        let deserialized = SocketAddr::deserialize_from(&serialized).unwrap();
-
-        assert_eq!(address, deserialized);
+        assert_eq!(negotiation, deserialized);
     }
 
     #[test]

@@ -151,7 +151,7 @@ async fn main() -> anyhow::Result<()> {
 
                 let mut pair_info = app.pair().await?;
 
-                if pair_info.save_contact {
+                if !pair_info.save_contact {
                     bail!("Peer refused to save contact");
                 }
 
@@ -172,7 +172,7 @@ async fn main() -> anyhow::Result<()> {
 
                 let mut pair_info = app.pair().await?;
 
-                if pair_info.save_contact {
+                if !pair_info.save_contact {
                     bail!("Peer refused to save contact");
                 }
 

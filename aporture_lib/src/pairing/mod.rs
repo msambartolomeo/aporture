@@ -109,14 +109,14 @@ impl AporturePairingProtocol<Start<Receiver>> {
         let mut address_collector = self.connect().await?.exchange_key().await?;
 
         if let Err(e) = address_collector.add_upnp().await {
-            log::info!("Could not enable upnp - {e}");
+            log::warn!("Could not enable upnp - {e}");
         }
 
         if address_collector.data.same_public_ip {
             let result = address_collector.add_local();
 
             if result.is_err() {
-                log::info!("Could not get a private ip from system");
+                log::warn!("Could not get a private ip from system");
             }
         }
 
@@ -137,6 +137,8 @@ impl<K: Kind + Send> AporturePairingProtocol<Start<K>> {
         );
 
         let server = TcpStream::connect((config.server_address, config.server_port)).await?;
+
+        log::info!("Connected to server");
 
         let mut server = NetworkPeer::new(server);
 
@@ -194,12 +196,16 @@ impl<K: Kind + Send> AporturePairingProtocol<KeyExchange<K>> {
         let key_exchange =
             KeyExchangePayload(spake_msg.try_into().expect("Spake message is 33 bytes"));
 
+        log::info!("Exchanging spake key...");
+
         self.state.server.write_ser(&key_exchange).await?;
 
         let key_exchange = self.state.server.read_ser::<KeyExchangePayload>().await?;
 
         let key = spake.finish(&key_exchange.0)?;
         let cipher = Arc::new(Cipher::new(key));
+
+        log::info!("Key exchanged successfuly");
 
         // NOTE: Add cipher to server to encrypt files going forward.
         let server = self.state.server.add_cipher(cipher);
@@ -231,6 +237,8 @@ impl<K: Kind> Negotiation<K> {
 
 impl AporturePairingProtocol<Negotiation<Sender>> {
     pub async fn exchange(mut self) -> Result<PairInfo, error::Negotiation> {
+        log::info!("Starting APP Negotiation");
+
         let write = NegotiationPayload {
             addresses: Vec::new(),
             save_contact: self.data.save_contact,
@@ -239,6 +247,10 @@ impl AporturePairingProtocol<Negotiation<Sender>> {
         self.state.server.write_ser_enc(&write).await?;
 
         let read: NegotiationPayload = self.state.server.read_ser_enc().await?;
+
+        log::debug!("Peer payload: {read:#?}");
+
+        log::info!("Finished APP Negotiation");
 
         let (server, cipher) = self.state.server.extract_cipher();
 
@@ -257,6 +269,8 @@ impl AporturePairingProtocol<Negotiation<Sender>> {
 
 impl AporturePairingProtocol<Negotiation<Receiver>> {
     pub async fn exchange(mut self) -> Result<PairInfo, error::Negotiation> {
+        log::info!("Starting APP Negotiation");
+
         let addresses = self
             .state
             .addresses
@@ -272,6 +286,10 @@ impl AporturePairingProtocol<Negotiation<Receiver>> {
         self.state.server.write_ser_enc(&write).await?;
 
         let read: NegotiationPayload = self.state.server.read_ser_enc().await?;
+
+        log::debug!("Peer payload: {read:#?}");
+
+        log::info!("Finished APP Negotiation");
 
         let (server, cipher) = self.state.server.extract_cipher();
 
