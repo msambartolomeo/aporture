@@ -3,7 +3,7 @@ use std::sync::Arc;
 use aporture::crypto::Cipher;
 use aporture::fs::contacts::Contacts;
 use aporture::pairing::{AporturePairingProtocol, Receiver, Sender};
-use args::{Cli, Commands};
+use args::{Cli, Commands, PairCommand};
 
 use clap::Parser;
 use contacts::ContactsHolder;
@@ -134,7 +134,52 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         }
-        Commands::Pair { command: _ } => todo!("Add pair module"),
+        Commands::Pair { command } => match command {
+            PairCommand::Start { passphrase, name } => {
+                let method = if let Some(passphrase) = passphrase {
+                    PassphraseMethod::Direct(passphrase)
+                } else {
+                    PassphraseMethod::Generate
+                };
+
+                let passphrase = passphrase::get_passphrase(method)?;
+
+                let app = AporturePairingProtocol::<Sender>::new(passphrase);
+
+                let mut pair_info = app.pair().await?;
+
+                let mut contacts_holder = ContactsHolder::default();
+
+                let contacts = contacts_holder.get_or_init().await?;
+
+                let cipher = pair_info.cipher();
+                let key = cipher.get_key().clone();
+
+                contacts.add(name, key);
+
+                pair_info.finalize().await;
+            }
+            PairCommand::Complete { passphrase, name } => {
+                let method = PassphraseMethod::Direct(passphrase);
+
+                let passphrase = passphrase::get_passphrase(method)?;
+
+                let app = AporturePairingProtocol::<Receiver>::new(passphrase);
+
+                let mut pair_info = app.pair().await?;
+
+                let mut contacts_holder = ContactsHolder::default();
+
+                let contacts = contacts_holder.get_or_init().await?;
+
+                let cipher = pair_info.cipher();
+                let key = cipher.get_key().clone();
+
+                contacts.add(name, key);
+
+                pair_info.finalize().await;
+            }
+        },
     };
 
     Ok(())

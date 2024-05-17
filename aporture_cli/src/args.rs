@@ -62,6 +62,12 @@ pub struct ReceiveMethod {
 
 #[derive(Debug, Subcommand)]
 pub enum PairCommand {
-    Start { passphrase: Option<String> },
-    Complete { passphrase: String },
+    Start {
+        name: String,
+        passphrase: Option<String>,
+    },
+    Complete {
+        name: String,
+        passphrase: String,
+    },
 }

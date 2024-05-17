@@ -13,7 +13,7 @@ pub fn get_passphrase(method: PassphraseMethod) -> Result<Vec<u8>> {
         PassphraseMethod::Generate => {
             let passphrase = aporture::passphrase::generate(3);
 
-            println!("The generated passphrase is {passphrase}");
+            println!("The generated passphrase is '{passphrase}'");
             println!("Share it with your peer");
 
             Ok(passphrase.into_bytes())
