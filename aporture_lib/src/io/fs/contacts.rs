@@ -4,7 +4,7 @@ use std::{collections::HashMap, sync::Arc};
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 
-use crate::crypto::Cipher;
+use crate::crypto::cipher::Cipher;
 use crate::fs::EncryptedFileManager;
 use crate::parser::{EncryptedSerdeIO, Parser};
 
@@ -15,7 +15,7 @@ pub struct Contacts {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Contact {
-    pub key: Vec<u8>,
+    pub key: [u8; 32],
     pub timestamp: DateTime<Local>,
 }
 
@@ -62,11 +62,11 @@ impl Contacts {
     }
 
     #[must_use]
-    pub fn get(&self, name: &str) -> Option<&Vec<u8>> {
+    pub fn get(&self, name: &str) -> Option<&[u8; 32]> {
         self.map.get(name).map(|c| &c.key)
     }
 
-    pub fn add(&mut self, name: String, key: Vec<u8>) {
+    pub fn add(&mut self, name: String, key: [u8; 32]) {
         let timestamp = chrono::Local::now();
 
         let contact = Contact { key, timestamp };

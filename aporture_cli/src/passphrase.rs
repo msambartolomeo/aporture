@@ -19,7 +19,7 @@ pub fn get(method: Method) -> Result<Vec<u8>> {
             Ok(passphrase.into_bytes())
         }
         Method::Contact(name, contacts) => match contacts.get(name) {
-            Some(key) => Ok(key.clone()),
+            Some(key) => Ok(key.to_vec()),
             None => bail!("Contact {name} not found"),
         },
     }

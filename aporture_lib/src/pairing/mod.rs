@@ -2,11 +2,12 @@ use std::marker::PhantomData;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 
-use blake3::Hash;
 use spake2::{Ed25519Group, Identity, Password, Spake2};
 use tokio::net::TcpStream;
 
-use crate::crypto::Cipher;
+use crate::crypto::cipher::Cipher;
+use crate::crypto::hasher::Hasher;
+use crate::crypto::Key;
 use crate::fs::config::Config;
 use crate::net::{EncryptedNetworkPeer, NetworkPeer};
 use crate::parser::{EncryptedSerdeIO, SerdeIO};
@@ -142,12 +143,12 @@ impl<K: Kind + Send> AporturePairingProtocol<Start<K>> {
 
         let mut server = NetworkPeer::new(server);
 
-        let id = blake3::hash(&self.data.passphrase);
+        let id = Hasher::hash(&self.data.passphrase);
 
         let hello = Hello {
             version: self.data.protocol_version,
             kind: self.data.kind,
-            pair_id: *id.as_bytes(),
+            pair_id: id,
         };
 
         server.write_ser(&hello).await?;
@@ -177,7 +178,7 @@ impl<K: Kind + Send> AporturePairingProtocol<Start<K>> {
 }
 
 pub struct KeyExchange<K: Kind> {
-    id: Hash,
+    id: [u8; 32],
     server: NetworkPeer,
     marker: PhantomData<K>,
 }
@@ -189,7 +190,7 @@ impl<K: Kind + Send> AporturePairingProtocol<KeyExchange<K>> {
         mut self,
     ) -> Result<AporturePairingProtocol<Negotiation<K>>, error::KeyExchange> {
         let password = &Password::new(&self.data.passphrase);
-        let identity = &Identity::new(self.state.id.as_bytes());
+        let identity = &Identity::new(&self.state.id);
 
         let (spake, spake_msg) = Spake2::<Ed25519Group>::start_symmetric(password, identity);
 
@@ -203,21 +204,27 @@ impl<K: Kind + Send> AporturePairingProtocol<KeyExchange<K>> {
         let key_exchange = self.state.server.read_ser::<KeyExchangePayload>().await?;
 
         let key = spake.finish(&key_exchange.0)?;
-        let cipher = Arc::new(Cipher::new(key));
+
+        let key = Key::try_from(key).expect("Spake key is 32 bytes");
 
         log::info!("Key exchanged successfuly");
 
+        let mut cipher = Cipher::new(&key);
+
+        cipher.set_associated_data(self.data.passphrase.clone());
+
         // NOTE: Add cipher to server to encrypt files going forward.
-        let server = self.state.server.add_cipher(cipher);
+        let server = self.state.server.add_cipher(Arc::new(cipher));
 
         Ok(AporturePairingProtocol {
             data: self.data,
-            state: Negotiation::new(server),
+            state: Negotiation::new(server, key),
         })
     }
 }
 
 pub struct Negotiation<K: Kind> {
+    key: Key,
     server: EncryptedNetworkPeer,
     addresses: Vec<TransferInfo>,
     marker: PhantomData<K>,
@@ -226,8 +233,9 @@ pub struct Negotiation<K: Kind> {
 impl<K: Kind> State for Negotiation<K> {}
 
 impl<K: Kind> Negotiation<K> {
-    fn new(server: EncryptedNetworkPeer) -> Self {
+    fn new(server: EncryptedNetworkPeer, key: Key) -> Self {
         Self {
+            key,
             server,
             addresses: Vec::new(),
             marker: PhantomData::<K>,
@@ -255,6 +263,7 @@ impl AporturePairingProtocol<Negotiation<Sender>> {
         let (server, cipher) = self.state.server.extract_cipher();
 
         Ok(PairInfo {
+            key: self.state.key,
             cipher,
             transfer_info: read
                 .addresses
@@ -294,6 +303,7 @@ impl AporturePairingProtocol<Negotiation<Receiver>> {
         let (server, cipher) = self.state.server.extract_cipher();
 
         Ok(PairInfo {
+            key: self.state.key,
             cipher,
             transfer_info: self.state.addresses,
             server_fallback: Some(server),
@@ -330,6 +340,7 @@ impl AporturePairingProtocol<Negotiation<Receiver>> {
 
 #[derive(Debug)]
 pub struct PairInfo {
+    key: Key,
     cipher: Arc<Cipher>,
     transfer_info: Vec<TransferInfo>,
     server_fallback: Option<NetworkPeer>,
@@ -362,10 +373,11 @@ impl PairInfo {
             .collect()
     }
 
-    pub async fn finalize(self) {
+    pub async fn finalize(self) -> Key {
         for info in self.transfer_info {
             info.finalize().await;
         }
+        self.key
     }
 }
 

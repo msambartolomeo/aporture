@@ -2,7 +2,7 @@ use std::{path::Path, sync::Arc};
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use crate::crypto::Cipher;
+use crate::crypto::cipher::Cipher;
 use crate::parser::{EncryptedSerdeIO, Parser, SerdeIO};
 
 pub mod config;

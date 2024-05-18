@@ -4,7 +4,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 use super::plain::NetworkPeer;
-use crate::crypto::Cipher;
+use crate::crypto::cipher::Cipher;
 use crate::parser::{EncryptedSerdeIO, Parser, SerdeIO};
 
 pub struct EncryptedNetworkPeer {

@@ -1,9 +1,6 @@
-use std::sync::Arc;
-
 use anyhow::bail;
 use clap::Parser;
 
-use aporture::crypto::Cipher;
 use aporture::fs::contacts::Contacts;
 use aporture::pairing::{AporturePairingProtocol, Receiver, Sender};
 use args::{Cli, Commands, PairCommand};
@@ -59,24 +56,23 @@ async fn main() -> anyhow::Result<()> {
 
             aporture::transfer::send_file(&path, &mut pair_info).await?;
 
+            let accepted_save_contact = pair_info.save_contact;
+
+            let key = pair_info.finalize().await;
+
             if let Some(name) = save {
-                if pair_info.save_contact {
+                if accepted_save_contact {
                     let contacts = contacts_holder.get_or_init().await?;
 
                     if let Some(name) = method.contact {
                         contacts.delete(&name);
                     }
 
-                    let pair_cipher = pair_info.cipher();
-                    let key = pair_cipher.get_key().clone();
-
                     contacts.add(name, key);
                 } else {
                     println!("Warning: Not saving contact because peer refused");
                 }
             }
-
-            pair_info.finalize().await;
 
             contacts_holder.save().await?;
         }
@@ -104,16 +100,17 @@ async fn main() -> anyhow::Result<()> {
 
             aporture::transfer::receive_file(destination, &mut pair_info).await?;
 
+            let accepted_save_contact = pair_info.save_contact;
+
+            let key = pair_info.finalize().await;
+
             if let Some(name) = save {
-                if pair_info.save_contact {
+                if accepted_save_contact {
                     let contacts = contacts_holder.get_or_init().await?;
 
                     if let Some(name) = method.contact {
                         contacts.delete(&name);
                     }
-
-                    let pair_cipher = pair_info.cipher();
-                    let key = pair_cipher.get_key().clone();
 
                     contacts.add(name, key);
                 } else {
@@ -121,17 +118,12 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
 
-            pair_info.finalize().await;
-
             contacts_holder.save().await?;
         }
         Commands::Contacts => {
             if Contacts::exists() {
-                let password = rpassword::prompt_password("Insert contact password here:")?;
-
-                let cipher = Arc::new(Cipher::new(password.into_bytes()));
-
-                let contacts = Contacts::load(cipher).await?;
+                let mut holder = contacts::Holder::default();
+                let contacts = holder.get_or_init().await?;
 
                 println!("Registered contacts:");
                 for (name, timestamp) in contacts.list() {
@@ -149,7 +141,7 @@ async fn main() -> anyhow::Result<()> {
 
                 let app = AporturePairingProtocol::<Sender>::new(passphrase, true);
 
-                let mut pair_info = app.pair().await?;
+                let pair_info = app.pair().await?;
 
                 if !pair_info.save_contact {
                     bail!("Peer refused to save contact");
@@ -158,19 +150,16 @@ async fn main() -> anyhow::Result<()> {
                 let mut contacts_holder = contacts::Holder::default();
                 let contacts = contacts_holder.get_or_init().await?;
 
-                let cipher = pair_info.cipher();
-                let key = cipher.get_key().clone();
+                let key = pair_info.finalize().await;
 
                 contacts.add(name, key);
-
-                pair_info.finalize().await;
             }
             PairCommand::Complete { passphrase, name } => {
                 let passphrase = passphrase::get(Method::Direct(passphrase))?;
 
                 let app = AporturePairingProtocol::<Receiver>::new(passphrase, true);
 
-                let mut pair_info = app.pair().await?;
+                let pair_info = app.pair().await?;
 
                 if !pair_info.save_contact {
                     bail!("Peer refused to save contact");
@@ -180,12 +169,9 @@ async fn main() -> anyhow::Result<()> {
 
                 let contacts = contacts_holder.get_or_init().await?;
 
-                let cipher = pair_info.cipher();
-                let key = cipher.get_key().clone();
+                let key = pair_info.finalize().await;
 
                 contacts.add(name, key);
-
-                pair_info.finalize().await;
             }
         },
     };

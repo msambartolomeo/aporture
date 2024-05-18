@@ -1,8 +1,10 @@
 use std::net::IpAddr;
 use std::sync::OnceLock;
 
+use rand::RngCore;
 use serde::{Deserialize, Serialize};
 
+use crate::crypto::hasher::Salt;
 use crate::parser::{Parser, SerdeIO};
 
 use super::FileManager;
@@ -16,6 +18,7 @@ static CONFIG: OnceLock<Config> = OnceLock::new();
 pub struct Config {
     pub server_address: IpAddr,
     pub server_port: u16,
+    pub password_salt: Salt,
 }
 
 impl Parser for Config {
@@ -24,12 +27,17 @@ impl Parser for Config {
 
 impl Default for Config {
     fn default() -> Self {
+        let mut salt = Salt::default();
+
+        rand::thread_rng().fill_bytes(&mut salt);
+
         Self {
             server_address: DEFAULT_SERVER_ADDRESS
                 .unwrap_or("127.0.0.1")
                 .parse()
                 .unwrap_or_else(|_| IpAddr::from([127, 0, 0, 1])),
             server_port: DEFAULT_SERVER_PORT,
+            password_salt: salt,
         }
     }
 }
