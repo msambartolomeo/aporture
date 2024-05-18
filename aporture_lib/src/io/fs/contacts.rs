@@ -8,6 +8,8 @@ use crate::crypto::cipher::Cipher;
 use crate::fs::EncryptedFileManager;
 use crate::parser::{EncryptedSerdeIO, Parser};
 
+const CONTACTS_FILE_NAME: &str = "contacts.app";
+
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct Contacts {
     map: HashMap<String, Contact>,
@@ -25,22 +27,21 @@ impl Parser for Contacts {
 
 impl Contacts {
     #[must_use]
-    fn path() -> PathBuf {
-        let dirs = directories::ProjectDirs::from("dev", "msambartolomeo", "aporture")
-            .expect("PC must have valid home directory");
-        let mut config_dir = dirs.config_dir().to_path_buf();
-        config_dir.push("contacts");
+    fn path() -> Result<PathBuf, crate::io::Error> {
+        let mut path = crate::fs::path()?;
 
-        config_dir
+        path.push(CONTACTS_FILE_NAME);
+
+        Ok(path)
     }
 
     #[must_use]
     pub fn exists() -> bool {
-        Self::path().exists()
+        Self::path().map(|p| p.exists()).unwrap_or(false)
     }
 
     pub async fn load(cipher: Arc<Cipher>) -> Result<Self, crate::io::Error> {
-        let path = Self::path();
+        let path = Self::path()?;
 
         let mut manager = EncryptedFileManager::new(&path, cipher);
 
@@ -50,9 +51,9 @@ impl Contacts {
     }
 
     pub async fn save(self, cipher: Arc<Cipher>) -> Result<(), crate::io::Error> {
-        let path = Self::path();
+        let path = Self::path()?;
 
-        tokio::fs::create_dir_all(&path).await?;
+        log::info!("Saving contacts to {}", path.display());
 
         let mut manager = EncryptedFileManager::new(&path, cipher);
 

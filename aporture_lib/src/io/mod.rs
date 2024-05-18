@@ -8,8 +8,11 @@ pub mod fs;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("IO failure: {0}")]
+    #[error("IO error: {0}")]
     IO(std::io::Error),
+
+    #[error("Config directory not found")]
+    Config,
 
     #[error("Serde error: {0}")]
     SerDe(serde_bencode::Error),

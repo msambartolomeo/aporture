@@ -123,6 +123,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Contacts => {
             if Contacts::exists() {
                 let mut holder = contacts::Holder::default();
+
                 let contacts = holder.get_or_init().await?;
 
                 println!("Registered contacts:");
@@ -153,6 +154,8 @@ async fn main() -> anyhow::Result<()> {
                 let key = pair_info.finalize().await;
 
                 contacts.add(name, key);
+
+                contacts_holder.save().await?;
             }
             PairCommand::Complete { passphrase, name } => {
                 let passphrase = passphrase::get(Method::Direct(passphrase))?;
@@ -172,6 +175,8 @@ async fn main() -> anyhow::Result<()> {
                 let key = pair_info.finalize().await;
 
                 contacts.add(name, key);
+
+                contacts_holder.save().await?;
             }
         },
     };

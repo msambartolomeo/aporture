@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::{path::Path, sync::Arc};
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -80,6 +81,7 @@ impl<'a> EncryptedSerdeIO for EncryptedFileManager<'a> {
 
     async fn read_ser_enc<P: Parser + Sync>(&mut self) -> Result<P, crate::io::Error> {
         let len = tokio::fs::metadata(self.manager.path).await?.len();
+
         let len = usize::try_from(len).expect("File size is bigger than system usize") - 12 - 16;
 
         let mut buffer = vec![0; len];
@@ -105,4 +107,12 @@ impl<'a> EncryptedSerdeIO for EncryptedFileManager<'a> {
 
         Ok(())
     }
+}
+
+#[must_use]
+fn path() -> Result<PathBuf, crate::io::Error> {
+    let dirs = directories::ProjectDirs::from("dev", "msambartolomeo", "aporture")
+        .ok_or(crate::io::Error::Config)?;
+
+    Ok(dirs.config_dir().to_path_buf())
 }

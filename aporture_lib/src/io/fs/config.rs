@@ -1,4 +1,5 @@
 use std::net::IpAddr;
+use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use rand::RngCore;
@@ -7,7 +8,9 @@ use serde::{Deserialize, Serialize};
 use crate::crypto::hasher::Salt;
 use crate::parser::{Parser, SerdeIO};
 
-use super::FileManager;
+use crate::fs::FileManager;
+
+const CONFIG_FILE_NAME: &str = "config.app";
 
 const DEFAULT_SERVER_ADDRESS: Option<&str> = option_env!("SERVER_ADDRESS");
 const DEFAULT_SERVER_PORT: u16 = 8765;
@@ -47,12 +50,12 @@ impl<'a> Config {
         if let Some(config) = CONFIG.get() {
             config
         } else {
-            let config = if let Some(config) = Self::from_file().await {
+            let config = if let Ok(config) = Self::from_file().await {
                 config
             } else {
                 log::info!("Using default config");
                 log::warn!("Could not find config file, creating");
-                Self::create_file().await.unwrap_or_else(|| {
+                Self::create_file().await.unwrap_or_else(|_| {
                     log::warn!("Error creating config file");
                     Self::default()
                 })
@@ -62,25 +65,26 @@ impl<'a> Config {
         }
     }
 
-    async fn from_file() -> Option<Self> {
-        let dirs = directories::ProjectDirs::from("dev", "msambartolomeo", "aporture")?;
-        let mut config_dir = dirs.config_dir().to_path_buf();
-        config_dir.push("config");
+    async fn from_file() -> Result<Self, crate::io::Error> {
+        let path = Self::path()?;
 
-        let mut manager = FileManager::new(&config_dir);
+        log::info!("Getting config from {}", path.display());
 
-        let config = manager.read_ser().await.ok()?;
+        let mut manager = FileManager::new(&path);
 
-        Some(config)
+        let config = manager.read_ser().await?;
+
+        Ok(config)
     }
 
-    async fn create_file() -> Option<Self> {
-        let dirs = directories::ProjectDirs::from("dev", "msambartolomeo", "aporture")?;
-        let mut config_dir = dirs.config_dir().to_path_buf();
+    async fn create_file() -> Result<Self, crate::io::Error> {
+        let mut config_dir = crate::fs::path()?;
 
-        tokio::fs::create_dir_all(&config_dir).await.ok()?;
+        tokio::fs::create_dir_all(&config_dir).await?;
 
-        config_dir.push("config");
+        config_dir.push(CONFIG_FILE_NAME);
+
+        log::info!("Getting config from {}", config_dir.display());
 
         let config = Self::default();
 
@@ -88,6 +92,15 @@ impl<'a> Config {
 
         manager.write_ser(&config).await.ok();
 
-        Some(config)
+        Ok(config)
+    }
+
+    #[must_use]
+    fn path() -> Result<PathBuf, crate::io::Error> {
+        let mut path = crate::fs::path()?;
+
+        path.push(CONFIG_FILE_NAME);
+
+        Ok(path)
     }
 }

@@ -48,6 +48,7 @@ impl From<crate::io::Error> for Receive {
             crate::io::Error::IO(_) | crate::io::Error::SerDe(_) => Self::Network(value),
             crate::io::Error::Cipher(e) => Self::Cipher(e),
             crate::io::Error::Custom(_) => unreachable!(),
+            crate::io::Error::Config => unreachable!(),
         }
     }
 }

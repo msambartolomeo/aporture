@@ -17,7 +17,8 @@ impl Holder {
         if self.0.is_none() {
             if Contacts::exists() {
                 loop {
-                    let password = rpassword::prompt_password("Insert password to read contacts")?;
+                    let password =
+                        rpassword::prompt_password("Insert password to access contacts: ")?;
 
                     let key = Hasher::derive_key(&password.into_bytes(), &config.password_salt);
 
@@ -38,8 +39,8 @@ impl Holder {
             } else {
                 println!("No contacts registered, creating database...");
                 let password = loop {
-                    let p1 = rpassword::prompt_password("Enter password to encrypt contacts:")?;
-                    let p2 = rpassword::prompt_password("Reenter password to encrypt contacts:")?;
+                    let p1 = rpassword::prompt_password("Enter password to encrypt contacts: ")?;
+                    let p2 = rpassword::prompt_password("Reenter password to encrypt contacts: ")?;
 
                     if p1 != p2 {
                         println!("Password does not match, retrying..");
