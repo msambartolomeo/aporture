@@ -109,7 +109,6 @@ impl<'a> EncryptedSerdeIO for EncryptedFileManager<'a> {
     }
 }
 
-#[must_use]
 fn path() -> Result<PathBuf, crate::io::Error> {
     let dirs = directories::ProjectDirs::from("dev", "msambartolomeo", "aporture")
         .ok_or(crate::io::Error::Config)?;

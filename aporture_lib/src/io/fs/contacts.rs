@@ -26,7 +26,6 @@ impl Parser for Contacts {
 }
 
 impl Contacts {
-    #[must_use]
     fn path() -> Result<PathBuf, crate::io::Error> {
         let mut path = crate::fs::path()?;
 
