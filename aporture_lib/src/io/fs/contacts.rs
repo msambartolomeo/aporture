@@ -1,18 +1,21 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
-use std::{collections::HashMap, sync::Arc};
 
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 
 use crate::crypto::cipher::Cipher;
+use crate::crypto::hasher::Hasher;
+use crate::crypto::Key;
+use crate::fs::config::Config;
 use crate::fs::EncryptedFileManager;
 use crate::parser::{EncryptedSerdeIO, Parser};
 
 const CONTACTS_FILE_NAME: &str = "contacts.app";
 
-#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct Contacts {
-    map: HashMap<String, Contact>,
+    content: Content,
+    manager: EncryptedFileManager,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -21,64 +24,97 @@ struct Contact {
     pub timestamp: DateTime<Local>,
 }
 
-impl Parser for Contacts {
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct Content {
+    map: HashMap<String, Contact>,
+}
+
+impl Parser for Content {
     type MinimumSerializedSize = generic_array::typenum::U0;
 }
 
 impl Contacts {
-    fn path() -> Result<PathBuf, crate::io::Error> {
-        let mut path = crate::fs::path()?;
-
-        path.push(CONTACTS_FILE_NAME);
-
-        Ok(path)
-    }
-
     #[must_use]
     pub fn exists() -> bool {
-        Self::path().map(|p| p.exists()).unwrap_or(false)
+        path().map(|p| p.exists()).unwrap_or(false)
     }
 
-    pub async fn load(cipher: Arc<Cipher>) -> Result<Self, crate::io::Error> {
-        let path = Self::path()?;
+    pub async fn init(password: &[u8]) -> Result<Self, crate::io::Error> {
+        let path = path()?;
 
-        let mut manager = EncryptedFileManager::new(&path, cipher);
+        let key = Hasher::derive_key(password, &Config::get().await.password_salt);
 
-        let config = manager.read_ser_enc().await?;
+        let cipher = Cipher::new(&key);
 
-        Ok(config)
+        let manager = EncryptedFileManager::new(path, cipher);
+
+        Ok(Self {
+            content: Content::default(),
+            manager,
+        })
     }
 
-    pub async fn save(self, cipher: Arc<Cipher>) -> Result<(), crate::io::Error> {
-        let path = Self::path()?;
+    pub async fn load(password: &[u8]) -> Result<Self, crate::io::Error> {
+        let path = path()?;
 
-        log::info!("Saving contacts to {}", path.display());
+        let key = Hasher::derive_key(password, &Config::get().await.password_salt);
 
-        let mut manager = EncryptedFileManager::new(&path, cipher);
+        let cipher = Cipher::new(&key);
 
-        manager.write_ser_enc(&self).await.ok();
+        let mut manager = EncryptedFileManager::new(path, cipher);
+
+        log::info!("Reading contacts from {}", manager);
+
+        let contacts = manager.read_ser_enc().await?;
+
+        Ok(Self {
+            content: contacts,
+            manager,
+        })
+    }
+
+    pub async fn save(mut self) -> Result<(), crate::io::Error> {
+        log::info!("Saving contacts to {}", self.manager);
+
+        self.manager.write_ser_enc(&self.content).await.ok();
 
         Ok(())
     }
 
     #[must_use]
     pub fn get(&self, name: &str) -> Option<&[u8; 32]> {
-        self.map.get(name).map(|c| &c.key)
+        self.content.map.get(name).map(|c| &c.key)
     }
 
-    pub fn add(&mut self, name: String, key: [u8; 32]) {
+    pub fn add(&mut self, name: String, key: Key) {
         let timestamp = chrono::Local::now();
 
         let contact = Contact { key, timestamp };
 
-        self.map.insert(name, contact);
+        self.content.map.insert(name, contact);
+    }
+
+    pub fn replace(&mut self, new_name: String, old_name: Option<String>, key: Key) {
+        if let Some(name) = old_name {
+            self.delete(&name);
+        }
+
+        self.add(new_name, key);
     }
 
     pub fn delete(&mut self, name: &str) {
-        self.map.remove(name);
+        self.content.map.remove(name);
     }
 
     pub fn list(&self) -> impl Iterator<Item = (&String, DateTime<Local>)> {
-        self.map.iter().map(|(n, c)| (n, c.timestamp))
+        self.content.map.iter().map(|(n, c)| (n, c.timestamp))
     }
+}
+
+fn path() -> Result<PathBuf, crate::io::Error> {
+    let mut path = crate::fs::path()?;
+
+    path.push(CONTACTS_FILE_NAME);
+
+    Ok(path)
 }

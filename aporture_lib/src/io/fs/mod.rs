@@ -1,5 +1,5 @@
+use std::fmt::Display;
 use std::path::PathBuf;
-use std::{path::Path, sync::Arc};
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -9,27 +9,27 @@ use crate::parser::{EncryptedSerdeIO, Parser, SerdeIO};
 pub mod config;
 pub mod contacts;
 
-struct FileManager<'a> {
-    path: &'a Path,
+struct FileManager {
+    path: PathBuf,
 }
 
-impl<'a> FileManager<'a> {
-    pub const fn new(path: &'a Path) -> Self {
-        FileManager { path }
+impl FileManager {
+    pub const fn new(path: PathBuf) -> Self {
+        Self { path }
     }
 }
 
-impl<'a> SerdeIO for FileManager<'a> {
+impl SerdeIO for FileManager {
     async fn write_ser<P: Parser + Sync>(&mut self, input: &P) -> Result<(), crate::io::Error> {
         let buffer = input.serialize_to();
 
-        tokio::fs::write(self.path, buffer).await?;
+        tokio::fs::write(&self.path, buffer).await?;
 
         Ok(())
     }
 
     async fn read_ser<P: Parser + Sync>(&mut self) -> Result<P, crate::io::Error> {
-        let buffer = tokio::fs::read(self.path).await?;
+        let buffer = tokio::fs::read(&self.path).await?;
 
         let deserialized = P::deserialize_from(&buffer)?;
 
@@ -37,19 +37,19 @@ impl<'a> SerdeIO for FileManager<'a> {
     }
 }
 
-struct EncryptedFileManager<'a> {
-    manager: FileManager<'a>,
-    cipher: Arc<Cipher>,
+struct EncryptedFileManager {
+    manager: FileManager,
+    cipher: Cipher,
 }
 
-impl<'a> EncryptedFileManager<'a> {
-    pub fn new(path: &'a Path, cipher: Arc<Cipher>) -> Self {
+impl EncryptedFileManager {
+    pub fn new(path: PathBuf, cipher: Cipher) -> Self {
         let manager = FileManager::new(path);
-        EncryptedFileManager { manager, cipher }
+        Self { manager, cipher }
     }
 }
 
-impl<'a> SerdeIO for EncryptedFileManager<'a> {
+impl SerdeIO for EncryptedFileManager {
     async fn write_ser<P: Parser + Sync>(&mut self, input: &P) -> Result<(), crate::io::Error> {
         self.manager.write_ser(input).await
     }
@@ -59,7 +59,7 @@ impl<'a> SerdeIO for EncryptedFileManager<'a> {
     }
 }
 
-impl<'a> EncryptedSerdeIO for EncryptedFileManager<'a> {
+impl EncryptedSerdeIO for EncryptedFileManager {
     async fn write_ser_enc<P: Parser + Sync>(&mut self, input: &P) -> Result<(), crate::io::Error> {
         let mut buffer = input.serialize_to();
 
@@ -71,7 +71,7 @@ impl<'a> EncryptedSerdeIO for EncryptedFileManager<'a> {
     async fn write_enc(&mut self, input: &mut [u8]) -> Result<(), crate::io::Error> {
         let (nonce, tag) = self.cipher.encrypt(input);
 
-        let mut file = tokio::fs::File::create(self.manager.path).await?;
+        let mut file = tokio::fs::File::create(&self.manager.path).await?;
         file.write_all(&nonce).await?;
         file.write_all(input).await?;
         file.write_all(&tag).await?;
@@ -80,7 +80,7 @@ impl<'a> EncryptedSerdeIO for EncryptedFileManager<'a> {
     }
 
     async fn read_ser_enc<P: Parser + Sync>(&mut self) -> Result<P, crate::io::Error> {
-        let len = tokio::fs::metadata(self.manager.path).await?.len();
+        let len = tokio::fs::metadata(&self.manager.path).await?.len();
 
         let len = usize::try_from(len).expect("File size is bigger than system usize") - 12 - 16;
 
@@ -97,7 +97,7 @@ impl<'a> EncryptedSerdeIO for EncryptedFileManager<'a> {
         let mut nonce = [0; 12];
         let mut tag = [0; 16];
 
-        let mut file = tokio::fs::File::open(self.manager.path).await?;
+        let mut file = tokio::fs::File::open(&self.manager.path).await?;
 
         file.read_exact(&mut nonce).await?;
         file.read_exact(buffer).await?;
@@ -114,4 +114,16 @@ fn path() -> Result<PathBuf, crate::io::Error> {
         .ok_or(crate::io::Error::Config)?;
 
     Ok(dirs.config_dir().to_path_buf())
+}
+
+impl Display for FileManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.path.display())
+    }
+}
+
+impl Display for EncryptedFileManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.manager)
+    }
 }

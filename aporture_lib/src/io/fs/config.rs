@@ -45,8 +45,8 @@ impl Default for Config {
     }
 }
 
-impl<'a> Config {
-    pub async fn get() -> &'a Self {
+impl Config {
+    pub async fn get() -> &'static Self {
         if let Some(config) = CONFIG.get() {
             config
         } else {
@@ -70,7 +70,7 @@ impl<'a> Config {
 
         log::info!("Getting config from {}", path.display());
 
-        let mut manager = FileManager::new(&path);
+        let mut manager = FileManager::new(path);
 
         let config = manager.read_ser().await?;
 
@@ -88,7 +88,7 @@ impl<'a> Config {
 
         let config = Self::default();
 
-        let mut manager = FileManager::new(&config_dir);
+        let mut manager = FileManager::new(config_dir);
 
         manager.write_ser(&config).await.ok();
 

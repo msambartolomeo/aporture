@@ -1,12 +1,12 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
 use clap::Parser;
 
 use aporture::fs::contacts::Contacts;
-use aporture::pairing::{AporturePairingProtocol, Receiver, Sender};
 use args::{Cli, Commands, PairCommand};
 use passphrase::Method;
 
 mod args;
+mod commands;
 mod contacts;
 mod passphrase;
 
@@ -36,10 +36,10 @@ async fn main() -> Result<()> {
 
     let args = Cli::parse();
 
+    let mut contacts_holder = contacts::Holder::default();
+
     match args.command {
         Commands::Send { path, method, save } => {
-            let mut contacts_holder = contacts::Holder::default();
-
             let passphrase_method = if let Some(passphrase) = method.passphrase {
                 Method::Direct(passphrase)
             } else if let Some(ref name) = method.contact {
@@ -50,39 +50,13 @@ async fn main() -> Result<()> {
             };
             let passphrase = passphrase::get(passphrase_method)?;
 
-            let app = AporturePairingProtocol::<Sender>::new(passphrase, save.is_some());
-
-            let mut pair_info = app.pair().await?;
-
-            aporture::transfer::send_file(&path, &mut pair_info).await?;
-
-            let accepted_save_contact = pair_info.save_contact;
-
-            let key = pair_info.finalize().await;
-
-            if let Some(name) = save {
-                if accepted_save_contact {
-                    let contacts = contacts_holder.get_or_init().await?;
-
-                    if let Some(name) = method.contact {
-                        contacts.delete(&name);
-                    }
-
-                    contacts.add(name, key);
-                } else {
-                    println!("Warning: Not saving contact because peer refused");
-                }
-            }
-
-            contacts_holder.save().await?;
+            commands::send(passphrase, save, method.contact, &mut contacts_holder, path).await?;
         }
         Commands::Receive {
-            destination,
+            destination: path,
             method,
             save,
         } => {
-            let mut contacts_holder = contacts::Holder::default();
-
             let passphrase_method = if let Some(passphrase) = method.passphrase {
                 Method::Direct(passphrase)
             } else if let Some(ref name) = method.contact {
@@ -91,48 +65,13 @@ async fn main() -> Result<()> {
             } else {
                 unreachable!("Guaranteed by clap");
             };
-
             let passphrase = passphrase::get(passphrase_method)?;
 
-            let app = AporturePairingProtocol::<Receiver>::new(passphrase, save.is_some());
-
-            let mut pair_info = app.pair().await?;
-
-            aporture::transfer::receive_file(destination, &mut pair_info).await?;
-
-            let accepted_save_contact = pair_info.save_contact;
-
-            let key = pair_info.finalize().await;
-
-            if let Some(name) = save {
-                if accepted_save_contact {
-                    let contacts = contacts_holder.get_or_init().await?;
-
-                    if let Some(name) = method.contact {
-                        contacts.delete(&name);
-                    }
-
-                    contacts.add(name, key);
-                } else {
-                    println!("Warning: Not saving contact because peer refused");
-                }
-            }
-
-            contacts_holder.save().await?;
+            commands::receive(passphrase, save, method.contact, &mut contacts_holder, path).await?;
         }
         Commands::Contacts => {
             if Contacts::exists() {
-                let mut holder = contacts::Holder::default();
-                let contacts = holder.get_or_init().await?;
-
-                let mut builder = tabled::builder::Builder::new();
-                builder.push_record(["Name", "Added"]);
-                contacts.list().for_each(|(n, t)| {
-                    builder.push_record([n, &t.format("%d/%m/%Y %H:%M").to_string()])
-                });
-                let mut table = builder.build();
-                table.with(tabled::settings::Style::markdown());
-                println!("\n{table}\n");
+                commands::list_contacts(&mut contacts_holder).await?;
             } else {
                 println!("No contacts found");
             }
@@ -142,39 +81,17 @@ async fn main() -> Result<()> {
                 let method = passphrase.map_or(Method::Generate, Method::Direct);
                 let passphrase = passphrase::get(method)?;
 
-                let app = AporturePairingProtocol::<Sender>::new(passphrase, true);
-
-                let pair_info = app.pair().await?;
-
-                if !pair_info.save_contact {
-                    bail!("Peer refused to save contact");
-                }
-                let key = pair_info.finalize().await;
-
-                let mut contacts_holder = contacts::Holder::default();
-                let contacts = contacts_holder.get_or_init().await?;
-                contacts.add(name, key);
-                contacts_holder.save().await?;
+                commands::pair_start(passphrase, name, &mut contacts_holder).await?;
             }
             PairCommand::Complete { passphrase, name } => {
                 let passphrase = passphrase::get(Method::Direct(passphrase))?;
 
-                let app = AporturePairingProtocol::<Receiver>::new(passphrase, true);
-
-                let pair_info = app.pair().await?;
-
-                if !pair_info.save_contact {
-                    bail!("Peer refused to save contact");
-                }
-                let key = pair_info.finalize().await;
-
-                let mut contacts_holder = contacts::Holder::default();
-                let contacts = contacts_holder.get_or_init().await?;
-                contacts.add(name, key);
-                contacts_holder.save().await?;
+                commands::pair_complete(passphrase, name, &mut contacts_holder).await?;
             }
         },
     };
+
+    contacts_holder.save().await?;
 
     Ok(())
 }
