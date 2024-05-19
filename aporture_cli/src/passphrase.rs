@@ -1,4 +1,6 @@
 use anyhow::{bail, Result};
+use colored::Colorize;
+
 use aporture::fs::contacts::Contacts;
 
 pub enum Method<'a> {
@@ -13,8 +15,11 @@ pub fn get(method: Method) -> Result<Vec<u8>> {
         Method::Generate => {
             let passphrase = aporture::passphrase::generate(3);
 
-            println!("The generated passphrase is '{passphrase}'");
-            println!("Share it with your peer");
+            println!(
+                "The generated passphrase is '{}'",
+                passphrase.green().bold()
+            );
+            println!("Share it with your {}", "peer".bright_cyan());
 
             Ok(passphrase.into_bytes())
         }

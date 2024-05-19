@@ -1,4 +1,4 @@
-use anyhow::bail;
+use anyhow::{bail, Result};
 use clap::Parser;
 
 use aporture::fs::contacts::Contacts;
@@ -31,7 +31,7 @@ fn init_logger() {
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> Result<()> {
     init_logger();
 
     let args = Cli::parse();
@@ -123,13 +123,16 @@ async fn main() -> anyhow::Result<()> {
         Commands::Contacts => {
             if Contacts::exists() {
                 let mut holder = contacts::Holder::default();
-
                 let contacts = holder.get_or_init().await?;
 
-                println!("Registered contacts:");
-                for (name, timestamp) in contacts.list() {
-                    println!("Name: {name} \t\t Added: {timestamp}");
-                }
+                let mut builder = tabled::builder::Builder::new();
+                builder.push_record(["Name", "Added"]);
+                contacts.list().for_each(|(n, t)| {
+                    builder.push_record([n, &t.format("%d/%m/%Y %H:%M").to_string()])
+                });
+                let mut table = builder.build();
+                table.with(tabled::settings::Style::markdown());
+                println!("\n{table}\n");
             } else {
                 println!("No contacts found");
             }
@@ -137,7 +140,6 @@ async fn main() -> anyhow::Result<()> {
         Commands::Pair { command } => match command {
             PairCommand::Start { passphrase, name } => {
                 let method = passphrase.map_or(Method::Generate, Method::Direct);
-
                 let passphrase = passphrase::get(method)?;
 
                 let app = AporturePairingProtocol::<Sender>::new(passphrase, true);
@@ -147,14 +149,11 @@ async fn main() -> anyhow::Result<()> {
                 if !pair_info.save_contact {
                     bail!("Peer refused to save contact");
                 }
+                let key = pair_info.finalize().await;
 
                 let mut contacts_holder = contacts::Holder::default();
                 let contacts = contacts_holder.get_or_init().await?;
-
-                let key = pair_info.finalize().await;
-
                 contacts.add(name, key);
-
                 contacts_holder.save().await?;
             }
             PairCommand::Complete { passphrase, name } => {
@@ -167,15 +166,11 @@ async fn main() -> anyhow::Result<()> {
                 if !pair_info.save_contact {
                     bail!("Peer refused to save contact");
                 }
-
-                let mut contacts_holder = contacts::Holder::default();
-
-                let contacts = contacts_holder.get_or_init().await?;
-
                 let key = pair_info.finalize().await;
 
+                let mut contacts_holder = contacts::Holder::default();
+                let contacts = contacts_holder.get_or_init().await?;
                 contacts.add(name, key);
-
                 contacts_holder.save().await?;
             }
         },

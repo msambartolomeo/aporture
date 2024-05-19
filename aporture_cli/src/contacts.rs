@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 
 use aporture::crypto::cipher::Cipher;
 use aporture::crypto::hasher::Hasher;
@@ -16,38 +16,48 @@ impl Holder {
 
         if self.0.is_none() {
             if Contacts::exists() {
-                loop {
+                let mut contacts = None;
+
+                for _ in 0..3 {
                     let password =
-                        rpassword::prompt_password("Insert password to access contacts: ")?;
+                        rpassword::prompt_password("Insert contact database password: ")?;
 
                     let key = Hasher::derive_key(&password.into_bytes(), &config.password_salt);
 
                     let cipher = Arc::new(Cipher::new(&key));
-                    let contacts = match Contacts::load(cipher.clone()).await {
-                        Ok(contacts) => contacts,
+                    match Contacts::load(cipher.clone()).await {
+                        Ok(c) => {
+                            contacts = Some((cipher, c));
+                            break;
+                        }
                         Err(aporture::io::Error::Cipher(_)) => {
-                            println!("Incorrect password, retrying");
+                            println!("Sorry, try again");
                             continue;
                         }
                         Err(_) => bail!("Could not find or create contacts file"),
                     };
-
-                    self.0 = Some((cipher, contacts));
-
-                    break;
                 }
+
+                let contacts = contacts.ok_or(anyhow!("3 incorrect password attempts"))?;
+
+                self.0 = Some(contacts);
             } else {
                 println!("No contacts registered, creating database...");
-                let password = loop {
+                let mut password = None;
+
+                for _ in 0..3 {
                     let p1 = rpassword::prompt_password("Enter password to encrypt contacts: ")?;
                     let p2 = rpassword::prompt_password("Reenter password to encrypt contacts: ")?;
 
-                    if p1 != p2 {
-                        println!("Password does not match, retrying..");
-                        continue;
+                    if p1 == p2 {
+                        password = Some(p1);
+                        break;
                     }
-                    break p1;
-                };
+
+                    println!("Passwords do not match, try again");
+                }
+
+                let password = password.ok_or(anyhow!("3 incorrect password attempts"))?;
 
                 let key = Hasher::derive_key(&password.into_bytes(), &config.password_salt);
 
