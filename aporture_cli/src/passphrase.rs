@@ -11,7 +11,15 @@ pub enum Method<'a> {
 
 pub fn get(method: Method) -> Result<Vec<u8>> {
     match method {
-        Method::Direct(passphrase) => Ok(passphrase.into_bytes()),
+        Method::Direct(passphrase) => {
+            println!("Your passphrase is '{}'", passphrase.green().bold());
+            println!(
+                "Share it with your {}",
+                "peer".bright_cyan().bold().underline()
+            );
+
+            Ok(passphrase.into_bytes())
+        }
         Method::Generate => {
             let passphrase = aporture::passphrase::generate(3);
 
@@ -19,12 +27,21 @@ pub fn get(method: Method) -> Result<Vec<u8>> {
                 "The generated passphrase is '{}'",
                 passphrase.green().bold()
             );
-            println!("Share it with your {}", "peer".bright_cyan());
+            println!(
+                "Share it with your {}",
+                "peer".bright_cyan().bold().underline()
+            );
 
             Ok(passphrase.into_bytes())
         }
         Method::Contact(name, contacts) => match contacts.get(name) {
-            Some(key) => Ok(key.to_vec()),
+            Some(key) => {
+                println!(
+                    "Using key associated with contact {}",
+                    name.bright_blue().bold()
+                );
+                Ok(key.to_vec())
+            }
             None => bail!("Contact {name} not found"),
         },
     }

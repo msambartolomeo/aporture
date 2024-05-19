@@ -207,7 +207,7 @@ impl<K: Kind + Send> AporturePairingProtocol<KeyExchange<K>> {
 
         let key = Key::try_from(key).expect("Spake key is 32 bytes");
 
-        log::info!("Key exchanged successfuly");
+        log::info!("Key exchanged successfully");
 
         let mut cipher = Cipher::new(&key);
 

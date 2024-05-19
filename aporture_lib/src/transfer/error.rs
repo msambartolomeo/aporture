@@ -32,7 +32,7 @@ pub enum Receive {
     Network(crate::io::Error),
     #[error("Error in cryptography: {0}")]
     Cipher(crate::crypto::Error),
-    #[error("The hash of the transefered file and the received hash are not the same")]
+    #[error("The hash of the transferred file and the received hash are not the same")]
     HashMismatch,
 }
 

@@ -1,5 +1,6 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use clap::Parser;
+use colored::Colorize;
 
 use aporture::fs::contacts::Contacts;
 use args::{Cli, Commands, PairCommand};
@@ -40,6 +41,10 @@ async fn main() -> Result<()> {
 
     match args.command {
         Commands::Send { path, method, save } => {
+            if !path.is_file() {
+                bail!("{} is not a valid file", path.display())
+            }
+
             let passphrase_method = if let Some(passphrase) = method.passphrase {
                 Method::Direct(passphrase)
             } else if let Some(ref name) = method.contact {
@@ -92,6 +97,8 @@ async fn main() -> Result<()> {
     };
 
     contacts_holder.save().await?;
+
+    println!("{}", "Success!!".green());
 
     Ok(())
 }

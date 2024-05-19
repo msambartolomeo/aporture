@@ -13,12 +13,13 @@ clap = { version = "4.5.4", features = ["derive"] }
 tabled = { version = "0.15.0", default-features = false, features = ["std"] }
 anyhow = "1.0.83"
 rpassword = "7.3.1"
+colored = "2.1.0"
+
 # NOTE: Shared dependencies
 aporture = { workspace = true, features = ["full"] }
 tokio = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }
-colored = "2.1.0"
 
 [[bin]]
 name = "aporture"

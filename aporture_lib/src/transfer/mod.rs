@@ -54,7 +54,7 @@ pub async fn send_file(path: &Path, pair_info: &mut PairInfo) -> Result<(), erro
 
     match response {
         TransferResponseCode::Ok => {
-            log::info!("File transfered correctly");
+            log::info!("File transferred correctly");
             Ok(())
         }
         TransferResponseCode::HashMismatch => {

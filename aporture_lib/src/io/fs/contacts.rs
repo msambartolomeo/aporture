@@ -39,7 +39,7 @@ impl Contacts {
         path().map(|p| p.exists()).unwrap_or(false)
     }
 
-    pub async fn init(password: &[u8]) -> Result<Self, crate::io::Error> {
+    pub async fn empty(password: &[u8]) -> Result<Self, crate::io::Error> {
         let path = path()?;
 
         let key = Hasher::derive_key(password, &Config::get().await.password_salt);

@@ -17,14 +17,25 @@ pub async fn send(
 
     let mut pair_info = app.pair().await?;
 
+    println!("{}", "Pairing Successful!!".green());
+
+    println!(
+        "Transferring file to {}...",
+        "peer".bright_cyan().bold().underline()
+    );
+
     aporture::transfer::send_file(&path, &mut pair_info).await?;
 
     let save_confirmation = pair_info.save_contact;
 
     let key = pair_info.finalize().await;
 
+    println!("{}", "File transferred successfully!".green());
+
     if let Some(name) = save {
         if save_confirmation {
+            println!("Saving key for contact {}...", name.bright_blue().bold());
+
             let contacts = contacts.get_or_init().await?;
 
             contacts.replace(name, old_contact, key);
@@ -48,20 +59,32 @@ pub async fn receive(
 
     let mut pair_info = app.pair().await?;
 
-    aporture::transfer::receive_file(destination, &mut pair_info).await?;
+    println!("{}", "Pairing Successful!!".green());
+
+    println!(
+        "Receiving file from {}...",
+        "peer".bright_cyan().bold().underline()
+    );
+
+    let path = aporture::transfer::receive_file(destination, &mut pair_info).await?;
 
     let accepted_save_contact = pair_info.save_contact;
 
     let key = pair_info.finalize().await;
 
+    println!("{}", "File received successfully!".green());
+    println!("Saved in {}", path.display());
+
     if let Some(name) = save {
         if accepted_save_contact {
+            println!("Saving key for contact {}...", name.bright_blue().bold());
+
             let contacts = contacts.get_or_init().await?;
 
             contacts.replace(name, old_contact, key);
         } else {
             let message = "Warning: Not saving contact because peer refused".yellow();
-            println!("{message}",);
+            println!("{message}");
         }
     }
 
@@ -88,10 +111,17 @@ pub async fn pair_start(passphrase: Vec<u8>, name: String, contacts: &mut Holder
 
     let pair_info = app.pair().await?;
 
+    println!("{}", "Pairing Successful!!".green());
+
     if !pair_info.save_contact {
         bail!("Peer refused to save contact".red());
     }
     let key = pair_info.finalize().await;
+
+    println!(
+        "Saving key for contact {}...",
+        name.bright_blue().bold().underline()
+    );
 
     let contacts = contacts.get_or_init().await?;
     contacts.add(name, key);
@@ -104,10 +134,17 @@ pub async fn pair_complete(passphrase: Vec<u8>, name: String, contacts: &mut Hol
 
     let pair_info = app.pair().await?;
 
+    println!("{}", "Pairing Successful!!".green());
+
     if !pair_info.save_contact {
         bail!("Peer refused to save contact".red());
     }
     let key = pair_info.finalize().await;
+
+    println!(
+        "Saving key for contact {}...",
+        name.bright_blue().bold().underline()
+    );
 
     let contacts = contacts.get_or_init().await?;
     contacts.add(name, key);

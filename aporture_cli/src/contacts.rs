@@ -15,7 +15,7 @@ impl Holder {
                     let password =
                         rpassword::prompt_password("Insert contact database password: ")?;
 
-                    match Contacts::init(&password.into_bytes()).await {
+                    match Contacts::load(&password.into_bytes()).await {
                         Ok(c) => {
                             contacts = Some(c);
                             break;
@@ -49,7 +49,7 @@ impl Holder {
 
                 let password = password.ok_or_else(|| anyhow!("3 incorrect password attempts"))?;
 
-                let contacts = Contacts::init(&password.into_bytes()).await?;
+                let contacts = Contacts::empty(&password.into_bytes()).await?;
 
                 self.0 = Some(contacts);
             }
