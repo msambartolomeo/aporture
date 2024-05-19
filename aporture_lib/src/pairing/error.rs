@@ -9,7 +9,7 @@ pub enum Error {
     #[error("{0}")]
     KeyExchange(KeyExchange),
     #[error("{0}")]
-    AddressExchange(AddressExchange),
+    AddressExchange(Negotiation),
 }
 
 impl From<Hello> for Error {
@@ -24,8 +24,8 @@ impl From<KeyExchange> for Error {
     }
 }
 
-impl From<AddressExchange> for Error {
-    fn from(value: AddressExchange) -> Self {
+impl From<Negotiation> for Error {
+    fn from(value: Negotiation) -> Self {
         Self::AddressExchange(value)
     }
 }
@@ -39,13 +39,13 @@ pub enum Hello {
     #[error("The selected server does not implement APP version {PROTOCOL_VERSION}")]
     ServerUnsupportedVersion,
     #[error("Server behaved incorrectly on connection: {0}")]
-    ServerError(crate::net::Error),
+    ServerError(crate::io::Error),
     #[error("Message send to server was invalid")]
     ClientError,
 }
 
-impl From<crate::net::Error> for Hello {
-    fn from(value: crate::net::Error) -> Self {
+impl From<crate::io::Error> for Hello {
+    fn from(value: crate::io::Error) -> Self {
         Self::ServerError(value)
     }
 }
@@ -59,13 +59,13 @@ impl From<std::io::Error> for Hello {
 #[derive(Debug, Error)]
 pub enum KeyExchange {
     #[error("Error exchanging key with peer: {0}")]
-    NetworkError(crate::net::Error),
+    NetworkError(crate::io::Error),
     #[error("Invalid key derivation")]
     KeyDerivationError,
 }
 
-impl From<crate::net::Error> for KeyExchange {
-    fn from(value: crate::net::Error) -> Self {
+impl From<crate::io::Error> for KeyExchange {
+    fn from(value: crate::io::Error) -> Self {
         Self::NetworkError(value)
     }
 }
@@ -78,10 +78,10 @@ impl From<spake2::Error> for KeyExchange {
 
 #[derive(Debug, Error)]
 #[error("Error exchanging defined addresses with peer: {0}")]
-pub struct AddressExchange(crate::net::Error);
+pub struct Negotiation(crate::io::Error);
 
-impl From<crate::net::Error> for AddressExchange {
-    fn from(value: crate::net::Error) -> Self {
+impl From<crate::io::Error> for Negotiation {
+    fn from(value: crate::io::Error) -> Self {
         Self(value)
     }
 }

@@ -38,8 +38,8 @@ impl From<error::KeyExchange> for Error {
     }
 }
 
-impl From<error::AddressExchange> for Error {
-    fn from(e: error::AddressExchange) -> Self {
+impl From<error::Negotiation> for Error {
+    fn from(e: error::Negotiation) -> Self {
         log::warn!("Error: {e}");
         Self::PairingFailure
     }

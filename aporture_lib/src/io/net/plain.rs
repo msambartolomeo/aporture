@@ -1,21 +1,7 @@
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
-use crate::protocol::Parser;
-
-mod error;
-pub use error::Error;
-
-#[cfg(feature = "full")]
-pub mod crypto;
-#[cfg(feature = "full")]
-use {crate::crypto::Cipher, crypto::EncryptedNetworkPeer, std::sync::Arc};
-
-#[allow(async_fn_in_trait)]
-pub trait SerdeNetwork {
-    async fn write_ser<P: Parser + Sync>(&mut self, input: &P) -> Result<(), Error>;
-    async fn read_ser<P: Parser + Sync>(&mut self) -> Result<P, Error>;
-}
+use crate::parser::{Parser, SerdeIO};
 
 #[derive(Debug)]
 pub struct NetworkPeer {
@@ -30,15 +16,10 @@ impl NetworkPeer {
     pub fn inner(&mut self) -> &mut TcpStream {
         &mut self.stream
     }
-
-    #[cfg(feature = "full")]
-    pub fn add_cipher(self, cipher: Arc<Cipher>) -> EncryptedNetworkPeer {
-        EncryptedNetworkPeer::new(self.stream, cipher)
-    }
 }
 
-impl SerdeNetwork for NetworkPeer {
-    async fn write_ser<P: Parser + Sync>(&mut self, input: &P) -> Result<(), Error> {
+impl SerdeIO for NetworkPeer {
+    async fn write_ser<P: Parser + Sync>(&mut self, input: &P) -> Result<(), crate::io::Error> {
         let in_buf = input.serialize_to();
 
         self.stream.write_all(&in_buf.len().to_be_bytes()).await?;
@@ -48,7 +29,7 @@ impl SerdeNetwork for NetworkPeer {
         Ok(())
     }
 
-    async fn read_ser<P: Parser + Sync>(&mut self) -> Result<P, Error> {
+    async fn read_ser<P: Parser + Sync>(&mut self) -> Result<P, crate::io::Error> {
         let mut length = [0; 8];
 
         self.stream.read_exact(&mut length).await?;

@@ -89,7 +89,7 @@ impl Component for AportureTransfer {
                 self.purpose = Purpose::Send;
 
                 sender.oneshot_command(async move {
-                    let mut pair_info = AporturePairingProtocol::<Sender>::new(passphrase)
+                    let mut pair_info = AporturePairingProtocol::<Sender>::new(passphrase, false)
                         .pair()
                         .await?;
 
@@ -107,7 +107,7 @@ impl Component for AportureTransfer {
                 self.purpose = Purpose::Receive;
 
                 sender.oneshot_command(async {
-                    let mut pair_info = AporturePairingProtocol::<Receiver>::new(passphrase)
+                    let mut pair_info = AporturePairingProtocol::<Receiver>::new(passphrase, false)
                         .pair()
                         .await?;
 

@@ -1,10 +1,15 @@
-use aporture::pairing::{AporturePairingProtocol, Receiver, Sender};
-use aporture::{passphrase, transfer};
-use args::{Cli, Commands, SendMethod};
-
+use anyhow::{bail, Result};
 use clap::Parser;
+use colored::Colorize;
+
+use aporture::fs::contacts::Contacts;
+use args::{Cli, Commands, PairCommand};
+use passphrase::Method;
 
 mod args;
+mod commands;
+mod contacts;
+mod passphrase;
 
 fn init_logger() {
     use std::io::Write;
@@ -27,63 +32,73 @@ fn init_logger() {
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> Result<()> {
     init_logger();
 
     let args = Cli::parse();
 
+    let mut contacts_holder = contacts::Holder::default();
+
     match args.command {
-        Commands::Send {
-            path,
-            method,
-            save: _,
-        } => {
-            let passphrase = get_passphrase(method);
-            let app = AporturePairingProtocol::<Sender>::new(passphrase);
+        Commands::Send { path, method, save } => {
+            if !path.is_file() {
+                bail!("{} is not a valid file", path.display())
+            }
 
-            let mut pair_info = app.pair().await?;
+            let passphrase_method = if let Some(passphrase) = method.passphrase {
+                Method::Direct(passphrase)
+            } else if let Some(ref name) = method.contact {
+                let contacts = contacts_holder.get_or_init().await?;
+                Method::Contact(name, contacts)
+            } else {
+                Method::Generate
+            };
+            let passphrase = passphrase::get(passphrase_method)?;
 
-            transfer::send_file(&path, &mut pair_info).await?;
-
-            pair_info.finalize().await;
+            commands::send(passphrase, save, method.contact, &mut contacts_holder, path).await?;
         }
         Commands::Receive {
-            destination,
+            destination: path,
             method,
-            save: _,
+            save,
         } => {
-            let passphrase = method
-                .passphrase
-                .expect("For now providing passphrase is required")
-                .into_bytes();
+            let passphrase_method = if let Some(passphrase) = method.passphrase {
+                Method::Direct(passphrase)
+            } else if let Some(ref name) = method.contact {
+                let contacts = contacts_holder.get_or_init().await?;
+                Method::Contact(name, contacts)
+            } else {
+                unreachable!("Guaranteed by clap");
+            };
+            let passphrase = passphrase::get(passphrase_method)?;
 
-            let app = AporturePairingProtocol::<Receiver>::new(passphrase);
-
-            let mut pair_info = app.pair().await?;
-
-            transfer::receive_file(destination, &mut pair_info).await?;
-
-            pair_info.finalize().await;
+            commands::receive(passphrase, save, method.contact, &mut contacts_holder, path).await?;
         }
-        Commands::Contacts => todo!("Add contacts"),
-        Commands::Pair { command: _ } => todo!("Add pair module"),
+        Commands::Contacts => {
+            if Contacts::exists() {
+                commands::list_contacts(&mut contacts_holder).await?;
+            } else {
+                println!("No contacts found");
+            }
+        }
+        Commands::Pair { command } => match command {
+            PairCommand::Start { passphrase, name } => {
+                let method = passphrase.map_or(Method::Generate, Method::Direct);
+                let passphrase = passphrase::get(method)?;
+
+                commands::pair_start(passphrase, name, &mut contacts_holder).await?;
+            }
+            PairCommand::Complete { passphrase, name } => {
+                let passphrase = passphrase::get(Method::Direct(passphrase))?;
+
+                commands::pair_complete(passphrase, name, &mut contacts_holder).await?;
+            }
+        },
     };
 
+    contacts_holder.save().await?;
+
+    println!("{}", "Success!!".green());
+
     Ok(())
-}
-
-fn get_passphrase(method: SendMethod) -> Vec<u8> {
-    if let Some(passphrase) = method.passphrase {
-        return passphrase.into_bytes();
-    }
-
-    if method.contact.is_some() {
-        todo!("Add contacts")
-    }
-
-    let passphrase = passphrase::generate(4);
-
-    println!("The selected passphrase for the transfer is {passphrase}");
-
-    passphrase.into_bytes()
 }

@@ -1,8 +1,3 @@
-use crate::crypto::Cipher;
-use crate::net::crypto::{EncryptedNetworkPeer, EncryptedSerdeNetwork};
-use crate::pairing::PairInfo;
-use crate::protocol::{FileData, KeyConfirmationPayload, TransferResponseCode};
-
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -11,6 +6,12 @@ use std::time::Duration;
 use directories::UserDirs;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
+
+use crate::crypto::cipher::Cipher;
+use crate::net::EncryptedNetworkPeer;
+use crate::pairing::PairInfo;
+use crate::parser::EncryptedSerdeIO;
+use crate::protocol::{FileData, TransferHello, TransferResponseCode};
 
 mod error;
 pub use error::{Receive as ReceiveError, Send as SendError};
@@ -53,7 +54,7 @@ pub async fn send_file(path: &Path, pair_info: &mut PairInfo) -> Result<(), erro
 
     match response {
         TransferResponseCode::Ok => {
-            log::info!("File transfered correctly");
+            log::info!("File transferred correctly");
             Ok(())
         }
         TransferResponseCode::HashMismatch => {
@@ -109,7 +110,7 @@ pub async fn receive_file(
 }
 
 async fn find_peer(
-    mut options: JoinSet<Result<EncryptedNetworkPeer, (crate::net::Error, SocketAddr)>>,
+    mut options: JoinSet<Result<EncryptedNetworkPeer, (crate::io::Error, SocketAddr)>>,
     pair_info: &mut PairInfo,
 ) -> EncryptedNetworkPeer {
     loop {
@@ -140,7 +141,7 @@ async fn bind(
     bind_address: SocketAddr,
     a: SocketAddr,
     cipher: Arc<Cipher>,
-) -> Result<EncryptedNetworkPeer, (crate::net::Error, SocketAddr)> {
+) -> Result<EncryptedNetworkPeer, (crate::io::Error, SocketAddr)> {
     log::info!("Waiting for peer on {}, port {}", a.ip(), a.port(),);
 
     let listener = TcpListener::bind(bind_address)
@@ -162,7 +163,7 @@ async fn bind(
 async fn connect(
     a: SocketAddr,
     cipher: Arc<Cipher>,
-) -> Result<EncryptedNetworkPeer, (crate::net::Error, SocketAddr)> {
+) -> Result<EncryptedNetworkPeer, (crate::io::Error, SocketAddr)> {
     log::info!("Trying to connect to peer on {}, port {}", a.ip(), a.port());
 
     let stream = TcpStream::connect(a).await.map_err(|e| (e.into(), a))?;
@@ -175,13 +176,13 @@ async fn connect(
 async fn exchange_hello(
     mut peer: EncryptedNetworkPeer,
     a: SocketAddr,
-) -> Result<EncryptedNetworkPeer, (crate::net::Error, SocketAddr)> {
-    let hello = KeyConfirmationPayload::default();
+) -> Result<EncryptedNetworkPeer, (crate::io::Error, SocketAddr)> {
+    let hello = TransferHello::default();
 
     peer.write_ser_enc(&hello).await.map_err(|e| (e, a))?;
 
     let peer_hello = peer
-        .read_ser_enc::<KeyConfirmationPayload>()
+        .read_ser_enc::<TransferHello>()
         .await
         .map_err(|e| (e, a))?;
 
@@ -194,6 +195,6 @@ async fn exchange_hello(
         log::info!("Connected to peer on {}", a);
         Ok(peer)
     } else {
-        Err((crate::net::Error::Protocol, a))
+        Err((crate::io::Error::Custom("Invalid tag and timestamp"), a))
     }
 }
