@@ -6,6 +6,7 @@ use crate::components::dialog::{AportureInput, AportureTransfer, Purpose};
 #[derive(Debug)]
 pub struct ReceiverPage {
     passphrase_entry: adw::EntryRow,
+    passphrase_length: u32,
     aporture_dialog: Controller<AportureTransfer>,
     form_disabled: bool,
 }
@@ -14,6 +15,7 @@ pub struct ReceiverPage {
 pub enum Msg {
     ReceiveFile,
     ReceiveFileFinished,
+    PassphraseChanged,
 }
 
 #[relm4::component(pub)]
@@ -35,7 +37,7 @@ impl SimpleComponent for ReceiverPage {
             set_header_suffix = &gtk::Button {
                 set_label: "Connect",
                 #[watch]
-                set_sensitive: !model.form_disabled && passphrase_entry.text_length() != 0,
+                set_sensitive: !model.form_disabled && model.passphrase_length != 0,
 
                 connect_clicked[sender] => move |_| {
                     sender.input(Msg::ReceiveFile);
@@ -48,6 +50,9 @@ impl SimpleComponent for ReceiverPage {
                 #[watch]
                 set_sensitive: !model.form_disabled,
 
+                connect_changed[sender] => move |_| {
+                    sender.input(Msg::PassphraseChanged);
+                }
             },
         }
     }
@@ -64,6 +69,7 @@ impl SimpleComponent for ReceiverPage {
 
         let model = Self {
             passphrase_entry: adw::EntryRow::default(),
+            passphrase_length: 0,
             aporture_dialog,
             form_disabled: false,
         };
@@ -98,6 +104,7 @@ impl SimpleComponent for ReceiverPage {
 
                 self.form_disabled = false;
             }
+            Msg::PassphraseChanged => self.passphrase_length = self.passphrase_entry.text_length(),
         }
     }
 }

@@ -24,7 +24,8 @@ impl SimpleComponent for App {
         #[root]
         adw::Window {
             set_title: Some("Aporture"),
-            set_default_width: 300,
+            set_default_width: 550,
+            set_default_height: 650,
 
             adw::ToolbarView {
                 set_top_bar_style: adw::ToolbarStyle::Raised,
@@ -45,6 +46,8 @@ impl SimpleComponent for App {
 
                 #[name = "stack"]
                 adw::ViewStack {
+                    set_margin_horizontal: 40,
+
                     add_titled_with_icon[None, "Send", icon_names::SEND] = model.sender_page.widget(),
 
                     add_titled_with_icon[None, "Receive", icon_names::INBOX] = model.receive_page.widget(),

@@ -15,8 +15,11 @@ const PASSPHRASE_WORD_COUNT: usize = 3;
 #[derive(Debug)]
 pub struct SenderPage {
     passphrase_entry: adw::EntryRow,
+    file_entry: adw::ActionRow,
+    contact_entry: adw::EntryRow,
+    passphrase_length: u32,
     file_path: Option<PathBuf>,
-    file_name: Option<String>,
+    save_contact: bool,
     file_picker_dialog: Controller<OpenDialog>,
     aporture_dialog: Controller<AportureTransfer>,
     form_disabled: bool,
@@ -25,6 +28,8 @@ pub struct SenderPage {
 #[derive(Debug)]
 pub enum Msg {
     GeneratePassphrase,
+    PassphraseChanged,
+    SaveContact,
     FilePickerOpen,
     FilePickerResponse(PathBuf),
     SendFile,
@@ -43,18 +48,16 @@ impl SimpleComponent for SenderPage {
             set_margin_horizontal: 20,
             set_margin_vertical: 50,
 
-            set_width_request: 250,
-
             set_title: "Send",
             set_description: Some("Enter a passphrase or generate a random one"),
             #[wrap(Some)]
             set_header_suffix = &gtk::Button {
+                add_css_class: "suggested-action",
+
                 set_label: "Connect",
                 #[watch]
-                set_sensitive: !model.form_disabled && passphrase_entry.text_length() != 0 && model.file_path.is_some(),
-                connect_clicked[sender] => move |_| {
-                    sender.input(Msg::SendFile);
-                },
+                set_sensitive: !model.form_disabled && model.passphrase_length != 0 && model.file_path.is_some(),
+                connect_clicked => Msg::SendFile,
             },
 
             #[local_ref]
@@ -64,34 +67,51 @@ impl SimpleComponent for SenderPage {
                 #[watch]
                 set_sensitive: !model.form_disabled,
 
+                set_can_focus: false,
+
+                connect_changed => Msg::PassphraseChanged,
+
                 add_suffix = &gtk::Button {
                     set_icon_name: icon_names::UPDATE,
 
-                    connect_clicked[sender] => move |_| {
-                        sender.input(Msg::GeneratePassphrase);
-                    }
-                }
+                    add_css_class: "flat",
+                    add_css_class: "circular",
+
+                    connect_clicked => Msg::GeneratePassphrase,
+                },
             },
 
-            gtk::Button {
-                set_margin_vertical: 10,
+            #[local_ref]
+            file_path_entry -> adw::ActionRow {
+                set_title: "File",
 
-                set_label: "Choose file",
+                add_suffix = &gtk::Button {
+                    set_icon_name: icon_names::SEARCH_FOLDER,
+
+                    add_css_class: "flat",
+                    add_css_class: "circular",
+
+                    connect_clicked => Msg::FilePickerOpen,
+                },
+            },
+
+            adw::SwitchRow {
+                set_title: "Save contact",
+
                 #[watch]
                 set_sensitive: !model.form_disabled,
 
-                connect_clicked => Msg::FilePickerOpen
+                connect_active_notify => Msg::SaveContact,
             },
 
-            gtk::Label {
-                set_margin_vertical: 10,
-                set_justify: gtk::Justification::Center,
-                set_wrap: true,
+            #[local_ref]
+            contact_entry -> adw::EntryRow {
+                set_title: "Contact Name",
 
                 #[watch]
-                set_label: &format!("Selected file:\n{}", model.file_name.as_ref().unwrap_or(&"None".to_owned())),
-                #[watch]
                 set_sensitive: !model.form_disabled,
+                #[watch]
+                set_visible: model.save_contact,
             },
         }
     }
@@ -116,14 +136,19 @@ impl SimpleComponent for SenderPage {
 
         let model = Self {
             passphrase_entry: adw::EntryRow::default(),
+            file_entry: adw::ActionRow::default(),
+            contact_entry: adw::EntryRow::default(),
+            passphrase_length: 1,
             file_path: None,
-            file_name: None,
+            save_contact: false,
             file_picker_dialog,
             aporture_dialog,
             form_disabled: false,
         };
 
         let passphrase_entry = &model.passphrase_entry;
+        let file_path_entry = &model.file_entry;
+        let contact_entry = &model.contact_entry;
 
         let widgets = view_output!();
 
@@ -136,15 +161,16 @@ impl SimpleComponent for SenderPage {
                 .passphrase_entry
                 .set_text(&passphrase::generate(PASSPHRASE_WORD_COUNT)),
 
+            Msg::PassphraseChanged => self.passphrase_length = self.passphrase_entry.text_length(),
+
+            Msg::SaveContact => self.save_contact = !self.save_contact,
+
             Msg::FilePickerOpen => self.file_picker_dialog.emit(OpenDialogMsg::Open),
 
             Msg::FilePickerResponse(path) => {
-                self.file_name = Some(
-                    path.file_name()
-                        .expect("Must be a file")
-                        .to_string_lossy()
-                        .to_string(),
-                );
+                let name = path.file_name().expect("Must be a file").to_string_lossy();
+                self.file_entry.set_subtitle(&name);
+
                 self.file_path = Some(path);
             }
 
