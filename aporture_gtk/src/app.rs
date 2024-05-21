@@ -89,7 +89,7 @@ impl SimpleComponent for App {
         let contacts_holder = contacts::Holder::builder()
             .transient_for(&root)
             .launch(())
-            .forward(sender.input_sender(), |contacts| Msg::Contacts(contacts));
+            .forward(sender.input_sender(), Msg::Contacts);
 
         let model = Self {
             receive_page,
@@ -109,7 +109,7 @@ impl SimpleComponent for App {
                     .emit(send::Msg::ContactsReady(contacts.clone()));
 
                 self.receive_page
-                    .emit(receive::Msg::ContactsReady(contacts.clone()));
+                    .emit(receive::Msg::ContactsReady(contacts));
             }
             Msg::ContactsRequest => self.contacts_holder.emit(contacts::Msg::Get),
         }

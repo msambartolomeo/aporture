@@ -136,11 +136,10 @@ impl Component for Holder {
                         let password = self.exists_p_entry.text();
 
                         sender.oneshot_command(async move {
-                            match Contacts::load(&password.into_bytes()).await {
-                                Ok(c) => Some(c),
-                                Err(_) => None,
-                            }
-                            .map(|c| Arc::new(RwLock::new(c)))
+                            Contacts::load(&password.into_bytes())
+                                .await
+                                .ok()
+                                .map(|c| Arc::new(RwLock::new(c)))
                         });
                     } else {
                         let p1 = self.create_p_entry_1.text();
@@ -151,11 +150,10 @@ impl Component for Holder {
                             self.create_p_entry_2.remove_css_class("error");
 
                             sender.oneshot_command(async move {
-                                match Contacts::empty(&p1.into_bytes()).await {
-                                    Ok(c) => Some(c),
-                                    Err(_) => None,
-                                }
-                                .map(|c| Arc::new(RwLock::new(c)))
+                                Contacts::empty(&p1.into_bytes())
+                                    .await
+                                    .ok()
+                                    .map(|c| Arc::new(RwLock::new(c)))
                             });
                         } else {
                             // TODO: Error message

@@ -11,7 +11,7 @@ use relm4_icons::icon_names;
 use tokio::sync::RwLock;
 
 use crate::app;
-use crate::components::dialog::aporture::{AportureInput, AportureTransfer, PassphraseMethod};
+use crate::components::dialog::peer::{self, PassphraseMethod, Peer};
 use aporture::fs::contacts::Contacts;
 use aporture::passphrase;
 
@@ -27,7 +27,7 @@ pub struct SenderPage {
     file_path: Option<PathBuf>,
     file_picker_dialog: Controller<OpenDialog>,
     contacts: Option<Arc<RwLock<Contacts>>>,
-    aporture_dialog: Controller<AportureTransfer>,
+    aporture_dialog: Controller<Peer>,
     form_disabled: bool,
 }
 
@@ -137,7 +137,7 @@ impl SimpleComponent for SenderPage {
                 OpenDialogResponse::Cancel => Msg::Ignore,
             });
 
-        let aporture_dialog = AportureTransfer::builder()
+        let aporture_dialog = Peer::builder()
             .transient_for(&root)
             .launch(())
             .forward(sender.input_sender(), |_| Msg::SendFileFinished); // TODO: Handle Errors
@@ -211,7 +211,7 @@ impl SimpleComponent for SenderPage {
 
                 log::info!("Starting sender worker");
 
-                self.aporture_dialog.emit(AportureInput::SendFile {
+                self.aporture_dialog.emit(peer::Msg::SendFile {
                     passphrase,
                     path: self.file_path.clone().expect("Button disabled if None"),
                     save,

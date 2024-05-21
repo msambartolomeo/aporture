@@ -6,7 +6,7 @@ use tokio::sync::RwLock;
 
 use crate::{
     app,
-    components::dialog::aporture::{AportureInput, AportureTransfer, PassphraseMethod},
+    components::dialog::peer::{self, PassphraseMethod, Peer},
 };
 use aporture::fs::contacts::Contacts;
 
@@ -17,7 +17,7 @@ pub struct ReceiverPage {
     save_contact: adw::SwitchRow,
     passphrase_length: u32,
     contacts: Option<Arc<RwLock<Contacts>>>,
-    aporture_dialog: Controller<AportureTransfer>,
+    aporture_dialog: Controller<Peer>,
     form_disabled: bool,
 }
 
@@ -94,7 +94,7 @@ impl SimpleComponent for ReceiverPage {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let aporture_dialog = AportureTransfer::builder()
+        let aporture_dialog = Peer::builder()
             .transient_for(&root)
             .launch(())
             .forward(sender.input_sender(), |_| Msg::ReceiveFileFinished); // TODO: Handle Errors
@@ -140,7 +140,7 @@ impl SimpleComponent for ReceiverPage {
                     )
                 });
 
-                self.aporture_dialog.emit(AportureInput::ReceiveFile {
+                self.aporture_dialog.emit(peer::Msg::ReceiveFile {
                     passphrase,
                     destination: None,
                     save,

@@ -5,18 +5,18 @@ use adw::prelude::*;
 use relm4::prelude::*;
 use tokio::sync::RwLock;
 
-use crate::components::error::Aporture;
+use crate::components::error::PeerError;
 use aporture::fs::contacts::Contacts;
 use aporture::pairing::{AporturePairingProtocol, Receiver, Sender};
 
 #[derive(Debug)]
-pub struct AportureTransfer {
+pub struct Peer {
     visible: bool,
     label: &'static str,
 }
 
 #[derive(Debug)]
-pub enum AportureInput {
+pub enum Msg {
     SendFile {
         passphrase: PassphraseMethod,
         path: PathBuf,
@@ -36,11 +36,11 @@ pub enum PassphraseMethod {
 }
 
 #[relm4::component(pub)]
-impl Component for AportureTransfer {
+impl Component for Peer {
     type Init = ();
-    type Input = AportureInput;
-    type Output = Result<(), Aporture>;
-    type CommandOutput = Result<(), Aporture>;
+    type Input = Msg;
+    type Output = Result<(), PeerError>;
+    type CommandOutput = Result<(), PeerError>;
 
     view! {
         dialog = gtk::Window {
@@ -85,7 +85,7 @@ impl Component for AportureTransfer {
         // TODO: Show errors in screen
 
         match msg {
-            AportureInput::SendFile {
+            Msg::SendFile {
                 passphrase,
                 path,
                 save,
@@ -120,6 +120,7 @@ impl Component for AportureTransfer {
                             let mut contacts = contacts.write().await;
                             contacts.add(name, key);
                             contacts.save().await.unwrap();
+                            drop(contacts);
                         } else {
                             // self.label = "Warning: Not saving contact because peer refused";
                         }
@@ -128,7 +129,7 @@ impl Component for AportureTransfer {
                     Ok(())
                 });
             }
-            AportureInput::ReceiveFile {
+            Msg::ReceiveFile {
                 passphrase,
                 destination,
                 save,
@@ -156,6 +157,7 @@ impl Component for AportureTransfer {
                             let mut contacts = contacts.write().await;
                             contacts.add(name, key);
                             contacts.save().await.unwrap();
+                            drop(contacts);
                         } else {
                             // self.label = "Warning: Not saving contact because peer refused";
                         }
