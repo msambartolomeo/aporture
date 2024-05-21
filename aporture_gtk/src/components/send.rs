@@ -1,14 +1,17 @@
+use std::ops::Not;
 use std::path::PathBuf;
+use std::sync::{Arc, RwLock};
 
 use adw::prelude::*;
-use aporture::passphrase;
+use aporture::{fs::contacts::Contacts, passphrase};
 use relm4::prelude::*;
 use relm4_components::open_dialog::{
     OpenDialog, OpenDialogMsg, OpenDialogResponse, OpenDialogSettings,
 };
 use relm4_icons::icon_names;
 
-use crate::components::dialog::{AportureInput, AportureTransfer, Purpose};
+use crate::app;
+use crate::components::dialog::{AportureInput, AportureTransfer};
 
 const PASSPHRASE_WORD_COUNT: usize = 3;
 
@@ -17,10 +20,11 @@ pub struct SenderPage {
     passphrase_entry: adw::EntryRow,
     file_entry: adw::ActionRow,
     contact_entry: adw::EntryRow,
+    save_contact: adw::SwitchRow,
     passphrase_length: u32,
     file_path: Option<PathBuf>,
-    save_contact: bool,
     file_picker_dialog: Controller<OpenDialog>,
+    contacts: Option<Arc<RwLock<Contacts>>>,
     aporture_dialog: Controller<AportureTransfer>,
     form_disabled: bool,
 }
@@ -35,13 +39,14 @@ pub enum Msg {
     SendFile,
     SendFileFinished,
     Ignore,
+    ContactsReady(Option<Arc<RwLock<Contacts>>>),
 }
 
 #[relm4::component(pub)]
 impl SimpleComponent for SenderPage {
     type Init = ();
     type Input = Msg;
-    type Output = ();
+    type Output = app::Request;
 
     view! {
         adw::PreferencesGroup {
@@ -95,7 +100,8 @@ impl SimpleComponent for SenderPage {
                 },
             },
 
-            adw::SwitchRow {
+            #[local_ref]
+            save_contact -> adw::SwitchRow {
                 set_title: "Save contact",
 
                 #[watch]
@@ -111,7 +117,7 @@ impl SimpleComponent for SenderPage {
                 #[watch]
                 set_sensitive: !model.form_disabled,
                 #[watch]
-                set_visible: model.save_contact,
+                set_visible: model.save_contact.is_active(),
             },
         }
     }
@@ -131,17 +137,18 @@ impl SimpleComponent for SenderPage {
 
         let aporture_dialog = AportureTransfer::builder()
             .transient_for(&root)
-            .launch(Purpose::Send)
+            .launch(())
             .forward(sender.input_sender(), |_| Msg::SendFileFinished); // TODO: Handle Errors
 
         let model = Self {
             passphrase_entry: adw::EntryRow::default(),
             file_entry: adw::ActionRow::default(),
             contact_entry: adw::EntryRow::default(),
+            save_contact: adw::SwitchRow::default(),
             passphrase_length: 1,
             file_path: None,
-            save_contact: false,
             file_picker_dialog,
+            contacts: None,
             aporture_dialog,
             form_disabled: false,
         };
@@ -149,13 +156,14 @@ impl SimpleComponent for SenderPage {
         let passphrase_entry = &model.passphrase_entry;
         let file_path_entry = &model.file_entry;
         let contact_entry = &model.contact_entry;
+        let save_contact = &model.save_contact;
 
         let widgets = view_output!();
 
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, msg: Self::Input, _sender: ComponentSender<Self>) {
+    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
         match msg {
             Msg::GeneratePassphrase => self
                 .passphrase_entry
@@ -163,7 +171,14 @@ impl SimpleComponent for SenderPage {
 
             Msg::PassphraseChanged => self.passphrase_length = self.passphrase_entry.text_length(),
 
-            Msg::SaveContact => self.save_contact = !self.save_contact,
+            Msg::SaveContact => {
+                if self.contacts.is_none() && self.save_contact.is_active() {
+                    sender
+                        .output_sender()
+                        .send(app::Request::Contacts)
+                        .expect("Controller not dropped");
+                }
+            }
 
             Msg::FilePickerOpen => self.file_picker_dialog.emit(OpenDialogMsg::Open),
 
@@ -183,10 +198,18 @@ impl SimpleComponent for SenderPage {
 
                 let passphrase = passphrase.into_bytes();
 
+                let contact = self
+                    .save_contact
+                    .is_active()
+                    .not()
+                    .then(|| self.contact_entry.text().to_string());
+
                 log::info!("Starting sender worker");
+
                 self.aporture_dialog.emit(AportureInput::SendFile {
                     passphrase,
                     path: self.file_path.clone().expect("Button disabled if None"),
+                    save: contact,
                 });
             }
 
@@ -196,6 +219,12 @@ impl SimpleComponent for SenderPage {
                 self.form_disabled = false;
             }
 
+            Msg::ContactsReady(contacts) => {
+                if contacts.is_none() {
+                    self.save_contact.set_active(false);
+                }
+                self.contacts = contacts;
+            }
             Msg::Ignore => (),
         }
     }

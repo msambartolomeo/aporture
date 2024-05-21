@@ -1,3 +1,5 @@
+pub mod contacts;
+
 use std::path::PathBuf;
 
 use adw::prelude::*;
@@ -8,13 +10,7 @@ use aporture::pairing::{AporturePairingProtocol, Receiver, Sender};
 #[derive(Debug)]
 pub struct AportureTransfer {
     visible: bool,
-    purpose: Purpose,
-}
-
-#[derive(Debug)]
-pub enum Purpose {
-    Send,
-    Receive,
+    label: &'static str,
 }
 
 mod error;
@@ -34,7 +30,7 @@ pub enum AportureInput {
 
 #[relm4::component(pub)]
 impl Component for AportureTransfer {
-    type Init = Purpose;
+    type Init = ();
     type Input = AportureInput;
     type Output = Result<(), Error>;
     type CommandOutput = Result<(), Error>;
@@ -52,10 +48,7 @@ impl Component for AportureTransfer {
                 set_halign: gtk::Align::Center,
                 set_valign: gtk::Align::Center,
                 #[watch]
-                set_label: match model.purpose {
-                    Purpose::Send => "Sending file...",
-                    Purpose::Receive => "Receiving file...",
-                }
+                set_label: model.label,
             },
 
             // connect_close_request[sender] => move |_| {
@@ -66,13 +59,13 @@ impl Component for AportureTransfer {
     }
 
     fn init(
-        init: Self::Init,
+        _init: Self::Init,
         root: Self::Root,
         _sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let model = Self {
             visible: false,
-            purpose: init,
+            label: "",
         };
 
         let widgets = view_output!();
@@ -86,8 +79,6 @@ impl Component for AportureTransfer {
 
         match msg {
             AportureInput::SendFile { passphrase, path } => {
-                self.purpose = Purpose::Send;
-
                 sender.oneshot_command(async move {
                     let mut pair_info = AporturePairingProtocol::<Sender>::new(passphrase, false)
                         .pair()
@@ -104,8 +95,6 @@ impl Component for AportureTransfer {
                 passphrase,
                 destination,
             } => {
-                self.purpose = Purpose::Receive;
-
                 sender.oneshot_command(async {
                     let mut pair_info = AporturePairingProtocol::<Receiver>::new(passphrase, false)
                         .pair()

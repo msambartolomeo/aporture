@@ -1,7 +1,7 @@
 use adw::prelude::*;
 use relm4::prelude::*;
 
-use crate::components::dialog::{AportureInput, AportureTransfer, Purpose};
+use crate::components::dialog::{AportureInput, AportureTransfer};
 
 #[derive(Debug)]
 pub struct ReceiverPage {
@@ -64,7 +64,7 @@ impl SimpleComponent for ReceiverPage {
     ) -> ComponentParts<Self> {
         let aporture_dialog = AportureTransfer::builder()
             .transient_for(&root)
-            .launch(Purpose::Send)
+            .launch(())
             .forward(sender.input_sender(), |_| Msg::ReceiveFileFinished); // TODO: Handle Errors
 
         let model = Self {
