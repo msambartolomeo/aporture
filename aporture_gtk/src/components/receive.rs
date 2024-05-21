@@ -1,5 +1,6 @@
 use adw::prelude::*;
 use relm4::prelude::*;
+use tokio::sync::RwLock;
 
 use crate::components::dialog::aporture::{AportureInput, AportureTransfer};
 
@@ -94,10 +95,10 @@ impl SimpleComponent for ReceiverPage {
 
                 log::info!("Starting receiver worker");
 
-                self.aporture_dialog.emit(AportureInput::ReceiveFile {
-                    passphrase,
-                    destination: None,
-                });
+                // self.aporture_dialog.emit(AportureInput::ReceiveFile {
+                //     passphrase,
+                //     destination: None,
+                // });
             }
             Msg::ReceiveFileFinished => {
                 log::info!("Finished receiver worker");

@@ -1,17 +1,19 @@
 use std::ops::Not;
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use adw::prelude::*;
-use aporture::{fs::contacts::Contacts, passphrase};
 use relm4::prelude::*;
 use relm4_components::open_dialog::{
     OpenDialog, OpenDialogMsg, OpenDialogResponse, OpenDialogSettings,
 };
 use relm4_icons::icon_names;
+use tokio::sync::RwLock;
 
 use crate::app;
-use crate::components::dialog::aporture::{AportureInput, AportureTransfer};
+use crate::components::dialog::aporture::{AportureInput, AportureTransfer, PassphraseMethod};
+use aporture::fs::contacts::Contacts;
+use aporture::passphrase;
 
 const PASSPHRASE_WORD_COUNT: usize = 3;
 
@@ -196,20 +198,23 @@ impl SimpleComponent for SenderPage {
 
                 log::info!("Selected passphrase is {}", passphrase);
 
-                let passphrase = passphrase.into_bytes();
+                let passphrase = PassphraseMethod::Direct(passphrase.into_bytes());
 
-                let contact = self
-                    .save_contact
-                    .is_active()
-                    .not()
-                    .then(|| self.contact_entry.text().to_string());
+                let save = self.save_contact.is_active().not().then(|| {
+                    (
+                        self.contact_entry.text().to_string(),
+                        self.contacts
+                            .clone()
+                            .expect("Must exist if contact was filled"),
+                    )
+                });
 
                 log::info!("Starting sender worker");
 
                 self.aporture_dialog.emit(AportureInput::SendFile {
                     passphrase,
                     path: self.file_path.clone().expect("Button disabled if None"),
-                    save: contact,
+                    save,
                 });
             }
 

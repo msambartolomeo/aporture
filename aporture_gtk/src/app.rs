@@ -1,9 +1,10 @@
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use adw::prelude::*;
 use aporture::fs::contacts::Contacts;
 use relm4::prelude::*;
 use relm4_icons::icon_names;
+use tokio::sync::RwLock;
 
 use crate::components::dialog::contacts;
 use crate::components::receive::{self, ReceiverPage};

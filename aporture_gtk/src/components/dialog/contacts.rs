@@ -1,7 +1,8 @@
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use adw::prelude::*;
 use relm4::prelude::*;
+use tokio::sync::RwLock;
 
 use aporture::fs::contacts::Contacts;
 

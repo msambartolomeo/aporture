@@ -1,11 +1,13 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use adw::prelude::*;
 use relm4::prelude::*;
-
-use aporture::pairing::{AporturePairingProtocol, Receiver, Sender};
+use tokio::sync::RwLock;
 
 use crate::components::error::Aporture;
+use aporture::fs::contacts::Contacts;
+use aporture::pairing::{AporturePairingProtocol, Receiver, Sender};
 
 #[derive(Debug)]
 pub struct AportureTransfer {
@@ -16,14 +18,21 @@ pub struct AportureTransfer {
 #[derive(Debug)]
 pub enum AportureInput {
     SendFile {
-        passphrase: Vec<u8>,
+        passphrase: PassphraseMethod,
         path: PathBuf,
-        save: Option<String>,
+        save: Option<(String, Arc<RwLock<Contacts>>)>,
     },
     ReceiveFile {
-        passphrase: Vec<u8>,
+        passphrase: PassphraseMethod,
         destination: Option<PathBuf>,
+        save: Option<(String, Arc<RwLock<Contacts>>)>,
     },
+}
+
+#[derive(Debug)]
+pub enum PassphraseMethod {
+    Direct(Vec<u8>),
+    Contact(String, Arc<RwLock<Contacts>>),
 }
 
 #[relm4::component(pub)]
@@ -82,16 +91,19 @@ impl Component for AportureTransfer {
                 save,
             } => {
                 sender.oneshot_command(async move {
+                    let passphrase = match passphrase {
+                        PassphraseMethod::Direct(p) => p,
+                        PassphraseMethod::Contact(name, contacts) => {
+                            contacts.read().await.get(&name).unwrap().to_vec()
+                        }
+                    };
+
                     // self.label = "Waiting for your peer...";
 
-                    Err(aporture::pairing::Error::Hello(
-                        aporture::pairing::error::Hello::ServerUnsupportedVersion,
-                    ))
-                    .map_err(|_| Aporture::ServerFailure)?;
-
-                    let mut pair_info = AporturePairingProtocol::<Sender>::new(passphrase, false)
-                        .pair()
-                        .await?;
+                    let mut pair_info =
+                        AporturePairingProtocol::<Sender>::new(passphrase, save.is_some())
+                            .pair()
+                            .await?;
 
                     log::info!("Pairing successful!");
 
@@ -103,11 +115,11 @@ impl Component for AportureTransfer {
 
                     let key = pair_info.finalize().await;
 
-                    if let Some(name) = save {
+                    if let Some((name, contacts)) = save {
                         if save_confirmation {
-                            // let contacts = Contacts::load(password).get_or_init().await?;
-
-                            // contacts.add(name, key);
+                            let mut contacts = contacts.write().await;
+                            contacts.add(name, key);
+                            contacts.save().await.unwrap();
                         } else {
                             // self.label = "Warning: Not saving contact because peer refused";
                         }
@@ -119,15 +131,33 @@ impl Component for AportureTransfer {
             AportureInput::ReceiveFile {
                 passphrase,
                 destination,
+                save,
             } => {
                 sender.oneshot_command(async {
+                    let passphrase = match passphrase {
+                        PassphraseMethod::Direct(p) => p,
+                        PassphraseMethod::Contact(name, contacts) => {
+                            contacts.read().await.get(&name).unwrap().to_vec()
+                        }
+                    };
+
                     let mut pair_info = AporturePairingProtocol::<Receiver>::new(passphrase, false)
                         .pair()
                         .await?;
 
                     aporture::transfer::receive_file(destination, &mut pair_info).await?;
 
-                    pair_info.finalize().await;
+                    let save_confirmation = pair_info.save_contact;
+
+                    let key = pair_info.finalize().await;
+
+                    if let Some((name, contacts)) = save {
+                        if save_confirmation {
+                            contacts.write().await.add(name, key);
+                        } else {
+                            // self.label = "Warning: Not saving contact because peer refused";
+                        }
+                    }
 
                     Ok(())
                 });

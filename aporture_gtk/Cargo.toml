@@ -14,5 +14,6 @@ relm4-components = "0.8.1"
 relm4-icons = "0.8.2"
 # NOTE: Shared dependencies
 aporture = { workspace = true, features = ["full"] }
+tokio = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }
