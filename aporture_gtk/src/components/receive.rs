@@ -1,7 +1,7 @@
 use adw::prelude::*;
 use relm4::prelude::*;
 
-use crate::components::dialog::{AportureInput, AportureTransfer};
+use crate::components::dialog::aporture::{AportureInput, AportureTransfer};
 
 #[derive(Debug)]
 pub struct ReceiverPage {

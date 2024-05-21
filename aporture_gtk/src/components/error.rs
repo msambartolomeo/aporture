@@ -2,7 +2,7 @@ use aporture::pairing::error;
 use aporture::transfer::{ReceiveError, SendError};
 
 #[derive(Debug)]
-pub enum Error {
+pub enum Aporture {
     NoPeer,
     NoServer,
     InvalidServer,
@@ -13,7 +13,7 @@ pub enum Error {
     TransferFailure,
 }
 
-impl From<error::Hello> for Error {
+impl From<error::Hello> for Aporture {
     fn from(e: error::Hello) -> Self {
         log::warn!("Error: {e}");
 
@@ -31,27 +31,27 @@ impl From<error::Hello> for Error {
     }
 }
 
-impl From<error::KeyExchange> for Error {
+impl From<error::KeyExchange> for Aporture {
     fn from(e: error::KeyExchange) -> Self {
         log::warn!("Error: {e}");
         Self::PairingFailure
     }
 }
 
-impl From<error::Negotiation> for Error {
+impl From<error::Negotiation> for Aporture {
     fn from(e: error::Negotiation) -> Self {
         log::warn!("Error: {e}");
         Self::PairingFailure
     }
 }
 
-impl From<error::Error> for Error {
+impl From<error::Error> for Aporture {
     fn from(e: error::Error) -> Self {
         e.into()
     }
 }
 
-impl From<ReceiveError> for Error {
+impl From<ReceiveError> for Aporture {
     fn from(e: ReceiveError) -> Self {
         log::warn!("Error: {e}");
 
@@ -63,7 +63,7 @@ impl From<ReceiveError> for Error {
     }
 }
 
-impl From<SendError> for Error {
+impl From<SendError> for Aporture {
     fn from(e: SendError) -> Self {
         log::warn!("Error: {e}");
 

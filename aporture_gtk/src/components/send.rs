@@ -11,7 +11,7 @@ use relm4_components::open_dialog::{
 use relm4_icons::icon_names;
 
 use crate::app;
-use crate::components::dialog::{AportureInput, AportureTransfer};
+use crate::components::dialog::aporture::{AportureInput, AportureTransfer};
 
 const PASSPHRASE_WORD_COUNT: usize = 3;
 
