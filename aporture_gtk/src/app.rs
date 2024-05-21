@@ -75,7 +75,11 @@ impl SimpleComponent for App {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let receive_page = ReceiverPage::builder().launch(()).detach();
+        let receive_page = ReceiverPage::builder()
+            .launch(())
+            .forward(sender.input_sender(), |r| match r {
+                Request::Contacts => Msg::ContactsRequest,
+            });
         let sender_page = SenderPage::builder()
             .launch(())
             .forward(sender.input_sender(), |r| match r {
@@ -101,10 +105,11 @@ impl SimpleComponent for App {
     fn update(&mut self, message: Self::Input, _sender: ComponentSender<Self>) {
         match message {
             Msg::Contacts(contacts) => {
-                self.sender_page.emit(send::Msg::ContactsReady(contacts));
+                self.sender_page
+                    .emit(send::Msg::ContactsReady(contacts.clone()));
 
-                // self.receive_page
-                //     .emit(receive::Msg::ContactsReady(contacts.clone()));
+                self.receive_page
+                    .emit(receive::Msg::ContactsReady(contacts.clone()));
             }
             Msg::ContactsRequest => self.contacts_holder.emit(contacts::Msg::Get),
         }

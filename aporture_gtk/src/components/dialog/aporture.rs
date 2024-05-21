@@ -153,7 +153,9 @@ impl Component for AportureTransfer {
 
                     if let Some((name, contacts)) = save {
                         if save_confirmation {
-                            contacts.write().await.add(name, key);
+                            let mut contacts = contacts.write().await;
+                            contacts.add(name, key);
+                            contacts.save().await.unwrap();
                         } else {
                             // self.label = "Warning: Not saving contact because peer refused";
                         }
