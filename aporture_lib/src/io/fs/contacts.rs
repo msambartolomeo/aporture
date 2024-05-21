@@ -13,6 +13,7 @@ use crate::parser::{EncryptedSerdeIO, Parser};
 
 const CONTACTS_FILE_NAME: &str = "contacts.app";
 
+#[derive(Debug)]
 pub struct Contacts {
     content: Content,
     manager: EncryptedFileManager,
@@ -73,7 +74,7 @@ impl Contacts {
         })
     }
 
-    pub async fn save(mut self) -> Result<(), crate::io::Error> {
+    pub async fn save(&mut self) -> Result<(), crate::io::Error> {
         log::info!("Saving contacts to {}", self.manager);
 
         self.manager.write_ser_enc(&self.content).await.ok();

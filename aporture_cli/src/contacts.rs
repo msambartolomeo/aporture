@@ -62,7 +62,7 @@ impl Holder {
     }
 
     pub async fn save(self) -> Result<()> {
-        if let Some(contacts) = self.0 {
+        if let Some(mut contacts) = self.0 {
             contacts.save().await?;
         }
         Ok(())

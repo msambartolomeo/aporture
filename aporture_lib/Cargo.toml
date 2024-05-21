@@ -24,16 +24,16 @@ chrono = { version = "0.4.38", optional = true, features = ["serde"] }
 
 
 # NOTE: Protocol dependencies
-serde = { version = "1.0.201", features = ["derive"] }
+serde = { version = "1.0.202", features = ["derive"] }
 serde_bencode = "0.2.4"
 serde_with = "3.8.1"
 serde_repr = "0.1.19"
 generic-array = "1.0.0"
 rand = "0.8.5"
-thiserror = { version = "1.0.60" }
 
 # NOTE: Shared dependencies
 tokio = { workspace = true }
+thiserror = { workspace = true }
 log = { workspace = true }
 
 [features]
