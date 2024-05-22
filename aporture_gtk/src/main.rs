@@ -1,6 +1,5 @@
 mod app;
 mod components;
-mod workers;
 
 use relm4::RelmApp;
 
@@ -37,5 +36,5 @@ fn main() {
 
     app.run::<App>(());
 
-    log::info!("Aplication Closing");
+    log::info!("Application Closing");
 }

@@ -1,29 +1,41 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use adw::prelude::*;
-use relm4::{prelude::*, WorkerController};
+use relm4::prelude::*;
 use relm4_components::open_dialog::{
     OpenDialog, OpenDialogMsg, OpenDialogResponse, OpenDialogSettings,
 };
-use relm4_icons::icon_name;
+use relm4_icons::icon_names;
+use tokio::sync::RwLock;
 
-use crate::workers::{AportureInput, AportureWorker};
+use crate::app;
+use crate::components::dialog::peer::{self, PassphraseMethod, Peer};
+use aporture::fs::contacts::Contacts;
+use aporture::passphrase;
+
+const PASSPHRASE_WORD_COUNT: usize = 3;
 
 #[derive(Debug)]
 pub struct SenderPage {
-    passphrase: gtk::EntryBuffer,
-    passphrase_empty: bool,
+    passphrase_entry: adw::EntryRow,
+    file_entry: adw::ActionRow,
+    save_contact: adw::SwitchRow,
+    contact_entry: adw::EntryRow,
+    passphrase_length: u32,
     file_path: Option<PathBuf>,
-    file_name: Option<String>,
     file_picker_dialog: Controller<OpenDialog>,
-    aporture_worker: WorkerController<AportureWorker>,
+    contacts: Option<Arc<RwLock<Contacts>>>,
+    aporture_dialog: Controller<Peer>,
     form_disabled: bool,
 }
 
 #[derive(Debug)]
 pub enum Msg {
-    PassphraseChanged,
     GeneratePassphrase,
+    PassphraseChanged,
+    SaveContact,
+    ContactsReady(Option<Arc<RwLock<Contacts>>>),
     FilePickerOpen,
     FilePickerResponse(PathBuf),
     SendFile,
@@ -35,7 +47,7 @@ pub enum Msg {
 impl SimpleComponent for SenderPage {
     type Init = ();
     type Input = Msg;
-    type Output = ();
+    type Output = app::Request;
 
     view! {
         adw::PreferencesGroup {
@@ -46,52 +58,67 @@ impl SimpleComponent for SenderPage {
             set_description: Some("Enter a passphrase or generate a random one"),
             #[wrap(Some)]
             set_header_suffix = &gtk::Button {
+                add_css_class: "suggested-action",
+
                 set_label: "Connect",
                 #[watch]
-                set_sensitive: !model.form_disabled && !model.passphrase_empty && model.file_path.is_some(),
+                set_sensitive: !model.form_disabled && model.passphrase_length != 0 && model.file_path.is_some(),
+                connect_clicked => Msg::SendFile,
+            },
 
-                connect_clicked[sender] => move |_| {
-                    sender.input(Msg::SendFile);
+            #[local_ref]
+            passphrase_entry -> adw::EntryRow {
+                set_title: "Passphrase",
+                set_text: &passphrase::generate(PASSPHRASE_WORD_COUNT),
+                #[watch]
+                set_sensitive: !model.form_disabled,
+
+                set_can_focus: false,
+
+                connect_changed => Msg::PassphraseChanged,
+
+                add_suffix = &gtk::Button {
+                    set_icon_name: icon_names::UPDATE,
+
+                    add_css_class: "flat",
+                    add_css_class: "circular",
+
+                    connect_clicked => Msg::GeneratePassphrase,
                 },
             },
 
-            gtk::Entry {
-                set_margin_vertical: 10,
+            #[local_ref]
+            file_path_entry -> adw::ActionRow {
+                set_title: "File",
 
-                set_tooltip_text: Some("Passphrase"),
-                set_buffer: &model.passphrase,
-                set_icon_from_icon_name: (gtk::EntryIconPosition::Secondary, Some(icon_name::UPDATE)),
-                #[watch]
-                set_sensitive: !model.form_disabled,
+                add_suffix = &gtk::Button {
+                    set_icon_name: icon_names::SEARCH_FOLDER,
 
-                connect_changed[sender] => move |_| {
-                    sender.input(Msg::PassphraseChanged);
+                    add_css_class: "flat",
+                    add_css_class: "circular",
+
+                    connect_clicked => Msg::FilePickerOpen,
                 },
-
-                connect_icon_press[sender] => move |_, _| {
-                    sender.input(Msg::GeneratePassphrase);
-                }
             },
 
-            gtk::Button {
-                set_margin_vertical: 10,
+            #[local_ref]
+            save_contact -> adw::SwitchRow {
+                set_title: "Save contact",
 
-                set_label: "Choose file",
                 #[watch]
                 set_sensitive: !model.form_disabled,
 
-                connect_clicked => Msg::FilePickerOpen
+                connect_active_notify => Msg::SaveContact,
             },
 
-            gtk::Label {
-                set_margin_vertical: 10,
-                set_justify: gtk::Justification::Center,
-                set_wrap: true,
+            #[local_ref]
+            contact_entry -> adw::EntryRow {
+                set_title: "Contact Name",
 
                 #[watch]
-                set_label: &format!("Selected file:\n{}", model.file_name.as_ref().unwrap_or(&"None".to_owned())),
-                #[watch]
                 set_sensitive: !model.form_disabled,
+                #[watch]
+                set_visible: model.save_contact.is_active(),
             },
         }
     }
@@ -109,57 +136,100 @@ impl SimpleComponent for SenderPage {
                 OpenDialogResponse::Cancel => Msg::Ignore,
             });
 
-        let aporture_worker = AportureWorker::builder()
-            .detach_worker(())
+        let aporture_dialog = Peer::builder()
+            .transient_for(&root)
+            .launch(())
             .forward(sender.input_sender(), |_| Msg::SendFileFinished); // TODO: Handle Errors
 
         let model = Self {
-            passphrase: gtk::EntryBuffer::default(),
-            passphrase_empty: true,
+            passphrase_entry: adw::EntryRow::default(),
+            file_entry: adw::ActionRow::default(),
+            save_contact: adw::SwitchRow::default(),
+            contact_entry: adw::EntryRow::default(),
+            passphrase_length: 1,
             file_path: None,
-            file_name: None,
             file_picker_dialog,
-            aporture_worker,
+            contacts: None,
+            aporture_dialog,
             form_disabled: false,
         };
+
+        let passphrase_entry = &model.passphrase_entry;
+        let file_path_entry = &model.file_entry;
+        let save_contact = &model.save_contact;
+        let contact_entry = &model.contact_entry;
 
         let widgets = view_output!();
 
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, msg: Self::Input, _sender: ComponentSender<Self>) {
+    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
         match msg {
-            Msg::PassphraseChanged => self.passphrase_empty = self.passphrase.length() == 0,
-            Msg::GeneratePassphrase => todo!("Generate random passphrase"),
+            Msg::GeneratePassphrase => self
+                .passphrase_entry
+                .set_text(&passphrase::generate(PASSPHRASE_WORD_COUNT)),
+
+            Msg::PassphraseChanged => self.passphrase_length = self.passphrase_entry.text_length(),
+
+            Msg::SaveContact => {
+                if self.contacts.is_none() && self.save_contact.is_active() {
+                    sender
+                        .output_sender()
+                        .send(app::Request::Contacts)
+                        .expect("Controller not dropped");
+                }
+            }
+
+            Msg::ContactsReady(contacts) => {
+                if contacts.is_none() {
+                    self.save_contact.set_active(false);
+                }
+                self.contacts = contacts;
+            }
+
             Msg::FilePickerOpen => self.file_picker_dialog.emit(OpenDialogMsg::Open),
+
             Msg::FilePickerResponse(path) => {
-                self.file_name = Some(
-                    path.file_name()
-                        .expect("Must be a file")
-                        .to_string_lossy()
-                        .to_string(),
-                );
+                let name = path.file_name().expect("Must be a file").to_string_lossy();
+                self.file_entry.set_subtitle(&name);
+
                 self.file_path = Some(path);
             }
+
             Msg::SendFile => {
                 self.form_disabled = true;
 
-                log::info!("Selected passphrase is {}", self.passphrase);
+                let passphrase = self.passphrase_entry.text();
 
-                let passphrase = self.passphrase.text().into_bytes();
+                log::info!("Selected passphrase is {}", passphrase);
+
+                let passphrase = PassphraseMethod::Direct(passphrase.into_bytes());
+
+                let save = self.save_contact.is_active().then(|| {
+                    (
+                        self.contact_entry.text().to_string(),
+                        self.contacts
+                            .clone()
+                            .expect("Must exist if contact was filled"),
+                    )
+                });
 
                 log::info!("Starting sender worker");
-                self.aporture_worker.sender().emit(AportureInput::SendFile {
+
+                self.aporture_dialog.emit(peer::Msg::SendFile {
                     passphrase,
                     path: self.file_path.clone().expect("Button disabled if None"),
+                    save,
                 });
             }
+
             Msg::SendFileFinished => {
                 log::info!("Finished sender worker");
 
                 self.form_disabled = false;
             }
+
             Msg::Ignore => (),
         }
     }

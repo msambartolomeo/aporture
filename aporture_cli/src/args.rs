@@ -21,13 +21,13 @@ pub enum Commands {
         #[arg(short, long, value_names(["NAME"]))]
         save: Option<String>,
     },
-    /// Recieve a file
-    Recieve {
+    /// Receive a file
+    Receive {
         #[arg(short, long, value_names(["PATH"]))]
         destination: Option<PathBuf>,
 
         #[command(flatten)]
-        method: RecieveMethod,
+        method: ReceiveMethod,
 
         #[arg(short, long, value_names(["NAME"]))]
         save: Option<String>,
@@ -53,7 +53,7 @@ pub struct SendMethod {
 
 #[derive(Debug, Args)]
 #[group(required = true, multiple = false)]
-pub struct RecieveMethod {
+pub struct ReceiveMethod {
     pub passphrase: Option<String>,
 
     #[arg(short, long, value_names(["NAME"]))]
@@ -63,13 +63,11 @@ pub struct RecieveMethod {
 #[derive(Debug, Subcommand)]
 pub enum PairCommand {
     Start {
-        #[arg(short, long)]
-        save: String,
+        name: String,
+        passphrase: Option<String>,
     },
     Complete {
+        name: String,
         passphrase: String,
-
-        #[arg(short, long)]
-        save: String,
     },
 }

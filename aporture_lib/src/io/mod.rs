@@ -1,0 +1,32 @@
+use thiserror::Error;
+
+pub mod net;
+pub mod parser;
+
+#[cfg(feature = "full")]
+pub mod fs;
+
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("IO error: {0}")]
+    IO(#[from] std::io::Error),
+
+    #[error("Config directory not found")]
+    Config,
+
+    #[error("Serde error: {0}")]
+    SerDe(#[from] serde_bencode::Error),
+
+    #[cfg(feature = "full")]
+    #[error("Cipher error: {0}")]
+    Cipher(#[from] crate::crypto::Error),
+
+    #[error("{0}")]
+    Custom(&'static str),
+}
+
+impl From<&'static str> for Error {
+    fn from(value: &'static str) -> Self {
+        Self::Custom(value)
+    }
+}

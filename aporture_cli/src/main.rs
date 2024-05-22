@@ -1,62 +1,104 @@
-use aporture::pairing::{AporturePairingProtocol, PairKind};
-use aporture::transfer;
-use args::{Cli, Commands, SendMethod};
-
+use anyhow::{bail, Result};
 use clap::Parser;
+use colored::Colorize;
+
+use aporture::fs::contacts::Contacts;
+use args::{Cli, Commands, PairCommand};
+use passphrase::Method;
 
 mod args;
+mod commands;
+mod contacts;
+mod passphrase;
 
-fn main() {
-    let args = Cli::parse();
+fn init_logger() {
+    use std::io::Write;
 
-    match args.command {
-        Commands::Send {
-            path,
-            method,
-            save: _,
-        } => {
-            let passphrase = get_passphrase(method);
-            let app = AporturePairingProtocol::new(PairKind::Sender, passphrase);
+    env_logger::Builder::from_default_env()
+        .format(|buf, record| {
+            let color = buf.default_level_style(record.level());
 
-            let pair_info = app.pair();
-
-            dbg!(&pair_info.self_transfer_info);
-            dbg!(&pair_info.other_transfer_info);
-
-            transfer::send_file(&path, &pair_info);
-        }
-        Commands::Recieve {
-            destination,
-            method,
-            save: _,
-        } => {
-            let passphrase = method
-                .passphrase
-                .expect("For now providing passphrase is required")
-                .into_bytes();
-
-            let app = AporturePairingProtocol::new(PairKind::Reciever, passphrase);
-
-            let pair_info = app.pair();
-
-            dbg!(&pair_info.self_transfer_info);
-            dbg!(&pair_info.other_transfer_info);
-
-            transfer::recieve_file(destination, &pair_info);
-        }
-        Commands::Contacts => todo!("Add contacts"),
-        Commands::Pair { command: _ } => todo!("Add pair module"),
-    };
+            writeln!(
+                buf,
+                "{}:{} {} {color}{}{color:#} - {}",
+                record.file().unwrap_or("unknown"),
+                record.line().unwrap_or(0),
+                buf.timestamp(),
+                record.level(),
+                record.args()
+            )
+        })
+        .init();
 }
 
-fn get_passphrase(method: SendMethod) -> Vec<u8> {
-    if let Some(passphrase) = method.passphrase {
-        return passphrase.into_bytes();
-    }
+#[tokio::main]
+async fn main() -> Result<()> {
+    init_logger();
 
-    if method.contact.is_some() {
-        todo!("Add contacts")
-    }
+    let args = Cli::parse();
 
-    todo!("Add password generation")
+    let mut contacts_holder = contacts::Holder::default();
+
+    match args.command {
+        Commands::Send { path, method, save } => {
+            if !path.is_file() {
+                bail!("{} is not a valid file", path.display())
+            }
+
+            let passphrase_method = if let Some(passphrase) = method.passphrase {
+                Method::Direct(passphrase)
+            } else if let Some(ref name) = method.contact {
+                let contacts = contacts_holder.get_or_init().await?;
+                Method::Contact(name, contacts)
+            } else {
+                Method::Generate
+            };
+            let passphrase = passphrase::get(passphrase_method)?;
+
+            commands::send(passphrase, save, method.contact, &mut contacts_holder, path).await?;
+        }
+        Commands::Receive {
+            destination: path,
+            method,
+            save,
+        } => {
+            let passphrase_method = if let Some(passphrase) = method.passphrase {
+                Method::Direct(passphrase)
+            } else if let Some(ref name) = method.contact {
+                let contacts = contacts_holder.get_or_init().await?;
+                Method::Contact(name, contacts)
+            } else {
+                unreachable!("Guaranteed by clap");
+            };
+            let passphrase = passphrase::get(passphrase_method)?;
+
+            commands::receive(passphrase, save, method.contact, &mut contacts_holder, path).await?;
+        }
+        Commands::Contacts => {
+            if Contacts::exists() {
+                commands::list_contacts(&mut contacts_holder).await?;
+            } else {
+                println!("No contacts found");
+            }
+        }
+        Commands::Pair { command } => match command {
+            PairCommand::Start { passphrase, name } => {
+                let method = passphrase.map_or(Method::Generate, Method::Direct);
+                let passphrase = passphrase::get(method)?;
+
+                commands::pair_start(passphrase, name, &mut contacts_holder).await?;
+            }
+            PairCommand::Complete { passphrase, name } => {
+                let passphrase = passphrase::get(Method::Direct(passphrase))?;
+
+                commands::pair_complete(passphrase, name, &mut contacts_holder).await?;
+            }
+        },
+    };
+
+    contacts_holder.save().await?;
+
+    println!("{}", "Success!!".green());
+
+    Ok(())
 }

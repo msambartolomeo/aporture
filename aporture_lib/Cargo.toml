@@ -9,15 +9,42 @@ edition = "2021"
 workspace = true
 
 [dependencies]
-spake2 = "0.4.0"
-blake3 = "1.5.0"
-aes-gcm-siv = "0.11.1"
-local-ip-address = "0.6.1"
-directories = "5.0.1"
+blake3 = { version = "1.5.1", optional = true }
+argon2 = { version = "0.5.3", optional = true, default-features = false, features = [
+    "alloc",
+] }
+aes-gcm-siv = { version = "0.11.1", optional = true }
+spake2 = { version = "0.4.0", optional = true }
+directories = { version = "5.0.1", optional = true }
+local-ip-address = { version = "0.6.1", optional = true }
+igd = { version = "0.14.3", package = "igd-next", optional = true, features = [
+    "aio_tokio",
+] }
+chrono = { version = "0.4.38", optional = true, features = ["serde"] }
+
+
+# NOTE: Protocol dependencies
+serde = { version = "1.0.202", features = ["derive"] }
+serde_bencode = "0.2.4"
+serde_with = "3.8.1"
+serde_repr = "0.1.19"
+generic-array = "1.0.0"
+rand = "0.8.5"
+
 # NOTE: Shared dependencies
-serde = { workspace = true }
-serde_bencode = { workspace = true }
-serde_with = { workspace = true }
-serde_repr = { workspace = true }
+tokio = { workspace = true }
+thiserror = { workspace = true }
 log = { workspace = true }
-env_logger = { workspace = true }
+
+[features]
+default = ["full"]
+full = [
+    "blake3",
+    "argon2",
+    "aes-gcm-siv",
+    "spake2",
+    "directories",
+    "local-ip-address",
+    "igd",
+    "chrono",
+]
