@@ -7,7 +7,7 @@ use relm4::prelude::*;
 use relm4_icons::icon_names;
 use tokio::sync::RwLock;
 
-use crate::components::contacts::{self, ContactsPage};
+use crate::components::contacts::{self, ContactPage};
 use crate::components::dialog::contacts::{Holder as ContactHolder, Msg as ContactMsg};
 use crate::components::receive::{self, ReceiverPage};
 use crate::components::send::{self, SenderPage};
@@ -17,7 +17,7 @@ pub struct App {
     stack: adw::ViewStack,
     receive_page: Controller<ReceiverPage>,
     sender_page: Controller<SenderPage>,
-    contacts_page: Controller<ContactsPage>,
+    contacts_page: Controller<ContactPage>,
     contacts_holder: Controller<ContactHolder>,
     current_page: GString,
     contacts: Option<Arc<RwLock<Contacts>>>,
@@ -102,12 +102,11 @@ impl SimpleComponent for App {
                 Request::Contacts => Msg::ContactsRequest,
             });
 
-        let contacts_page =
-            ContactsPage::builder()
-                .launch(())
-                .forward(sender.input_sender(), |r| match r {
-                    Request::Contacts => Msg::ContactsRequest,
-                });
+        let contacts_page = ContactPage::builder()
+            .launch(())
+            .forward(sender.input_sender(), |r| match r {
+                Request::Contacts => Msg::ContactsRequest,
+            });
 
         let contacts_holder = ContactHolder::builder()
             .transient_for(&root)
@@ -138,10 +137,8 @@ impl SimpleComponent for App {
 
                 if self.contacts.is_none() {
                     self.stack.set_visible_child_name(&self.current_page);
-                } else {
-                    if let Some(page) = self.stack.visible_child_name() {
-                        self.current_page = page;
-                    }
+                } else if let Some(page) = self.stack.visible_child_name() {
+                    self.current_page = page;
                 }
 
                 self.sender_page

@@ -14,7 +14,7 @@ use crate::components::dialog::peer::{self, PassphraseMethod, Peer};
 use aporture::fs::contacts::Contacts;
 
 #[derive(Debug)]
-pub struct ContactsPage {
+pub struct ContactPage {
     contacts_ui: FactoryVecDeque<contact_row::Counter>,
     contacts: Option<Arc<RwLock<Contacts>>>,
     current_contact: String,
@@ -35,7 +35,7 @@ pub enum Msg {
 }
 
 #[relm4::component(pub)]
-impl SimpleComponent for ContactsPage {
+impl SimpleComponent for ContactPage {
     type Init = ();
     type Input = Msg;
     type Output = app::Request;
@@ -94,7 +94,7 @@ impl SimpleComponent for ContactsPage {
             });
 
         let model = Self {
-            current_contact: "".to_string(),
+            current_contact: String::new(),
             contacts_ui,
             contacts: None,
             sender_picker_dialog,
@@ -122,13 +122,13 @@ impl SimpleComponent for ContactsPage {
                         };
 
                         contacts_ui.push_back(input);
-                    })
+                    });
                 }
             }
 
             Msg::SendFile(name) => {
                 self.current_contact = name;
-                self.sender_picker_dialog.emit(OpenDialogMsg::Open)
+                self.sender_picker_dialog.emit(OpenDialogMsg::Open);
             }
 
             Msg::SenderPickerResponse(path) => {
@@ -162,7 +162,7 @@ impl SimpleComponent for ContactsPage {
                     passphrase,
                     destination: None,
                     save: None,
-                })
+                });
             }
 
             // Msg::ReceiverPickerResponse(path) => {}
@@ -250,8 +250,12 @@ mod contact_row {
 
         fn update(&mut self, msg: Self::Input, sender: FactorySender<Self>) {
             match msg {
-                Msg::SendFile => sender.output(Output::Send(self.name.clone())).unwrap(),
-                Msg::ReceiveFile => sender.output(Output::Receive(self.name.clone())).unwrap(),
+                Msg::SendFile => sender
+                    .output(Output::Send(self.name.clone()))
+                    .expect("Not dropped"),
+                Msg::ReceiveFile => sender
+                    .output(Output::Receive(self.name.clone()))
+                    .expect("Not dropped"),
             }
         }
     }
