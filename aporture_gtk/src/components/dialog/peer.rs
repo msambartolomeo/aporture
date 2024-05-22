@@ -11,7 +11,7 @@ use aporture::pairing::{AporturePairingProtocol, Receiver, Sender};
 #[derive(Debug)]
 pub struct Peer {
     visible: bool,
-    label: &'static str,
+    // label: &'static str,
 }
 
 #[derive(Debug)]
@@ -42,25 +42,28 @@ impl Component for Peer {
     type CommandOutput = Result<(), Error>;
 
     view! {
-        dialog = gtk::Window {
+        dialog = adw::Window {
             #[watch]
             set_visible: model.visible,
             set_modal: true,
+            set_title: Some("Transferring file"),
 
-            #[wrap(Some)]
-            set_child = &gtk::Label {
-                set_width_request: 250,
-                set_height_request: 400,
-                set_halign: gtk::Align::Center,
-                set_valign: gtk::Align::Center,
-                #[watch]
-                set_label: model.label,
-            },
+            set_default_width: 250,
+            set_default_height: 300,
 
-            // connect_close_request[sender] => move |_| {
-            //     sender.input(DialogMsg::Hide);
-            //     glib::Propagation::Stop
-            // }
+            adw::ToolbarView {
+                set_top_bar_style: adw::ToolbarStyle::Flat,
+
+                add_top_bar = &adw::HeaderBar {
+                    set_show_end_title_buttons: false,
+                },
+
+                gtk::Spinner {
+                    set_size_request: (150, 150),
+                    set_tooltip_text: Some("Transferring file..."),
+                    set_spinning: true,
+                },
+            }
         }
     }
 
@@ -69,10 +72,7 @@ impl Component for Peer {
         root: Self::Root,
         _sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let model = Self {
-            visible: false,
-            label: "",
-        };
+        let model = Self { visible: false };
 
         let widgets = view_output!();
 

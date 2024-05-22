@@ -32,67 +32,77 @@ impl Component for Holder {
     type CommandOutput = Option<Arc<RwLock<Contacts>>>;
 
     view! {
-        dialog = gtk::Window {
+        dialog = adw::Window {
             #[watch]
             set_visible: model.visible,
             set_modal: true,
 
-            #[wrap(Some)]
-            set_child = if Contacts::exists() {
-                adw::PreferencesGroup {
-                    set_margin_horizontal: 20,
-                    set_margin_vertical: 50,
+            set_title: Some("Contacts"),
 
-                    set_title: "Contacts",
-                    set_description: Some("Enter password to access contacts"),
+            set_default_width: 400,
+            set_default_height: 500,
 
-                    #[local_ref]
-                    p -> adw::PasswordEntryRow {
-                        set_title: "Password",
-                        #[watch]
-                        set_sensitive: !model.form_disabled,
-                    },
+            adw::ToolbarView {
+                set_top_bar_style: adw::ToolbarStyle::Raised,
 
-                    gtk::Button {
-                        set_margin_all: 40,
+                add_top_bar = &adw::HeaderBar { },
 
-                        add_css_class: "suggested-action",
+                if Contacts::exists() {
+                    adw::PreferencesGroup {
+                        set_margin_horizontal: 20,
+                        set_margin_vertical: 50,
 
-                        set_label: "Enter",
-                        connect_clicked => Msg::Return,
+                        set_title: "Contacts",
+                        set_description: Some("Enter password to access contacts"),
+
+                        #[local_ref]
+                        p -> adw::PasswordEntryRow {
+                            set_title: "Password",
+                            #[watch]
+                            set_sensitive: !model.form_disabled,
+                        },
+
+                        gtk::Button {
+                            set_margin_all: 40,
+
+                            add_css_class: "suggested-action",
+
+                            set_label: "Enter",
+                            connect_clicked => Msg::Return,
+                        }
                     }
-                }
-            } else {
-                adw::PreferencesGroup {
-                    set_margin_horizontal: 20,
-                    set_margin_vertical: 50,
+                } else {
+                    adw::PreferencesGroup {
+                        set_margin_horizontal: 20,
+                        set_margin_vertical: 50,
 
-                    set_title: "Contacts",
-                    set_description: Some("Enter password to encrypt contacts database"),
+                        set_title: "Contacts",
+                        set_description: Some("Enter password to encrypt contacts database"),
 
-                    #[local_ref]
-                    p1 -> adw::PasswordEntryRow {
-                        set_title: "Password",
-                        #[watch]
-                        set_sensitive: !model.form_disabled,
-                    },
+                        #[local_ref]
+                        p1 -> adw::PasswordEntryRow {
+                            set_title: "Password",
+                            #[watch]
+                            set_sensitive: !model.form_disabled,
+                        },
 
-                    #[local_ref]
-                    p2 -> adw::PasswordEntryRow {
-                        set_title: "Repeat Password",
-                        #[watch]
-                        set_sensitive: !model.form_disabled,
-                    },
+                        #[local_ref]
+                        p2 -> adw::PasswordEntryRow {
+                            set_title: "Repeat Password",
+                            #[watch]
+                            set_sensitive: !model.form_disabled,
+                        },
 
-                    gtk::Button {
-                        set_margin_all: 40,
+                        gtk::Button {
+                            set_margin_all: 40,
 
-                        add_css_class: "suggested-action",
+                            add_css_class: "suggested-action",
 
-                        set_label: "Enter",
-                        connect_clicked => Msg::Return,
+                            set_label: "Enter",
+                            connect_clicked => Msg::Return,
+                        }
                     }
-                }
+                },
             },
 
             connect_close_request[sender] => move |_| {
