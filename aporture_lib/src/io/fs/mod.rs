@@ -1,5 +1,5 @@
 use std::fmt::Display;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -128,4 +128,9 @@ impl Display for EncryptedFileManager {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.manager)
     }
+}
+
+#[must_use]
+pub fn downloads_directory() -> Option<PathBuf> {
+    directories::UserDirs::new().and_then(|dirs| dirs.download_dir().map(Path::to_path_buf))
 }

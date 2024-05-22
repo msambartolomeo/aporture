@@ -5,7 +5,6 @@ use adw::prelude::*;
 use relm4::prelude::*;
 use tokio::sync::RwLock;
 
-use crate::components::error::PeerError;
 use aporture::fs::contacts::Contacts;
 use aporture::pairing::{AporturePairingProtocol, Receiver, Sender};
 
@@ -39,8 +38,8 @@ pub enum PassphraseMethod {
 impl Component for Peer {
     type Init = ();
     type Input = Msg;
-    type Output = Result<(), PeerError>;
-    type CommandOutput = Result<(), PeerError>;
+    type Output = Result<(), Error>;
+    type CommandOutput = Result<(), Error>;
 
     view! {
         dialog = gtk::Window {
@@ -93,17 +92,19 @@ impl Component for Peer {
                 sender.oneshot_command(async move {
                     let passphrase = match passphrase {
                         PassphraseMethod::Direct(p) => p,
-                        PassphraseMethod::Contact(name, contacts) => {
-                            contacts.read().await.get(&name).unwrap().to_vec()
-                        }
+                        PassphraseMethod::Contact(name, contacts) => contacts
+                            .read()
+                            .await
+                            .get(&name)
+                            .ok_or(Error::NoContact)?
+                            .to_vec(),
                     };
 
                     // self.label = "Waiting for your peer...";
 
-                    let mut pair_info =
-                        AporturePairingProtocol::<Sender>::new(passphrase, save.is_some())
-                            .pair()
-                            .await?;
+                    let app = AporturePairingProtocol::<Sender>::new(passphrase, save.is_some());
+
+                    let mut pair_info = app.pair().await?;
 
                     log::info!("Pairing successful!");
 
@@ -119,7 +120,7 @@ impl Component for Peer {
                         if save_confirmation {
                             let mut contacts = contacts.write().await;
                             contacts.add(name, key);
-                            contacts.save().await.unwrap();
+                            contacts.save().await.map_err(|_| Error::NoContact)?;
                             drop(contacts);
                         } else {
                             // self.label = "Warning: Not saving contact because peer refused";
@@ -137,14 +138,17 @@ impl Component for Peer {
                 sender.oneshot_command(async {
                     let passphrase = match passphrase {
                         PassphraseMethod::Direct(p) => p,
-                        PassphraseMethod::Contact(name, contacts) => {
-                            contacts.read().await.get(&name).unwrap().to_vec()
-                        }
+                        PassphraseMethod::Contact(name, contacts) => contacts
+                            .read()
+                            .await
+                            .get(&name)
+                            .ok_or(Error::ContactSaving)?
+                            .to_vec(),
                     };
 
-                    let mut pair_info = AporturePairingProtocol::<Receiver>::new(passphrase, false)
-                        .pair()
-                        .await?;
+                    let app = AporturePairingProtocol::<Receiver>::new(passphrase, save.is_some());
+
+                    let mut pair_info = app.pair().await?;
 
                     aporture::transfer::receive_file(destination, &mut pair_info).await?;
 
@@ -156,7 +160,7 @@ impl Component for Peer {
                         if save_confirmation {
                             let mut contacts = contacts.write().await;
                             contacts.add(name, key);
-                            contacts.save().await.unwrap();
+                            contacts.save().await.map_err(|_| Error::ContactSaving)?;
                             drop(contacts);
                         } else {
                             // self.label = "Warning: Not saving contact because peer refused";
@@ -180,5 +184,71 @@ impl Component for Peer {
             .expect("Message returned to the main thread");
 
         self.visible = false;
+    }
+}
+
+pub use error::Error;
+mod error {
+    use aporture::pairing::error::Error as PairingError;
+    use aporture::transfer::{ReceiveError, SendError};
+
+    #[derive(Debug)]
+    pub enum Error {
+        NoPeer,
+        NoServer,
+        InvalidServer,
+        ServerFailure,
+        PairingFailure,
+        FileNotFound,
+        HashMismatch,
+        TransferFailure,
+        NoContact,
+        ContactSaving,
+    }
+
+    impl From<PairingError> for Error {
+        fn from(e: PairingError) -> Self {
+            log::error!("Error: {e}");
+
+            match e {
+                PairingError::Hello(e) => match e {
+                    aporture::pairing::error::Hello::NoServer(_) => Self::NoServer,
+                    aporture::pairing::error::Hello::NoPeer => {
+                        log::warn!("Selected passphrase did not match a sender");
+                        Self::NoPeer
+                    }
+                    aporture::pairing::error::Hello::ServerUnsupportedVersion
+                    | aporture::pairing::error::Hello::ClientError => Self::InvalidServer,
+                    aporture::pairing::error::Hello::ServerError(_) => Self::ServerFailure,
+                },
+                PairingError::KeyExchange(_) | PairingError::AddressExchange(_) => {
+                    Self::PairingFailure
+                }
+            }
+        }
+    }
+
+    impl From<ReceiveError> for Error {
+        fn from(e: ReceiveError) -> Self {
+            log::warn!("Error: {e}");
+
+            match e {
+                ReceiveError::File(_) | ReceiveError::Directory => Self::FileNotFound,
+                ReceiveError::Network(_) | ReceiveError::Cipher(_) => Self::TransferFailure,
+                ReceiveError::HashMismatch => Self::HashMismatch,
+            }
+        }
+    }
+
+    impl From<SendError> for Error {
+        fn from(e: SendError) -> Self {
+            log::warn!("Error: {e}");
+
+            match e {
+                SendError::File(_) | SendError::Path => Self::FileNotFound,
+                SendError::Network(_) => Self::TransferFailure,
+                SendError::HashMismatch => Self::HashMismatch,
+            }
+        }
     }
 }

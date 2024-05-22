@@ -14,6 +14,8 @@ pub enum Send {
 
 #[derive(Debug, Error)]
 pub enum Receive {
+    #[error("No directory found to save file")]
+    Directory,
     #[error("Could not write file to disk")]
     File(#[from] std::io::Error),
     #[error("Could not received file to peer over the network")]

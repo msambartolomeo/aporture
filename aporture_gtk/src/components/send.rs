@@ -1,4 +1,3 @@
-use std::ops::Not;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -21,8 +20,8 @@ const PASSPHRASE_WORD_COUNT: usize = 3;
 pub struct SenderPage {
     passphrase_entry: adw::EntryRow,
     file_entry: adw::ActionRow,
-    contact_entry: adw::EntryRow,
     save_contact: adw::SwitchRow,
+    contact_entry: adw::EntryRow,
     passphrase_length: u32,
     file_path: Option<PathBuf>,
     file_picker_dialog: Controller<OpenDialog>,
@@ -36,12 +35,12 @@ pub enum Msg {
     GeneratePassphrase,
     PassphraseChanged,
     SaveContact,
+    ContactsReady(Option<Arc<RwLock<Contacts>>>),
     FilePickerOpen,
     FilePickerResponse(PathBuf),
     SendFile,
     SendFileFinished,
     Ignore,
-    ContactsReady(Option<Arc<RwLock<Contacts>>>),
 }
 
 #[relm4::component(pub)]
@@ -145,8 +144,8 @@ impl SimpleComponent for SenderPage {
         let model = Self {
             passphrase_entry: adw::EntryRow::default(),
             file_entry: adw::ActionRow::default(),
-            contact_entry: adw::EntryRow::default(),
             save_contact: adw::SwitchRow::default(),
+            contact_entry: adw::EntryRow::default(),
             passphrase_length: 1,
             file_path: None,
             file_picker_dialog,
@@ -157,8 +156,8 @@ impl SimpleComponent for SenderPage {
 
         let passphrase_entry = &model.passphrase_entry;
         let file_path_entry = &model.file_entry;
-        let contact_entry = &model.contact_entry;
         let save_contact = &model.save_contact;
+        let contact_entry = &model.contact_entry;
 
         let widgets = view_output!();
 
@@ -182,6 +181,13 @@ impl SimpleComponent for SenderPage {
                 }
             }
 
+            Msg::ContactsReady(contacts) => {
+                if contacts.is_none() {
+                    self.save_contact.set_active(false);
+                }
+                self.contacts = contacts;
+            }
+
             Msg::FilePickerOpen => self.file_picker_dialog.emit(OpenDialogMsg::Open),
 
             Msg::FilePickerResponse(path) => {
@@ -200,7 +206,7 @@ impl SimpleComponent for SenderPage {
 
                 let passphrase = PassphraseMethod::Direct(passphrase.into_bytes());
 
-                let save = self.save_contact.is_active().not().then(|| {
+                let save = self.save_contact.is_active().then(|| {
                     (
                         self.contact_entry.text().to_string(),
                         self.contacts
@@ -224,12 +230,6 @@ impl SimpleComponent for SenderPage {
                 self.form_disabled = false;
             }
 
-            Msg::ContactsReady(contacts) => {
-                if contacts.is_none() {
-                    self.save_contact.set_active(false);
-                }
-                self.contacts = contacts;
-            }
             Msg::Ignore => (),
         }
     }

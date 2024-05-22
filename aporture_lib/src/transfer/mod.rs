@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use directories::UserDirs;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 
@@ -68,11 +67,9 @@ pub async fn receive_file(
     dest: Option<PathBuf>,
     pair_info: &mut PairInfo,
 ) -> Result<PathBuf, error::Receive> {
-    let mut dest = dest.unwrap_or_else(|| {
-        UserDirs::new()
-            .and_then(|dirs| dirs.download_dir().map(Path::to_path_buf))
-            .expect("Valid Download Directory")
-    });
+    let mut dest = dest
+        .or_else(crate::fs::downloads_directory)
+        .ok_or(ReceiveError::Directory)?;
 
     let options = pair_info
         .bind_addresses()
