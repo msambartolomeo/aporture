@@ -7,7 +7,7 @@ use relm4::prelude::*;
 use relm4_icons::icon_names;
 use tokio::sync::RwLock;
 
-// use crate::components::contacts::{self, ContactsPage};
+use crate::components::contacts::{self, ContactsPage};
 use crate::components::dialog::contacts::{Holder as ContactHolder, Msg as ContactMsg};
 use crate::components::receive::{self, ReceiverPage};
 use crate::components::send::{self, SenderPage};
@@ -17,7 +17,7 @@ pub struct App {
     stack: adw::ViewStack,
     receive_page: Controller<ReceiverPage>,
     sender_page: Controller<SenderPage>,
-    // contacts_page: Controller<ContactsPage>,
+    contacts_page: Controller<ContactsPage>,
     contacts_holder: Controller<ContactHolder>,
     current_page: GString,
     contacts: Option<Arc<RwLock<Contacts>>>,
@@ -79,7 +79,7 @@ impl SimpleComponent for App {
 
                     add_titled_with_icon[Some(RECEIVER_PAGE_NAME), RECEIVER_PAGE_NAME, icon_names::INBOX] = model.receive_page.widget(),
 
-                    // add_titled_with_icon[Some(CONTACTS_PAGE_NAME), CONTACTS_PAGE_NAME, icon_names::ADDRESS_BOOK] = model.receive_page.widget(),
+                    add_titled_with_icon[Some(CONTACTS_PAGE_NAME), CONTACTS_PAGE_NAME, icon_names::ADDRESS_BOOK] = model.contacts_page.widget(),
                 },
             }
         }
@@ -102,11 +102,12 @@ impl SimpleComponent for App {
                 Request::Contacts => Msg::ContactsRequest,
             });
 
-        // let contacts_page = SenderPage::builder()
-        //     .launch(())
-        //     .forward(sender.input_sender(), |r| match r {
-        //         Request::Contacts => Msg::ContactsRequest,
-        //     });
+        let contacts_page =
+            ContactsPage::builder()
+                .launch(())
+                .forward(sender.input_sender(), |r| match r {
+                    Request::Contacts => Msg::ContactsRequest,
+                });
 
         let contacts_holder = ContactHolder::builder()
             .transient_for(&root)
@@ -117,7 +118,7 @@ impl SimpleComponent for App {
             stack: adw::ViewStack::default(),
             receive_page,
             sender_page,
-            // contacts_page,
+            contacts_page,
             contacts_holder,
             current_page: SENDER_PAGE_NAME.into(),
             contacts: None,
@@ -149,8 +150,8 @@ impl SimpleComponent for App {
                 self.receive_page
                     .emit(receive::Msg::ContactsReady(self.contacts.clone()));
 
-                // self.contacts_page
-                //     .emit(contacts::Msg::ContactsReady(self.contacts.clone()));
+                self.contacts_page
+                    .emit(contacts::Msg::ContactsReady(self.contacts.clone()));
             }
 
             Msg::ContactsRequest => self.contacts_holder.emit(ContactMsg::Get),
@@ -161,8 +162,7 @@ impl SimpleComponent for App {
                         return;
                     }
 
-                    // if page == CONTACTS_PAGE_NAME {
-                    if page == RECEIVER_PAGE_NAME {
+                    if page == CONTACTS_PAGE_NAME {
                         sender.input(Msg::ContactsRequest);
                     } else {
                         self.current_page = page;
