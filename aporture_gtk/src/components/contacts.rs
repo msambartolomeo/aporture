@@ -115,6 +115,7 @@ impl SimpleComponent for ContactPage {
                 self.contacts = contacts;
                 if let Some(contacts) = &self.contacts {
                     let mut contacts_ui = self.contacts_ui.guard();
+                    contacts_ui.clear();
                     contacts.blocking_read().list().for_each(|(name, date)| {
                         let input = contact_row::Input {
                             name: name.clone(),

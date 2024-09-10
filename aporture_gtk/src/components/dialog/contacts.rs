@@ -29,7 +29,7 @@ impl Component for Holder {
     type Input = Msg;
     type Output = Option<Arc<RwLock<Contacts>>>;
     // TODO: Handle error with error messages
-    type CommandOutput = Option<Arc<RwLock<Contacts>>>;
+    type CommandOutput = Option<Contacts>;
 
     view! {
         dialog = adw::Window {
@@ -146,10 +146,7 @@ impl Component for Holder {
                         let password = self.exists_p_entry.text();
 
                         sender.oneshot_command(async move {
-                            Contacts::load(&password.into_bytes())
-                                .await
-                                .ok()
-                                .map(|c| Arc::new(RwLock::new(c)))
+                            Contacts::load(&password.into_bytes()).await.ok()
                         });
                     } else {
                         let p1 = self.create_p_entry_1.text();
@@ -160,10 +157,7 @@ impl Component for Holder {
                             self.create_p_entry_2.remove_css_class("error");
 
                             sender.oneshot_command(async move {
-                                Contacts::empty(&p1.into_bytes())
-                                    .await
-                                    .ok()
-                                    .map(|c| Arc::new(RwLock::new(c)))
+                                Contacts::empty(&p1.into_bytes()).await.ok()
                             });
                         } else {
                             // TODO: Error message
@@ -204,7 +198,7 @@ impl Component for Holder {
                 self.create_p_entry_2.add_css_class("error");
             }
         } else {
-            self.contacts = message;
+            self.contacts = message.map(|c| Arc::new(RwLock::new(c)));
 
             sender
                 .output(self.contacts.clone())

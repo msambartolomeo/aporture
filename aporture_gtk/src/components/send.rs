@@ -200,7 +200,7 @@ impl SimpleComponent for SenderPage {
             Msg::SendFile => {
                 self.form_disabled = true;
 
-                let passphrase = self.passphrase_entry.text();
+                let passphrase = self.passphrase_entry.text().to_string();
 
                 log::info!("Selected passphrase is {}", passphrase);
 
@@ -222,6 +222,11 @@ impl SimpleComponent for SenderPage {
                     path: self.file_path.clone().expect("Button disabled if None"),
                     save,
                 });
+
+                sender
+                    .output_sender()
+                    .send(app::Request::Contacts)
+                    .expect("Controller not dropped");
             }
 
             Msg::SendFileFinished => {

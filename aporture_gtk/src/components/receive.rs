@@ -165,7 +165,7 @@ impl SimpleComponent for ReceiverPage {
             Msg::ReceiveFile => {
                 self.form_disabled = true;
 
-                let passphrase = self.passphrase_entry.text();
+                let passphrase = self.passphrase_entry.text().to_string();
 
                 log::info!("Selected passphrase is {}", passphrase);
 
@@ -187,6 +187,11 @@ impl SimpleComponent for ReceiverPage {
                     destination: self.destination_path.clone(),
                     save,
                 });
+
+                sender
+                    .output_sender()
+                    .send(app::Request::Contacts)
+                    .expect("Controller not dropped");
             }
 
             Msg::ReceiveFileFinished => {
