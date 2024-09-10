@@ -45,7 +45,7 @@ struct EncryptedFileManager {
 }
 
 impl EncryptedFileManager {
-    pub fn new(path: PathBuf, cipher: Cipher) -> Self {
+    pub const fn new(path: PathBuf, cipher: Cipher) -> Self {
         let manager = FileManager::new(path);
         Self { manager, cipher }
     }

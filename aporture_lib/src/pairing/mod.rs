@@ -233,7 +233,7 @@ pub struct Negotiation<K: Kind> {
 impl<K: Kind> State for Negotiation<K> {}
 
 impl<K: Kind> Negotiation<K> {
-    fn new(server: EncryptedNetworkPeer, key: Key) -> Self {
+    const fn new(server: EncryptedNetworkPeer, key: Key) -> Self {
         Self {
             key,
             server,
