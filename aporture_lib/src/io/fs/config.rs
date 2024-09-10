@@ -1,9 +1,9 @@
 use std::net::IpAddr;
 use std::path::PathBuf;
-use std::sync::OnceLock;
 
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
+use tokio::sync::OnceCell;
 
 use crate::crypto::hasher::Salt;
 use crate::parser::{Parser, SerdeIO};
@@ -15,7 +15,7 @@ const CONFIG_FILE_NAME: &str = "config.app";
 const DEFAULT_SERVER_ADDRESS: Option<&str> = option_env!("SERVER_ADDRESS");
 const DEFAULT_SERVER_PORT: u16 = 8765;
 
-static CONFIG: OnceLock<Config> = OnceLock::new();
+static CONFIG: OnceCell<Config> = OnceCell::const_new();
 
 #[derive(Serialize, Deserialize)]
 pub struct Config {
@@ -50,18 +50,20 @@ impl Config {
         if let Some(config) = CONFIG.get() {
             config
         } else {
-            let config = if let Ok(config) = Self::from_file().await {
-                config
-            } else {
-                log::info!("Using default config");
-                log::warn!("Could not find config file, creating");
-                Self::create_file().await.unwrap_or_else(|_| {
-                    log::warn!("Error creating config file");
-                    Self::default()
+            CONFIG
+                .get_or_init(|| async {
+                    if let Ok(config) = Self::from_file().await {
+                        config
+                    } else {
+                        log::info!("Using default config");
+                        log::warn!("Could not find config file, creating");
+                        Self::create_file()
+                            .await
+                            .inspect_err(|_| log::warn!("Error creating config file"))
+                            .unwrap_or_default()
+                    }
                 })
-            };
-
-            CONFIG.get_or_init(|| config)
+                .await
         }
     }
 

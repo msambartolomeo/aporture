@@ -91,7 +91,7 @@ pub async fn receive(
     Ok(())
 }
 
-pub async fn list_contacts(contacts: &mut Holder) -> Result<()> {
+pub async fn list_contacts(contacts: &Holder) -> Result<()> {
     let contacts = contacts.get_or_init().await?;
 
     let mut builder = tabled::builder::Builder::new();

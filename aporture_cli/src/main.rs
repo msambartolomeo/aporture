@@ -76,7 +76,7 @@ async fn main() -> Result<()> {
         }
         Commands::Contacts => {
             if Contacts::exists() {
-                commands::list_contacts(&mut contacts_holder).await?;
+                commands::list_contacts(&contacts_holder).await?;
             } else {
                 println!("No contacts found");
             }
