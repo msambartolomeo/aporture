@@ -9,26 +9,26 @@ edition = "2021"
 workspace = true
 
 [dependencies]
-blake3 = { version = "1.5.1", optional = true }
+blake3 = { version = "1.5.4", optional = true }
 argon2 = { version = "0.5.3", optional = true, default-features = false, features = [
     "alloc",
 ] }
 aes-gcm-siv = { version = "0.11.1", optional = true }
 spake2 = { version = "0.4.0", optional = true }
 directories = { version = "5.0.1", optional = true }
-local-ip-address = { version = "0.6.1", optional = true }
-igd = { version = "0.14.3", package = "igd-next", optional = true, features = [
+local-ip-address = { version = "0.6.2", optional = true }
+igd = { version = "0.15.0", package = "igd-next", optional = true, features = [
     "aio_tokio",
 ] }
 chrono = { version = "0.4.38", optional = true, features = ["serde"] }
 
 
 # NOTE: Protocol dependencies
-serde = { version = "1.0.202", features = ["derive"] }
+serde = { version = "1.0.210", features = ["derive"] }
 serde_bencode = "0.2.4"
-serde_with = "3.8.1"
+serde_with = "3.9.0"
 serde_repr = "0.1.19"
-generic-array = "1.0.0"
+generic-array = "1.1.0"
 rand = "0.8.5"
 
 # NOTE: Shared dependencies
