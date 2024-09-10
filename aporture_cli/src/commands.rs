@@ -36,7 +36,7 @@ pub async fn send(
         if save_confirmation {
             println!("Saving key for contact {}...", name.bright_blue().bold());
 
-            let contacts = contacts.get_or_init().await?;
+            let contacts = contacts.get_mut_or_init().await?;
 
             contacts.replace(name, old_contact, key);
         } else {
@@ -79,7 +79,7 @@ pub async fn receive(
         if accepted_save_contact {
             println!("Saving key for contact {}...", name.bright_blue().bold());
 
-            let contacts = contacts.get_or_init().await?;
+            let contacts = contacts.get_mut_or_init().await?;
 
             contacts.replace(name, old_contact, key);
         } else {
@@ -123,7 +123,7 @@ pub async fn pair_start(passphrase: Vec<u8>, name: String, contacts: &mut Holder
         name.bright_blue().bold().underline()
     );
 
-    let contacts = contacts.get_or_init().await?;
+    let contacts = contacts.get_mut_or_init().await?;
     contacts.add(name, key);
 
     Ok(())
@@ -146,7 +146,7 @@ pub async fn pair_complete(passphrase: Vec<u8>, name: String, contacts: &mut Hol
         name.bright_blue().bold().underline()
     );
 
-    let contacts = contacts.get_or_init().await?;
+    let contacts = contacts.get_mut_or_init().await?;
     contacts.add(name, key);
 
     Ok(())

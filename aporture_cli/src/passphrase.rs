@@ -7,7 +7,7 @@ use aporture::fs::contacts::Contacts;
 pub enum Method<'a> {
     Direct(String),
     Generate,
-    Contact(&'a str, &'a mut Contacts),
+    Contact(&'a str, &'a Contacts),
 }
 
 pub fn get(method: Method) -> Result<Vec<u8>> {
