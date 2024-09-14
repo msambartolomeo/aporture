@@ -90,12 +90,7 @@ impl Default for TransferHello {
 #[serde_as]
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileData {
-    #[serde_as(as = "Bytes")]
-    pub hash: [u8; 32],
-
-    // NOTE: Size of file in network byte order
-    #[serde_as(as = "Bytes")]
-    pub file_size: [u8; 8],
+    pub file_size: u64,
 
     pub file_name: OsString,
 }
@@ -106,6 +101,10 @@ pub enum TransferResponseCode {
     Ok = 0,
     HashMismatch = 1,
 }
+
+#[serde_as]
+#[derive(Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub struct Hash(#[serde_as(as = "Bytes")] pub [u8; 32]);
 
 impl Parser for PairKind {
     type MinimumSerializedSize = generic_array::typenum::U3;
@@ -127,12 +126,16 @@ impl Parser for TransferHello {
     type MinimumSerializedSize = generic_array::typenum::U66;
 }
 
+impl Parser for Hash {
+    type MinimumSerializedSize = generic_array::typenum::U35;
+}
+
 impl Parser for NegotiationPayload {
     type MinimumSerializedSize = generic_array::typenum::U0;
 }
 
 impl Parser for FileData {
-    type MinimumSerializedSize = generic_array::typenum::U85;
+    type MinimumSerializedSize = generic_array::typenum::U0;
 }
 
 impl Parser for TransferResponseCode {
@@ -220,14 +223,11 @@ mod test {
     #[test]
     fn test_file_data_ser_de() {
         let file_data = FileData {
-            hash: [1; 32],
-            file_size: 1usize.to_be_bytes(),
+            file_size: 1,
             file_name: OsString::new(),
         };
 
         let serialized = file_data.serialize_to();
-
-        assert_eq!(FileData::serialized_size(), serialized.len());
 
         let deserialized = FileData::deserialize_from(&serialized).unwrap();
 
@@ -245,5 +245,18 @@ mod test {
         let deserialized = TransferResponseCode::deserialize_from(&serialized).unwrap();
 
         assert_eq!(response, deserialized);
+    }
+
+    #[test]
+    fn test_hash_ser_de() {
+        let hash = Hash([0; 32]);
+
+        let serialized = hash.serialize_to();
+
+        assert_eq!(Hash::serialized_size(), serialized.len());
+
+        let deserialized = Hash::deserialize_from(&serialized).unwrap();
+
+        assert_eq!(hash, deserialized);
     }
 }
