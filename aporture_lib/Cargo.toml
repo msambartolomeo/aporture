@@ -21,7 +21,7 @@ igd = { version = "0.15.0", package = "igd-next", optional = true, features = [
     "aio_tokio",
 ] }
 chrono = { version = "0.4.38", optional = true, features = ["serde"] }
-
+bytes = "1.7.1"
 
 # NOTE: Protocol dependencies
 serde = { version = "1.0.210", features = ["derive"] }

@@ -167,6 +167,7 @@ dependencies = [
  "aes-gcm-siv",
  "argon2",
  "blake3",
+ "bytes",
  "chrono",
  "directories",
  "generic-array 1.1.0",
