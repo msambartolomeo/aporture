@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use tokio::fs::{File, OpenOptions};
-use tokio::io::{AsyncReadExt, BufReader};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::task::JoinSet;
 
 use crate::crypto::hasher::Hasher;
@@ -109,10 +109,7 @@ pub async fn receive_file(
     Ok(dest)
 }
 
-pub async fn hash_and_send(
-    file: File,
-    sender: &mut EncryptedNetworkPeer,
-) -> Result<Hash, error::Send>
+async fn hash_and_send(file: File, sender: &mut EncryptedNetworkPeer) -> Result<Hash, error::Send>
 where
 {
     let mut reader = BufReader::new(file);
@@ -128,6 +125,25 @@ where
         hasher.add(&buffer[..count]);
         sender.write_enc(&mut buffer[..count]).await?;
     }
+
+    Ok(Hash(hasher.finalize()))
+}
+
+async fn hash_and_receive(
+    path: &Path,
+    receiver: &mut EncryptedNetworkPeer,
+) -> Result<Hash, error::Send> {
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .await?;
+
+    let mut writer = BufWriter::new(file);
+    let mut hasher = Hasher::default();
+    let mut buffer = [0; BUFFER_SIZE];
+
+    // receiver.read_enc(&mut writer);
 
     Ok(Hash(hasher.finalize()))
 }
