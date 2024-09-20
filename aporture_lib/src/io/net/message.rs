@@ -1,16 +1,30 @@
+use std::marker::PhantomData;
+
 use crate::{crypto::cipher::Cipher, parser::Parser};
 use bytes::{Buf, BufMut};
 
 const LENGHT_SIZE: usize = 2;
-const BYTE_SIZE: usize = 1;
+const FLAG_SIZE: usize = 1;
 const NONCE_SIZE: usize = 12;
 const TAG_SIZE: usize = 16;
 
 #[derive(Debug, Clone)]
-pub struct Message {
+pub struct Message<T> {
     length: [u8; LENGHT_SIZE],
-    encrypted: [u8; BYTE_SIZE],
+    encrypted: [u8; FLAG_SIZE],
     content: Content,
+    _phantom: PhantomData<T>,
+}
+
+impl<T> Default for Message<T> {
+    fn default() -> Self {
+        Self {
+            length: Default::default(),
+            encrypted: Default::default(),
+            content: Default::default(),
+            _phantom: PhantomData,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -25,9 +39,20 @@ pub enum Content {
     },
 }
 
-impl Message {
+impl Default for Content {
+    fn default() -> Self {
+        Self::Plain {
+            content: Vec::with_capacity(0),
+        }
+    }
+}
+
+impl<T> Message<T>
+where
+    T: Parser,
+{
     #[allow(clippy::cast_possible_truncation)] // As truncation is checked explicitly
-    pub fn new(parser: &impl Parser, cipher: Option<&Cipher>) -> Self {
+    pub fn new(parser: &T, cipher: Option<&Cipher>) -> Self {
         let mut content = parser.serialize_to();
 
         let length = content.len();
@@ -51,19 +76,46 @@ impl Message {
                         content,
                         tag,
                     },
+                    _phantom: PhantomData,
                 }
             }
             None => Self {
                 length,
                 encrypted: [0],
                 content: Content::Plain { content },
+                _phantom: PhantomData,
             },
         }
     }
 
+    pub fn consume(self, cipher: Option<&Cipher>) -> Result<T, crate::io::Error> {
+        match (self.content, cipher) {
+            (
+                Content::Encrypted {
+                    ref nonce,
+                    ref mut content,
+                    ref tag,
+                },
+                Some(c),
+            ) => {
+                c.decrypt(content, nonce, tag)?;
+
+                Ok(T::deserialize_from(&content).unwrap())
+            }
+            (Content::Plain { ref content }, None) => Ok(T::deserialize_from(content).unwrap()),
+            _ => Err(crate::io::Error::Cipher(crate::crypto::Error::Decrypt)),
+        }
+    }
+}
+
+impl<T> Message<T> {
     #[must_use]
-    pub fn into_buf(self) -> MessageBuffer {
+    pub fn into_buf(self) -> MessageBuffer<T> {
         self.into()
+    }
+
+    pub fn empty() -> Self {
+        Self::default()
     }
 
     #[must_use]
@@ -77,14 +129,20 @@ impl Message {
         }
     }
 
+    pub fn content(&self) -> &[u8] {
+        match &self.content {
+            Content::Plain { content, .. } | Content::Encrypted { content, .. } => content,
+        }
+    }
+
     fn length(&self) -> usize {
         u16::from_be_bytes(self.length).into()
     }
 
     fn total_remaining(&self, state: State) -> usize {
         match state {
-            State::Length => LENGHT_SIZE + BYTE_SIZE,
-            State::Encrypt => BYTE_SIZE,
+            State::Length => LENGHT_SIZE + FLAG_SIZE,
+            State::Encrypt => FLAG_SIZE,
             State::Nonce if self.is_encrypted() => NONCE_SIZE + self.length() + TAG_SIZE,
             State::Content if self.is_encrypted() => self.length() + TAG_SIZE,
             State::Tag if self.is_encrypted() => TAG_SIZE,
@@ -105,14 +163,14 @@ pub enum State {
 
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone)]
-pub struct MessageBuffer {
-    message: Message,
+pub struct MessageBuffer<T> {
+    message: Message<T>,
     state: State,
     cursor: usize,
 }
 
-impl From<Message> for MessageBuffer {
-    fn from(message: Message) -> Self {
+impl<T> From<Message<T>> for MessageBuffer<T> {
+    fn from(message: Message<T>) -> Self {
         Self {
             message,
             state: State::Length,
@@ -121,7 +179,7 @@ impl From<Message> for MessageBuffer {
     }
 }
 
-impl Buf for MessageBuffer {
+impl<T> Buf for MessageBuffer<T> {
     fn remaining(&self) -> usize {
         let total_remaining = self.message.total_remaining(self.state);
 
@@ -163,7 +221,7 @@ impl Buf for MessageBuffer {
     }
 
     fn advance(&mut self, mut cnt: usize) {
-        assert!(cnt < self.remaining());
+        assert!(cnt <= self.remaining());
 
         loop {
             let chunk_lenght = self.chunk().len();
@@ -190,16 +248,20 @@ impl Buf for MessageBuffer {
                     if self.message.is_encrypted() {
                         State::Tag
                     } else {
-                        unreachable!("Already asserted cnt < remaining");
+                        self.cursor = self.message.length();
+                        break;
                     }
                 }
-                State::Tag => unreachable!("Already asserted cnt < remaining"),
+                State::Tag => {
+                    self.cursor = TAG_SIZE;
+                    break;
+                }
             }
         }
     }
 }
 
-unsafe impl BufMut for MessageBuffer {
+unsafe impl<T> BufMut for MessageBuffer<T> {
     fn remaining_mut(&self) -> usize {
         let total_remaining = self.message.total_remaining(self.state);
 
@@ -207,7 +269,7 @@ unsafe impl BufMut for MessageBuffer {
     }
 
     unsafe fn advance_mut(&mut self, mut cnt: usize) {
-        assert!(cnt < self.remaining());
+        assert!(cnt <= self.remaining());
 
         loop {
             let chunk_lenght = self.chunk_mut().len();
@@ -229,29 +291,47 @@ unsafe impl BufMut for MessageBuffer {
             self.cursor = 0;
 
             self.state = match self.state {
-                State::Length => {
+                State::Length => State::Encrypt,
+                State::Encrypt => {
                     let content_length = self.message.length();
 
-                    self.message.content_mut().reserve(content_length);
-
-                    State::Encrypt
-                }
-                State::Encrypt => {
                     if self.message.is_encrypted() {
+                        self.message.content = Content::Encrypted {
+                            nonce: Default::default(),
+                            content: Vec::with_capacity(content_length),
+                            tag: Default::default(),
+                        };
+
                         State::Nonce
                     } else {
+                        self.message.content = Content::Plain {
+                            content: Vec::with_capacity(content_length),
+                        };
+
                         State::Content
                     }
                 }
                 State::Nonce => State::Content,
                 State::Content => {
+                    let content_length = self.message.length();
+
+                    // SAFETY: Vec was initialized with capacity content_length and
+                    // If state Content has finished then all the content was already written
+                    unsafe {
+                        self.message.content_mut().set_len(content_length);
+                    }
+
                     if self.message.is_encrypted() {
                         State::Tag
                     } else {
-                        unreachable!("Already asserted cnt < remaining");
+                        self.cursor = self.message.length();
+                        break;
                     }
                 }
-                State::Tag => unreachable!("Already asserted cnt < remaining"),
+                State::Tag => {
+                    self.cursor = TAG_SIZE;
+                    break;
+                }
             }
         }
     }
@@ -290,5 +370,111 @@ unsafe impl BufMut for MessageBuffer {
                 bytes::buf::UninitSlice::new(tag)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::io::Read;
+    use std::io::Write;
+
+    use crate::protocol::Hello;
+    use crate::protocol::PairKind;
+
+    use super::*;
+
+    #[test]
+    fn construct_message() {
+        let hello = Hello {
+            version: 1,
+            kind: PairKind::Sender,
+            pair_id: [b'a'; 32],
+        };
+
+        let message = Message::new(&hello, None);
+
+        let content = hello.serialize_to();
+
+        assert_eq!(false, message.is_encrypted());
+        assert_eq!(content.len(), message.length());
+        assert_eq!(content, *message.content());
+        assert_eq!(hello, message.consume(None).unwrap())
+    }
+
+    #[test]
+    fn reading() -> Result<(), Box<dyn std::error::Error>> {
+        let input = PairKind::Sender;
+
+        let message = Message::new(&input, None);
+
+        let buf = message.into_buf();
+        let mut reader = buf.reader();
+
+        let mut output = [0; 64];
+
+        let mut ptr = &mut output[..];
+
+        let mut n;
+        let mut len = 0;
+        loop {
+            n = reader.read(ptr)?;
+
+            if n == 0 {
+                break;
+            }
+
+            len += n;
+
+            ptr = &mut ptr[n..];
+        }
+
+        let serialized = input.serialize_to();
+
+        assert_eq!(LENGHT_SIZE + FLAG_SIZE + serialized.len(), len);
+        assert_eq!(3u16.to_be_bytes(), output[..2]);
+        assert_eq!(0, output[2]);
+        assert_eq!(input.serialize_to(), output[3..len]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn writing() -> Result<(), Box<dyn std::error::Error>> {
+        let input = [0, 3, 0, 105, 48, 101];
+
+        let message = Message::<PairKind>::default();
+
+        let buf = message.into_buf();
+        let mut writer = buf.writer();
+
+        let mut ptr = &input[..];
+
+        let mut n;
+        let mut len = 0;
+        loop {
+            n = writer.write(ptr)?;
+
+            if n == 0 {
+                break;
+            }
+
+            len += n;
+
+            ptr = &ptr[n..];
+        }
+
+        let buf = writer.into_inner();
+
+        dbg!(&buf);
+
+        assert_eq!(input.len(), len);
+        assert_eq!(3u16.to_be_bytes(), buf.message.length);
+        assert_eq!([0], buf.message.encrypted);
+        assert_eq!(&input[3..], buf.message.content());
+
+        let output = buf.message.consume(None)?;
+        assert_eq!(PairKind::Sender, output);
+
+        Ok(())
     }
 }
