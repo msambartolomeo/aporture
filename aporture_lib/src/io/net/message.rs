@@ -111,7 +111,7 @@ where
 impl<T> Message<T> {
     #[must_use]
     pub fn into_buf(self) -> MessageBuffer<T> {
-        self.into()
+        MessageBuffer::new(self)
     }
 
     pub fn empty() -> Self {
@@ -169,13 +169,29 @@ pub struct MessageBuffer<T> {
     cursor: usize,
 }
 
-impl<T> From<Message<T>> for MessageBuffer<T> {
-    fn from(message: Message<T>) -> Self {
+impl<T> MessageBuffer<T> {
+    pub fn new(message: Message<T>) -> Self {
         Self {
             message,
             state: State::Length,
             cursor: 0,
         }
+    }
+
+    pub fn into_inner(self) -> Message<T> {
+        self.message
+    }
+}
+
+impl<T> From<MessageBuffer<T>> for Message<T> {
+    fn from(buffer: MessageBuffer<T>) -> Self {
+        buffer.into_inner()
+    }
+}
+
+impl<T> From<Message<T>> for MessageBuffer<T> {
+    fn from(message: Message<T>) -> Self {
+        Self::new(message)
     }
 }
 
@@ -384,7 +400,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn construct_message() {
+    fn new() {
         let hello = Hello {
             version: 1,
             kind: PairKind::Sender,
@@ -464,15 +480,132 @@ mod test {
         }
 
         let buf = writer.into_inner();
-
-        dbg!(&buf);
+        let message = buf.into_inner();
 
         assert_eq!(input.len(), len);
-        assert_eq!(3u16.to_be_bytes(), buf.message.length);
-        assert_eq!([0], buf.message.encrypted);
-        assert_eq!(&input[3..], buf.message.content());
+        assert_eq!(3u16.to_be_bytes(), message.length);
+        assert_eq!([0], message.encrypted);
+        assert_eq!(&input[3..], message.content());
 
-        let output = buf.message.consume(None)?;
+        let output = message.consume(None)?;
+        assert_eq!(PairKind::Sender, output);
+
+        Ok(())
+    }
+
+    #[test]
+    fn new_encrypted() {
+        let hello = Hello {
+            version: 1,
+            kind: PairKind::Sender,
+            pair_id: [b'a'; 32],
+        };
+
+        let cipher = Cipher::new(&[b'a'; 32]);
+
+        let message = Message::new(&hello, Some(&cipher));
+
+        let content = hello.serialize_to();
+
+        assert_eq!(true, message.is_encrypted());
+        assert_eq!(content.len(), message.length());
+        assert_eq!(hello, message.consume(Some(&cipher)).unwrap())
+    }
+
+    #[test]
+    fn reading_encrypted() -> Result<(), Box<dyn std::error::Error>> {
+        let input = PairKind::Sender;
+
+        let cipher = Cipher::new(&[b'a'; 32]);
+
+        let message = Message::new(&input, Some(&cipher));
+
+        let content_length = message.length();
+
+        let buf = message.into_buf();
+        let mut reader = buf.reader();
+
+        let mut output = [0; 64];
+
+        let mut ptr = &mut output[..];
+
+        let mut n;
+        let mut len = 0;
+        loop {
+            n = reader.read(ptr)?;
+
+            if n == 0 {
+                break;
+            }
+
+            len += n;
+
+            ptr = &mut ptr[n..];
+        }
+
+        let serialized = input.serialize_to();
+
+        let (length, rest) = output.split_at_mut(LENGHT_SIZE);
+        let (encrypt, rest) = rest.split_at_mut(FLAG_SIZE);
+        let (nonce, rest) = rest.split_at_mut(NONCE_SIZE);
+        let (content, rest) = rest.split_at_mut(content_length);
+        let (tag, _) = rest.split_at_mut(TAG_SIZE);
+
+        assert_eq!(
+            LENGHT_SIZE + FLAG_SIZE + NONCE_SIZE + serialized.len() + TAG_SIZE,
+            len
+        );
+        assert_eq!(3u16.to_be_bytes(), length);
+        assert_eq!([1], encrypt);
+
+        let nonce = nonce.try_into()?;
+        let tag = tag.try_into()?;
+
+        cipher.decrypt(content, &nonce, &tag)?;
+
+        assert_eq!(serialized, content);
+
+        Ok(())
+    }
+
+    #[test]
+    fn writing_encrypted() -> Result<(), Box<dyn std::error::Error>> {
+        let input = [
+            0, 3, 1, 168, 55, 51, 191, 5, 87, 80, 203, 213, 81, 13, 15, 20, 201, 214, 149, 206,
+            132, 235, 56, 53, 21, 90, 164, 194, 175, 15, 29, 109, 181, 27,
+        ];
+
+        let cipher = Cipher::new(&[b'a'; 32]);
+
+        let message = Message::<PairKind>::default();
+
+        let buf = message.into_buf();
+        let mut writer = buf.writer();
+
+        let mut ptr = &input[..];
+
+        let mut n;
+        let mut len = 0;
+        loop {
+            n = writer.write(ptr)?;
+
+            if n == 0 {
+                break;
+            }
+
+            len += n;
+
+            ptr = &ptr[n..];
+        }
+
+        let buf = writer.into_inner();
+        let message = buf.into_inner();
+
+        assert_eq!(input.len(), len);
+        assert_eq!(3u16.to_be_bytes(), message.length);
+        assert_eq!([1], message.encrypted);
+
+        let output = message.consume(Some(&cipher))?;
         assert_eq!(PairKind::Sender, output);
 
         Ok(())
