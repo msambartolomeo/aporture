@@ -326,38 +326,40 @@ mod test {
     use std::io::Read;
     use std::io::Write;
 
-    use crate::parser::Parser;
-    use crate::protocol::Hello;
-    use crate::protocol::PairKind;
+    // use crate::parser::Parser;
+    // use crate::protocol::Hello;
+    // use crate::protocol::PairKind;
 
     use super::*;
 
     #[test]
     fn new() {
-        let hello = Hello {
-            version: 1,
-            kind: PairKind::Sender,
-            pair_id: [b'a'; 32],
-        };
+        // let hello = Hello {
+        //     version: 1,
+        //     kind: PairKind::Sender,
+        //     pair_id: [b'a'; 32],
+        // };
 
-        let mut serialized = hello.serialize_to();
+        let hello = b"Hello";
 
-        let message = Message::new(&mut serialized, None);
+        // let mut serialized = hello.serialize_to();
 
-        let content = hello.serialize_to();
+        let mut input = hello.clone();
+
+        let message = Message::new(&mut input, None);
 
         assert_eq!(false, message.is_encrypted());
-        assert_eq!(content.len(), message.length());
-        assert_eq!(content, *message.content);
+        assert_eq!(hello.len(), message.length());
+        assert_eq!(hello, message.content);
     }
 
     #[test]
     fn reading() -> Result<(), Box<dyn std::error::Error>> {
-        let input = PairKind::Sender;
+        let hello = b"Hello";
 
-        let mut serialized = input.serialize_to();
+        let mut input = hello.clone();
 
-        let message = Message::new(&mut serialized, None);
+        let message = Message::new(&mut input, None);
 
         let buf = message.into_buf();
         let mut reader = buf.reader();
@@ -380,19 +382,17 @@ mod test {
             ptr = &mut ptr[n..];
         }
 
-        let serialized = input.serialize_to();
-
-        assert_eq!(LENGHT_SIZE + FLAG_SIZE + serialized.len(), len);
-        assert_eq!(3u16.to_be_bytes(), output[..2]);
+        assert_eq!(LENGHT_SIZE + FLAG_SIZE + hello.len(), len);
+        assert_eq!((hello.len() as u16).to_be_bytes(), output[..2]);
         assert_eq!(0, output[2]);
-        assert_eq!(input.serialize_to(), output[3..len]);
+        assert_eq!(hello, &output[3..len]);
 
         Ok(())
     }
 
     #[test]
     fn writing() -> Result<(), Box<dyn std::error::Error>> {
-        let input = [0, 3, 0, 105, 48, 101];
+        let input = [0, 5, 0, 72, 101, 108, 108, 111];
 
         let mut buf = [0; 1000];
 
@@ -421,46 +421,40 @@ mod test {
         let message = &buf.message;
 
         assert_eq!(input.len(), len);
-        assert_eq!(3u16.to_be_bytes(), message.length);
+        assert_eq!(input[..2], message.length);
         assert_eq!([0], message.get_encryption_bit());
 
         let output = buf.consume(None).unwrap();
 
         assert_eq!(&input[3..], output);
-        assert_eq!(PairKind::Sender.serialize_to(), output);
+        assert_eq!(b"Hello", output);
 
         Ok(())
     }
 
     #[test]
     fn new_encrypted() {
-        let hello = Hello {
-            version: 1,
-            kind: PairKind::Sender,
-            pair_id: [b'a'; 32],
-        };
+        let hello = b"Hello";
+
+        let mut input = hello.clone();
 
         let cipher = Cipher::new(&[b'a'; 32]);
 
-        let mut serialized = hello.serialize_to();
-
-        let message = Message::new(&mut serialized, Some(&cipher));
-
-        let content = hello.serialize_to();
+        let message = Message::new(&mut input, Some(&cipher));
 
         assert_eq!(true, message.is_encrypted());
-        assert_eq!(content.len(), message.length());
+        assert_eq!(hello.len(), message.length());
     }
 
     #[test]
     fn reading_encrypted() -> Result<(), Box<dyn std::error::Error>> {
-        let input = PairKind::Sender;
+        let hello = b"Hello";
+
+        let mut input = hello.clone();
 
         let cipher = Cipher::new(&[b'a'; 32]);
 
-        let mut serialized = input.serialize_to();
-
-        let message = Message::new(&mut serialized, Some(&cipher));
+        let message = Message::new(&mut input, Some(&cipher));
 
         let content_length = message.length();
 
@@ -485,8 +479,6 @@ mod test {
             ptr = &mut ptr[n..];
         }
 
-        let serialized = input.serialize_to();
-
         let (length, rest) = output.split_at_mut(LENGHT_SIZE);
         let (encrypt, rest) = rest.split_at_mut(FLAG_SIZE);
         let (nonce, rest) = rest.split_at_mut(NONCE_SIZE);
@@ -494,10 +486,10 @@ mod test {
         let (tag, _) = rest.split_at_mut(TAG_SIZE);
 
         assert_eq!(
-            LENGHT_SIZE + FLAG_SIZE + NONCE_SIZE + serialized.len() + TAG_SIZE,
+            LENGHT_SIZE + FLAG_SIZE + NONCE_SIZE + hello.len() + TAG_SIZE,
             len
         );
-        assert_eq!(3u16.to_be_bytes(), length);
+        assert_eq!((hello.len() as u16).to_be_bytes(), length);
         assert_eq!([1], encrypt);
 
         let nonce = nonce.try_into()?;
@@ -505,7 +497,7 @@ mod test {
 
         cipher.decrypt(content, &nonce, &tag)?;
 
-        assert_eq!(serialized, content);
+        assert_eq!(hello, content);
 
         Ok(())
     }
@@ -513,8 +505,8 @@ mod test {
     #[test]
     fn writing_encrypted() -> Result<(), Box<dyn std::error::Error>> {
         let input = [
-            0, 3, 1, 168, 55, 51, 191, 5, 87, 80, 203, 213, 81, 13, 15, 20, 201, 214, 149, 206,
-            132, 235, 56, 53, 21, 90, 164, 194, 175, 15, 29, 109, 181, 27,
+            0, 5, 1, 179, 28, 101, 187, 68, 71, 151, 166, 11, 210, 114, 41, 213, 134, 31, 3, 158,
+            84, 116, 75, 159, 94, 135, 120, 164, 81, 79, 119, 171, 55, 70, 42, 37,
         ];
 
         let cipher = Cipher::new(&[b'a'; 32]);
@@ -546,14 +538,11 @@ mod test {
         let message = &buf.message;
 
         assert_eq!(input.len(), len);
-        assert_eq!(3u16.to_be_bytes(), message.length);
+        assert_eq!(input[..2], message.length);
         assert_eq!([1], message.get_encryption_bit());
 
-        dbg!(input);
-        dbg!(&buf);
-
         let output = buf.consume(Some(&cipher)).unwrap();
-        assert_eq!(PairKind::Sender.serialize_to(), output);
+        assert_eq!(b"Hello", output);
 
         Ok(())
     }
