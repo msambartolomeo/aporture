@@ -95,21 +95,6 @@ impl<'a> Message<'a> {
     fn length(&self) -> usize {
         u16::from_be_bytes(self.length).into()
     }
-
-    pub fn consume(self, cipher: Option<&'a Cipher>) -> Result<&'a [u8], Error> {
-        let length = self.length();
-        let content = &mut self.content[..length];
-
-        match (&self.encrypted, cipher) {
-            (EncryptedContent::Encrypted { nonce, tag, .. }, Some(c)) => {
-                c.decrypt(content, nonce, tag).unwrap();
-            }
-            (EncryptedContent::Plain { .. }, _) => (),
-            (EncryptedContent::Encrypted { .. }, None) => return Err(Error::CipherExpected(self)),
-        }
-
-        Ok(&mut self.content[..length])
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -127,17 +112,35 @@ pub struct MessageBuffer<'a> {
     message: Message<'a>,
     state: State,
     cursor: usize,
-    error: bool,
+    error: Option<ErrorKind>,
 }
 
-#[derive(Debug, Error)]
-pub enum Error<'a> {
+#[derive(Debug, Error, Clone, Copy)]
+pub enum ErrorKind {
     #[error("Message is encrypted but no cipher was provided")]
-    CipherExpected(Message<'a>),
+    CipherExpected,
     #[error("Error decrypting message")]
     Decryption(#[from] crate::crypto::Error),
     #[error("The provided buffer was not sufficient to read all the data")]
-    InsuficientBuffer(Message<'a>),
+    InsuficientBuffer,
+    #[error("The message recieved is invalid")]
+    InvalidMessage,
+}
+
+#[derive(Debug, Error)]
+#[error("{0}")]
+pub struct Error<'a>(ErrorKind, MessageBuffer<'a>);
+
+impl<'a> Error<'a> {
+    pub fn ignore(self) -> ErrorKind {
+        self.0
+    }
+}
+
+impl<'a> From<Error<'a>> for ErrorKind {
+    fn from(Error(error, _): Error<'a>) -> Self {
+        error
+    }
 }
 
 impl<'a> MessageBuffer<'a> {
@@ -147,16 +150,30 @@ impl<'a> MessageBuffer<'a> {
             message,
             state: State::Length,
             cursor: 0,
-            error: false,
+            error: None,
         }
     }
 
-    pub fn consume(self, cipher: Option<&'a Cipher>) -> Result<&'a [u8], Error> {
-        if self.error {
-            return Err(Error::InsuficientBuffer(self.message));
+    pub fn consume(self, cipher: Option<&'a Cipher>) -> Result<usize, Error> {
+        if let Some(err) = self.error {
+            return Err(Error(err, self));
         }
 
-        self.message.consume(cipher)
+        let length = self.message.length();
+        let content = &mut self.message.content[..length];
+
+        match (&self.message.encrypted, cipher) {
+            (EncryptedContent::Encrypted { nonce, tag, .. }, Some(c)) => {
+                c.decrypt(content, nonce, tag)
+                    .map_err(move |e| Error(e.into(), self))?;
+            }
+            (EncryptedContent::Plain { .. }, _) => (),
+            (EncryptedContent::Encrypted { .. }, None) => {
+                return Err(Error(ErrorKind::CipherExpected, self))
+            }
+        }
+
+        Ok(length)
     }
 
     fn total_remaining(&self, state: State) -> usize {
@@ -248,7 +265,7 @@ impl<'a> Buf for MessageBuffer<'a> {
 
 unsafe impl<'a> BufMut for MessageBuffer<'a> {
     fn remaining_mut(&self) -> usize {
-        if self.error {
+        if self.error.is_some() {
             return 0;
         }
 
@@ -277,7 +294,7 @@ unsafe impl<'a> BufMut for MessageBuffer<'a> {
                     let content_length = self.message.length();
                     let available_length = self.message.content.len();
                     if available_length < content_length {
-                        self.error = true;
+                        self.error = Some(ErrorKind::InsuficientBuffer);
                         break;
                     }
 
@@ -294,7 +311,7 @@ unsafe impl<'a> BufMut for MessageBuffer<'a> {
                             State::Nonce
                         }
                         _ => {
-                            self.error = true;
+                            self.error = Some(ErrorKind::InvalidMessage);
                             break;
                         }
                     }
@@ -404,9 +421,9 @@ mod test {
     fn writing() -> Result<(), Box<dyn std::error::Error>> {
         let input = [0, 5, 0, 72, 101, 108, 108, 111];
 
-        let mut buf = [0; 1000];
+        let mut buffer = [0; 1000];
 
-        let message = Message::new(&mut buf, None);
+        let message = Message::new(&mut buffer, None);
 
         let buf = message.into_buf();
         let mut writer = buf.writer();
@@ -434,10 +451,10 @@ mod test {
         assert_eq!(input[..2], message.length);
         assert_eq!([0], message.get_encryption_bit());
 
-        let output = buf.consume(None).unwrap();
+        let n = buf.consume(None).map_err(Error::ignore)?;
 
-        assert_eq!(&input[3..], output);
-        assert_eq!(b"Hello", output);
+        assert_eq!(&input[3..], &buffer[..n]);
+        assert_eq!(b"Hello", &buffer[..n]);
 
         Ok(())
     }
@@ -521,9 +538,9 @@ mod test {
 
         let cipher = Cipher::new(&[b'a'; 32]);
 
-        let mut buf = [0; 1000];
+        let mut buffer = [0; 1000];
 
-        let message = Message::new(&mut buf, Some(&cipher));
+        let message = Message::new(&mut buffer, Some(&cipher));
 
         let buf = message.into_buf();
         let mut writer = buf.writer();
@@ -551,8 +568,8 @@ mod test {
         assert_eq!(input[..2], message.length);
         assert_eq!([1], message.get_encryption_bit());
 
-        let output = buf.consume(Some(&cipher)).unwrap();
-        assert_eq!(b"Hello", output);
+        let n = buf.consume(Some(&cipher)).map_err(Error::ignore)?;
+        assert_eq!(b"Hello", &buffer[..n]);
 
         Ok(())
     }
