@@ -1,5 +1,6 @@
 use crate::crypto::cipher::Cipher;
 use bytes::{Buf, BufMut};
+use thiserror::Error;
 
 const LENGHT_SIZE: usize = 2;
 const FLAG_SIZE: usize = 1;
@@ -26,12 +27,14 @@ pub enum EncryptedContent {
 }
 
 impl EncryptedContent {
-    fn plain() -> Self {
-        EncryptedContent::Plain { bit: [0] }
+    #[must_use]
+    const fn plain() -> Self {
+        Self::Plain { bit: [0] }
     }
 
-    fn encrypted(nonce: [u8; NONCE_SIZE], tag: [u8; TAG_SIZE]) -> Self {
-        EncryptedContent::Encrypted {
+    #[must_use]
+    const fn encrypted(nonce: [u8; NONCE_SIZE], tag: [u8; TAG_SIZE]) -> Self {
+        Self::Encrypted {
             bit: [1],
             nonce,
             tag,
@@ -64,25 +67,26 @@ impl<'a> Message<'a> {
             None => Self {
                 length,
                 encrypted: EncryptedContent::plain(),
-                content: content,
+                content,
             },
         }
     }
 
     #[must_use]
-    pub fn into_buf(self) -> MessageBuffer<'a> {
+    pub const fn into_buf(self) -> MessageBuffer<'a> {
         MessageBuffer::new(self)
     }
 
     #[must_use]
-    pub fn is_encrypted(&self) -> bool {
+    pub const fn is_encrypted(&self) -> bool {
         match self.encrypted {
             EncryptedContent::Plain { .. } => false,
             EncryptedContent::Encrypted { .. } => true,
         }
     }
 
-    pub fn get_encryption_bit(&self) -> [u8; 1] {
+    #[must_use]
+    pub const fn get_encryption_bit(&self) -> [u8; 1] {
         match self.encrypted {
             EncryptedContent::Plain { bit } | EncryptedContent::Encrypted { bit, .. } => bit,
         }
@@ -90,6 +94,21 @@ impl<'a> Message<'a> {
 
     fn length(&self) -> usize {
         u16::from_be_bytes(self.length).into()
+    }
+
+    pub fn consume(self, cipher: Option<&'a Cipher>) -> Result<&'a [u8], Error> {
+        let length = self.length();
+        let content = &mut self.content[..length];
+
+        match (&self.encrypted, cipher) {
+            (EncryptedContent::Encrypted { nonce, tag, .. }, Some(c)) => {
+                c.decrypt(content, nonce, tag).unwrap();
+            }
+            (EncryptedContent::Plain { .. }, _) => (),
+            (EncryptedContent::Encrypted { .. }, None) => return Err(Error::CipherExpected(self)),
+        }
+
+        Ok(&mut self.content[..length])
     }
 }
 
@@ -111,8 +130,19 @@ pub struct MessageBuffer<'a> {
     error: bool,
 }
 
+#[derive(Debug, Error)]
+pub enum Error<'a> {
+    #[error("Message is encrypted but no cipher was provided")]
+    CipherExpected(Message<'a>),
+    #[error("Error decrypting message")]
+    Decryption(#[from] crate::crypto::Error),
+    #[error("The provided buffer was not sufficient to read all the data")]
+    InsuficientBuffer(Message<'a>),
+}
+
 impl<'a> MessageBuffer<'a> {
-    pub fn new(message: Message<'a>) -> Self {
+    #[must_use]
+    pub const fn new(message: Message<'a>) -> Self {
         Self {
             message,
             state: State::Length,
@@ -121,24 +151,12 @@ impl<'a> MessageBuffer<'a> {
         }
     }
 
-    // TODO: ERROR
-    pub fn consume(self, cipher: Option<&Cipher>) -> Result<&'a [u8], ()> {
+    pub fn consume(self, cipher: Option<&'a Cipher>) -> Result<&'a [u8], Error> {
         if self.error {
-            return Err(());
+            return Err(Error::InsuficientBuffer(self.message));
         }
 
-        let length = self.message.length();
-        let content = &mut self.message.content[..length];
-
-        match (&self.message.encrypted, cipher) {
-            (EncryptedContent::Encrypted { nonce, tag, .. }, Some(c)) => {
-                c.decrypt(content, nonce, tag).unwrap();
-            }
-            (EncryptedContent::Plain { .. }, None) => {}
-            _ => return Err(()),
-        }
-
-        Ok(content)
+        self.message.consume(cipher)
     }
 
     fn total_remaining(&self, state: State) -> usize {
@@ -172,13 +190,13 @@ impl<'a> Buf for MessageBuffer<'a> {
             EncryptedContent::Plain { bit } => match self.state {
                 State::Length => &self.message.length,
                 State::Encrypt => bit,
-                State::Content => &self.message.content,
+                State::Content => self.message.content,
                 _ => unreachable!("Plain cannot have other states"),
             },
             EncryptedContent::Encrypted { nonce, tag, bit } => match self.state {
                 State::Length => &self.message.length,
                 State::Encrypt => bit,
-                State::Content => &self.message.content,
+                State::Content => self.message.content,
                 State::Nonce => nonce,
                 State::Tag => tag,
             },
@@ -305,7 +323,7 @@ unsafe impl<'a> BufMut for MessageBuffer<'a> {
             EncryptedContent::Plain { bit } => match self.state {
                 State::Length => &mut self.message.length,
                 State::Encrypt => bit,
-                State::Content => &mut self.message.content,
+                State::Content => &mut self.message.content[..length],
                 _ => unreachable!("Plain cannot have other states"),
             },
             EncryptedContent::Encrypted { nonce, tag, bit } => match self.state {
@@ -334,21 +352,13 @@ mod test {
 
     #[test]
     fn new() {
-        // let hello = Hello {
-        //     version: 1,
-        //     kind: PairKind::Sender,
-        //     pair_id: [b'a'; 32],
-        // };
-
         let hello = b"Hello";
 
-        // let mut serialized = hello.serialize_to();
-
-        let mut input = hello.clone();
+        let mut input = *hello;
 
         let message = Message::new(&mut input, None);
 
-        assert_eq!(false, message.is_encrypted());
+        assert!(!message.is_encrypted());
         assert_eq!(hello.len(), message.length());
         assert_eq!(hello, message.content);
     }
@@ -357,7 +367,7 @@ mod test {
     fn reading() -> Result<(), Box<dyn std::error::Error>> {
         let hello = b"Hello";
 
-        let mut input = hello.clone();
+        let mut input = *hello;
 
         let message = Message::new(&mut input, None);
 
@@ -436,13 +446,13 @@ mod test {
     fn new_encrypted() {
         let hello = b"Hello";
 
-        let mut input = hello.clone();
+        let mut input = *hello;
 
         let cipher = Cipher::new(&[b'a'; 32]);
 
         let message = Message::new(&mut input, Some(&cipher));
 
-        assert_eq!(true, message.is_encrypted());
+        assert!(message.is_encrypted());
         assert_eq!(hello.len(), message.length());
     }
 
@@ -450,7 +460,7 @@ mod test {
     fn reading_encrypted() -> Result<(), Box<dyn std::error::Error>> {
         let hello = b"Hello";
 
-        let mut input = hello.clone();
+        let mut input = *hello;
 
         let cipher = Cipher::new(&[b'a'; 32]);
 
