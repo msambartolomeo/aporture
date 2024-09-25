@@ -1,6 +1,4 @@
-use std::marker::PhantomData;
-
-use crate::{crypto::cipher::Cipher, parser::Parser};
+use crate::crypto::cipher::Cipher;
 use bytes::{Buf, BufMut};
 
 const LENGHT_SIZE: usize = 2;
@@ -8,53 +6,42 @@ const FLAG_SIZE: usize = 1;
 const NONCE_SIZE: usize = 12;
 const TAG_SIZE: usize = 16;
 
-#[derive(Debug, Clone)]
-pub struct Message<T> {
+#[derive(Debug)]
+pub struct Message<'a> {
     length: [u8; LENGHT_SIZE],
-    encrypted: [u8; FLAG_SIZE],
-    content: Content,
-    _phantom: PhantomData<T>,
-}
-
-impl<T> Default for Message<T> {
-    fn default() -> Self {
-        Self {
-            length: Default::default(),
-            encrypted: Default::default(),
-            content: Default::default(),
-            _phantom: PhantomData,
-        }
-    }
+    encrypted: EncryptedContent,
+    content: &'a mut [u8],
 }
 
 #[derive(Debug, Clone)]
-pub enum Content {
+pub enum EncryptedContent {
     Plain {
-        content: Vec<u8>,
+        bit: [u8; FLAG_SIZE],
     },
     Encrypted {
+        bit: [u8; FLAG_SIZE],
         nonce: [u8; NONCE_SIZE],
-        content: Vec<u8>,
         tag: [u8; TAG_SIZE],
     },
 }
 
-impl Default for Content {
-    fn default() -> Self {
-        Self::Plain {
-            content: Vec::with_capacity(0),
+impl EncryptedContent {
+    fn plain() -> Self {
+        EncryptedContent::Plain { bit: [0] }
+    }
+
+    fn encrypted(nonce: [u8; NONCE_SIZE], tag: [u8; TAG_SIZE]) -> Self {
+        EncryptedContent::Encrypted {
+            bit: [1],
+            nonce,
+            tag,
         }
     }
 }
 
-impl<T> Message<T>
-where
-    T: Parser,
-{
+impl<'a> Message<'a> {
     #[allow(clippy::cast_possible_truncation)] // As truncation is checked explicitly
-    pub fn new(parser: &T, cipher: Option<&Cipher>) -> Self {
-        let mut content = parser.serialize_to();
-
+    pub fn new(content: &'a mut [u8], cipher: Option<&Cipher>) -> Self {
         let length = content.len();
 
         assert!(
@@ -66,89 +53,43 @@ where
 
         match cipher {
             Some(cipher) => {
-                let (nonce, tag) = cipher.encrypt(&mut content);
+                let (nonce, tag) = cipher.encrypt(content);
 
                 Self {
                     length,
-                    encrypted: [1],
-                    content: Content::Encrypted {
-                        nonce,
-                        content,
-                        tag,
-                    },
-                    _phantom: PhantomData,
+                    encrypted: EncryptedContent::encrypted(nonce, tag),
+                    content,
                 }
             }
             None => Self {
                 length,
-                encrypted: [0],
-                content: Content::Plain { content },
-                _phantom: PhantomData,
+                encrypted: EncryptedContent::plain(),
+                content: content,
             },
         }
     }
 
-    pub fn consume(self, cipher: Option<&Cipher>) -> Result<T, crate::io::Error> {
-        match (self.content, cipher) {
-            (
-                Content::Encrypted {
-                    ref nonce,
-                    ref mut content,
-                    ref tag,
-                },
-                Some(c),
-            ) => {
-                c.decrypt(content, nonce, tag)?;
-
-                Ok(T::deserialize_from(&content).unwrap())
-            }
-            (Content::Plain { ref content }, None) => Ok(T::deserialize_from(content).unwrap()),
-            _ => Err(crate::io::Error::Cipher(crate::crypto::Error::Decrypt)),
-        }
-    }
-}
-
-impl<T> Message<T> {
     #[must_use]
-    pub fn into_buf(self) -> MessageBuffer<T> {
+    pub fn into_buf(self) -> MessageBuffer<'a> {
         MessageBuffer::new(self)
-    }
-
-    pub fn empty() -> Self {
-        Self::default()
     }
 
     #[must_use]
     pub fn is_encrypted(&self) -> bool {
-        self.encrypted == [1]
-    }
-
-    fn content_mut(&mut self) -> &mut Vec<u8> {
-        match &mut self.content {
-            Content::Plain { content, .. } | Content::Encrypted { content, .. } => content,
+        match self.encrypted {
+            EncryptedContent::Plain { .. } => false,
+            EncryptedContent::Encrypted { .. } => true,
         }
     }
 
-    pub fn content(&self) -> &[u8] {
-        match &self.content {
-            Content::Plain { content, .. } | Content::Encrypted { content, .. } => content,
+    pub fn get_encryption_bit(&self) -> [u8; 1] {
+        match self.encrypted {
+            EncryptedContent::Plain { bit } | EncryptedContent::Encrypted { bit, .. } => bit,
         }
     }
 
     fn length(&self) -> usize {
         u16::from_be_bytes(self.length).into()
-    }
-
-    fn total_remaining(&self, state: State) -> usize {
-        match state {
-            State::Length => LENGHT_SIZE + FLAG_SIZE,
-            State::Encrypt => FLAG_SIZE,
-            State::Nonce if self.is_encrypted() => NONCE_SIZE + self.length() + TAG_SIZE,
-            State::Content if self.is_encrypted() => self.length() + TAG_SIZE,
-            State::Tag if self.is_encrypted() => TAG_SIZE,
-            State::Content /* if !self.is_encrypted() */ => self.length(),
-            State::Nonce | State::Tag => unreachable!("Should not be possible unencrypted"),
-        }
     }
 }
 
@@ -162,75 +103,85 @@ pub enum State {
 }
 
 #[allow(clippy::module_name_repetitions)]
-#[derive(Debug, Clone)]
-pub struct MessageBuffer<T> {
-    message: Message<T>,
+#[derive(Debug)]
+pub struct MessageBuffer<'a> {
+    message: Message<'a>,
     state: State,
     cursor: usize,
+    error: bool,
 }
 
-impl<T> MessageBuffer<T> {
-    pub fn new(message: Message<T>) -> Self {
+impl<'a> MessageBuffer<'a> {
+    pub fn new(message: Message<'a>) -> Self {
         Self {
             message,
             state: State::Length,
             cursor: 0,
+            error: false,
         }
     }
 
-    pub fn into_inner(self) -> Message<T> {
-        self.message
+    // TODO: ERROR
+    pub fn consume(self, cipher: Option<&Cipher>) -> Result<&'a [u8], ()> {
+        if self.error {
+            return Err(());
+        }
+
+        let length = self.message.length();
+        let content = &mut self.message.content[..length];
+
+        match (&self.message.encrypted, cipher) {
+            (EncryptedContent::Encrypted { nonce, tag, .. }, Some(c)) => {
+                c.decrypt(content, nonce, tag).unwrap();
+            }
+            (EncryptedContent::Plain { .. }, None) => {}
+            _ => return Err(()),
+        }
+
+        Ok(content)
+    }
+
+    fn total_remaining(&self, state: State) -> usize {
+        match state {
+            State::Length => LENGHT_SIZE + FLAG_SIZE,
+            State::Encrypt => FLAG_SIZE,
+            State::Nonce if self.message.is_encrypted() => NONCE_SIZE + self.message.length() + TAG_SIZE,
+            State::Content if self.message.is_encrypted() => self.message.length(),
+            State::Tag if self.message.is_encrypted() => TAG_SIZE,
+            State::Content /* if !self.is_encrypted() */ => self.message.length(),
+            State::Nonce | State::Tag => unreachable!("Should not be possible unencrypted"),
+        }
     }
 }
 
-impl<T> From<MessageBuffer<T>> for Message<T> {
-    fn from(buffer: MessageBuffer<T>) -> Self {
-        buffer.into_inner()
-    }
-}
-
-impl<T> From<Message<T>> for MessageBuffer<T> {
-    fn from(message: Message<T>) -> Self {
+impl<'a> From<Message<'a>> for MessageBuffer<'a> {
+    fn from(message: Message<'a>) -> Self {
         Self::new(message)
     }
 }
 
-impl<T> Buf for MessageBuffer<T> {
+impl<'a> Buf for MessageBuffer<'a> {
     fn remaining(&self) -> usize {
-        let total_remaining = self.message.total_remaining(self.state);
+        let total_remaining = self.total_remaining(self.state);
 
         total_remaining - self.cursor
     }
 
     fn chunk(&self) -> &[u8] {
-        let slice: &[u8] = if self.message.is_encrypted() {
-            let Content::Encrypted {
-                nonce,
-                content,
-                tag,
-            } = &self.message.content
-            else {
-                unreachable!("Content is marked as encrypted");
-            };
-
-            match self.state {
+        let slice: &[u8] = match &self.message.encrypted {
+            EncryptedContent::Plain { bit } => match self.state {
                 State::Length => &self.message.length,
-                State::Encrypt => &self.message.encrypted,
-                State::Content => content,
+                State::Encrypt => bit,
+                State::Content => &self.message.content,
+                _ => unreachable!("Plain cannot have other states"),
+            },
+            EncryptedContent::Encrypted { nonce, tag, bit } => match self.state {
+                State::Length => &self.message.length,
+                State::Encrypt => bit,
+                State::Content => &self.message.content,
                 State::Nonce => nonce,
                 State::Tag => tag,
-            }
-        } else {
-            let Content::Plain { ref content } = self.message.content else {
-                unreachable!("Content is marked as unencrypted");
-            };
-
-            match self.state {
-                State::Length => &self.message.length,
-                State::Encrypt => &self.message.encrypted,
-                State::Content => content,
-                _ => unreachable!("Plain cannot have other states"),
-            }
+            },
         };
 
         &slice[self.cursor..]
@@ -277,29 +228,25 @@ impl<T> Buf for MessageBuffer<T> {
     }
 }
 
-unsafe impl<T> BufMut for MessageBuffer<T> {
+unsafe impl<'a> BufMut for MessageBuffer<'a> {
     fn remaining_mut(&self) -> usize {
-        let total_remaining = self.message.total_remaining(self.state);
+        if self.error {
+            return 0;
+        }
+
+        let total_remaining = self.total_remaining(self.state);
 
         total_remaining - self.cursor
     }
 
     unsafe fn advance_mut(&mut self, mut cnt: usize) {
-        assert!(cnt <= self.remaining());
+        assert!(cnt <= self.remaining_mut());
 
         loop {
             let chunk_lenght = self.chunk_mut().len();
 
             if cnt < chunk_lenght {
                 self.cursor += cnt;
-                if matches!(self.state, State::Content) {
-                    // SAFETY: In length state capacity was set, so in content state we can
-                    // set the len of the content vec while we are still in the same chunk, as it
-                    // will be less than the capacity and message length.
-                    unsafe {
-                        self.message.content_mut().set_len(self.cursor);
-                    }
-                }
                 break;
             }
 
@@ -310,33 +257,32 @@ unsafe impl<T> BufMut for MessageBuffer<T> {
                 State::Length => State::Encrypt,
                 State::Encrypt => {
                     let content_length = self.message.length();
+                    let available_length = self.message.content.len();
+                    if available_length < content_length {
+                        self.error = true;
+                        break;
+                    }
 
-                    if self.message.is_encrypted() {
-                        self.message.content = Content::Encrypted {
-                            nonce: Default::default(),
-                            content: Vec::with_capacity(content_length),
-                            tag: Default::default(),
-                        };
+                    match self.message.get_encryption_bit() {
+                        [0] => {
+                            self.message.encrypted = EncryptedContent::plain();
 
-                        State::Nonce
-                    } else {
-                        self.message.content = Content::Plain {
-                            content: Vec::with_capacity(content_length),
-                        };
+                            State::Content
+                        }
+                        [1] => {
+                            self.message.encrypted =
+                                EncryptedContent::encrypted([0; NONCE_SIZE], [0; TAG_SIZE]);
 
-                        State::Content
+                            State::Nonce
+                        }
+                        _ => {
+                            self.error = true;
+                            break;
+                        }
                     }
                 }
                 State::Nonce => State::Content,
                 State::Content => {
-                    let content_length = self.message.length();
-
-                    // SAFETY: Vec was initialized with capacity content_length and
-                    // If state Content has finished then all the content was already written
-                    unsafe {
-                        self.message.content_mut().set_len(content_length);
-                    }
-
                     if self.message.is_encrypted() {
                         State::Tag
                     } else {
@@ -353,39 +299,25 @@ unsafe impl<T> BufMut for MessageBuffer<T> {
     }
 
     fn chunk_mut(&mut self) -> &mut bytes::buf::UninitSlice {
-        match self.state {
-            State::Length => bytes::buf::UninitSlice::new(&mut self.message.length),
-            State::Encrypt => bytes::buf::UninitSlice::new(&mut self.message.encrypted),
-            State::Nonce => {
-                let Content::Encrypted { nonce, .. } = &mut self.message.content else {
-                    unreachable!("State nonce means content is marked as encrypted");
-                };
+        let length = self.message.length();
 
-                bytes::buf::UninitSlice::new(nonce)
-            }
-            State::Content => {
-                let content = self.message.content_mut();
+        let slice: &mut [u8] = match &mut self.message.encrypted {
+            EncryptedContent::Plain { bit } => match self.state {
+                State::Length => &mut self.message.length,
+                State::Encrypt => bit,
+                State::Content => &mut self.message.content,
+                _ => unreachable!("Plain cannot have other states"),
+            },
+            EncryptedContent::Encrypted { nonce, tag, bit } => match self.state {
+                State::Length => &mut self.message.length,
+                State::Encrypt => bit,
+                State::Content => &mut self.message.content[..length],
+                State::Nonce => nonce,
+                State::Tag => tag,
+            },
+        };
 
-                debug_assert_eq!(self.cursor, content.len());
-
-                let ptr = content.as_mut_ptr();
-
-                // SAFETY: Cursor is equal to len and the available size is marked by
-                // the expected message lenght minus the cursor which is allocated in advance_mut.
-                unsafe {
-                    bytes::buf::UninitSlice::from_raw_parts_mut(
-                        ptr.add(self.cursor),
-                        self.message.length() - self.cursor,
-                    )
-                }
-            }
-            State::Tag => {
-                let Content::Encrypted { tag, .. } = &mut self.message.content else {
-                    unreachable!("State tag means content is marked as encrypted");
-                };
-                bytes::buf::UninitSlice::new(tag)
-            }
-        }
+        bytes::buf::UninitSlice::new(&mut slice[self.cursor..])
     }
 }
 
@@ -394,6 +326,7 @@ mod test {
     use std::io::Read;
     use std::io::Write;
 
+    use crate::parser::Parser;
     use crate::protocol::Hello;
     use crate::protocol::PairKind;
 
@@ -407,21 +340,24 @@ mod test {
             pair_id: [b'a'; 32],
         };
 
-        let message = Message::new(&hello, None);
+        let mut serialized = hello.serialize_to();
+
+        let message = Message::new(&mut serialized, None);
 
         let content = hello.serialize_to();
 
         assert_eq!(false, message.is_encrypted());
         assert_eq!(content.len(), message.length());
-        assert_eq!(content, *message.content());
-        assert_eq!(hello, message.consume(None).unwrap())
+        assert_eq!(content, *message.content);
     }
 
     #[test]
     fn reading() -> Result<(), Box<dyn std::error::Error>> {
         let input = PairKind::Sender;
 
-        let message = Message::new(&input, None);
+        let mut serialized = input.serialize_to();
+
+        let message = Message::new(&mut serialized, None);
 
         let buf = message.into_buf();
         let mut reader = buf.reader();
@@ -458,7 +394,9 @@ mod test {
     fn writing() -> Result<(), Box<dyn std::error::Error>> {
         let input = [0, 3, 0, 105, 48, 101];
 
-        let message = Message::<PairKind>::default();
+        let mut buf = [0; 1000];
+
+        let message = Message::new(&mut buf, None);
 
         let buf = message.into_buf();
         let mut writer = buf.writer();
@@ -480,15 +418,16 @@ mod test {
         }
 
         let buf = writer.into_inner();
-        let message = buf.into_inner();
+        let message = &buf.message;
 
         assert_eq!(input.len(), len);
         assert_eq!(3u16.to_be_bytes(), message.length);
-        assert_eq!([0], message.encrypted);
-        assert_eq!(&input[3..], message.content());
+        assert_eq!([0], message.get_encryption_bit());
 
-        let output = message.consume(None)?;
-        assert_eq!(PairKind::Sender, output);
+        let output = buf.consume(None).unwrap();
+
+        assert_eq!(&input[3..], output);
+        assert_eq!(PairKind::Sender.serialize_to(), output);
 
         Ok(())
     }
@@ -503,13 +442,14 @@ mod test {
 
         let cipher = Cipher::new(&[b'a'; 32]);
 
-        let message = Message::new(&hello, Some(&cipher));
+        let mut serialized = hello.serialize_to();
+
+        let message = Message::new(&mut serialized, Some(&cipher));
 
         let content = hello.serialize_to();
 
         assert_eq!(true, message.is_encrypted());
         assert_eq!(content.len(), message.length());
-        assert_eq!(hello, message.consume(Some(&cipher)).unwrap())
     }
 
     #[test]
@@ -518,7 +458,9 @@ mod test {
 
         let cipher = Cipher::new(&[b'a'; 32]);
 
-        let message = Message::new(&input, Some(&cipher));
+        let mut serialized = input.serialize_to();
+
+        let message = Message::new(&mut serialized, Some(&cipher));
 
         let content_length = message.length();
 
@@ -577,7 +519,9 @@ mod test {
 
         let cipher = Cipher::new(&[b'a'; 32]);
 
-        let message = Message::<PairKind>::default();
+        let mut buf = [0; 1000];
+
+        let message = Message::new(&mut buf, Some(&cipher));
 
         let buf = message.into_buf();
         let mut writer = buf.writer();
@@ -599,14 +543,17 @@ mod test {
         }
 
         let buf = writer.into_inner();
-        let message = buf.into_inner();
+        let message = &buf.message;
 
         assert_eq!(input.len(), len);
         assert_eq!(3u16.to_be_bytes(), message.length);
-        assert_eq!([1], message.encrypted);
+        assert_eq!([1], message.get_encryption_bit());
 
-        let output = message.consume(Some(&cipher))?;
-        assert_eq!(PairKind::Sender, output);
+        dbg!(input);
+        dbg!(&buf);
+
+        let output = buf.consume(Some(&cipher)).unwrap();
+        assert_eq!(PairKind::Sender.serialize_to(), output);
 
         Ok(())
     }
