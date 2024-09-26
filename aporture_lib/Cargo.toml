@@ -8,6 +8,9 @@ edition = "2021"
 [lints]
 workspace = true
 
+[dev-dependencies]
+paste = "1.0.15"
+
 [dependencies]
 blake3 = { version = "1.5.4", optional = true }
 argon2 = { version = "0.5.3", optional = true, default-features = false, features = [

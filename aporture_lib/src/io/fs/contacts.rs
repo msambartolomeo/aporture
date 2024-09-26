@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use chrono::{DateTime, Local};
+use generic_array::GenericArray;
 use serde::{Deserialize, Serialize};
 
 use crate::crypto::cipher::Cipher;
@@ -9,6 +10,7 @@ use crate::crypto::hasher::Hasher;
 use crate::crypto::Key;
 use crate::fs::config::Config;
 use crate::fs::EncryptedFileManager;
+use crate::parse;
 use crate::parser::{EncryptedSerdeIO, Parser};
 
 const CONTACTS_FILE_NAME: &str = "contacts.app";
@@ -30,9 +32,7 @@ pub struct Content {
     map: HashMap<String, Contact>,
 }
 
-impl Parser for Content {
-    type MinimumSerializedSize = generic_array::typenum::U0;
-}
+parse!(Content);
 
 impl Contacts {
     #[must_use]

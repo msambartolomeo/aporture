@@ -1,7 +1,6 @@
 use thiserror::Error;
 
 pub mod net;
-pub mod parser;
 
 #[cfg(feature = "full")]
 pub mod fs;

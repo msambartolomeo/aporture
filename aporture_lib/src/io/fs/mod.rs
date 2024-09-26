@@ -95,7 +95,7 @@ impl EncryptedSerdeIO for EncryptedFileManager {
         Ok(deserialized)
     }
 
-    async fn read_enc(&mut self, buffer: &mut [u8]) -> Result<(), crate::io::Error> {
+    async fn read_enc(&mut self, buffer: &mut [u8]) -> Result<usize, crate::io::Error> {
         let mut nonce = [0; 12];
         let mut tag = [0; 16];
 
@@ -107,7 +107,7 @@ impl EncryptedSerdeIO for EncryptedFileManager {
 
         self.cipher.decrypt(buffer, &nonce, &tag)?;
 
-        Ok(())
+        Ok(buffer.len())
     }
 }
 
