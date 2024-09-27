@@ -50,7 +50,7 @@ impl SerdeIO for NetworkPeer {
                 self.stream.read_buf(&mut buf).await?;
             }
 
-            let n = buf.consume(None).unwrap();
+            let n = buf.consume(None)?;
 
             Ok(P::deserialize_from(&buffer[..n])?)
         } else {
@@ -64,7 +64,7 @@ impl SerdeIO for NetworkPeer {
                 self.stream.read_buf(&mut buf).await?;
             }
 
-            let n = buf.consume(None).unwrap();
+            let n = buf.consume(None)?;
 
             Ok(P::deserialize_from(&buffer[..n])?)
         }

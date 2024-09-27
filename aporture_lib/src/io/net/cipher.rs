@@ -81,7 +81,7 @@ impl EncryptedSerdeIO for EncryptedNetworkPeer {
 
     async fn read_ser_enc<P: Parser + Sync>(&mut self) -> Result<P, crate::io::Error> {
         if let Some(mut buffer) = P::buffer() {
-            let message = Message::new(&mut buffer, Some(&self.cipher.as_ref()));
+            let message = Message::new(&mut buffer, Some(self.cipher.as_ref()));
 
             let mut buf = message.into_buf();
 
@@ -89,13 +89,13 @@ impl EncryptedSerdeIO for EncryptedNetworkPeer {
                 self.stream().read_buf(&mut buf).await?;
             }
 
-            let n = buf.consume(None).unwrap();
+            let n = buf.consume(None)?;
 
             Ok(P::deserialize_from(&buffer[..n])?)
         } else {
             let mut buffer = vec![0; u16::MAX as usize];
 
-            let message = Message::new(&mut buffer, Some(&self.cipher.as_ref()));
+            let message = Message::new(&mut buffer, Some(self.cipher.as_ref()));
 
             let mut buf = message.into_buf();
 
@@ -103,7 +103,7 @@ impl EncryptedSerdeIO for EncryptedNetworkPeer {
                 self.stream().read_buf(&mut buf).await?;
             }
 
-            let n = buf.consume(None).unwrap();
+            let n = buf.consume(None)?;
 
             Ok(P::deserialize_from(&buffer[..n])?)
         }
@@ -142,7 +142,7 @@ impl EncryptedSerdeIO for EncryptedNetworkPeer {
             self.stream().read_buf(&mut buf).await?;
         }
 
-        let n = buf.consume(Some(self.cipher.as_ref())).unwrap();
+        let n = buf.consume(Some(self.cipher.as_ref()))?;
 
         // let mut nonce = [0; 12];
         // let mut tag = [0; 16];

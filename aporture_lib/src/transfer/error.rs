@@ -29,7 +29,9 @@ pub enum Receive {
 impl From<crate::io::Error> for Receive {
     fn from(value: crate::io::Error) -> Self {
         match value {
-            crate::io::Error::IO(_) | crate::io::Error::SerDe(_) => Self::Network(value),
+            crate::io::Error::UnexpectedMessage
+            | crate::io::Error::IO(_)
+            | crate::io::Error::SerDe(_) => Self::Network(value),
             crate::io::Error::Cipher(e) => Self::Cipher(e),
             crate::io::Error::Custom(_) | crate::io::Error::Config => unreachable!(),
         }

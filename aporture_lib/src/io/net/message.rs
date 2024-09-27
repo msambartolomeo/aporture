@@ -129,10 +129,11 @@ pub enum ErrorKind {
 
 #[derive(Debug, Error)]
 #[error("{0}")]
-pub struct Error<'a>(ErrorKind, MessageBuffer<'a>);
+pub struct Error<'a>(pub ErrorKind, pub MessageBuffer<'a>);
 
 impl<'a> Error<'a> {
-    pub fn ignore(self) -> ErrorKind {
+    #[must_use]
+    pub const fn ignore(self) -> ErrorKind {
         self.0
     }
 }
@@ -410,7 +411,7 @@ mod test {
         }
 
         assert_eq!(LENGHT_SIZE + FLAG_SIZE + hello.len(), len);
-        assert_eq!((hello.len() as u16).to_be_bytes(), output[..2]);
+        assert_eq!(u16::try_from(hello.len())?.to_be_bytes(), output[..2]);
         assert_eq!(0, output[2]);
         assert_eq!(hello, &output[3..len]);
 
@@ -516,7 +517,7 @@ mod test {
             LENGHT_SIZE + FLAG_SIZE + NONCE_SIZE + hello.len() + TAG_SIZE,
             len
         );
-        assert_eq!((hello.len() as u16).to_be_bytes(), length);
+        assert_eq!(u16::try_from(hello.len())?.to_be_bytes(), length);
         assert_eq!([1], encrypt);
 
         let nonce = nonce.try_into()?;

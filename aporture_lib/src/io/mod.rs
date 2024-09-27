@@ -1,3 +1,4 @@
+use net::message;
 use thiserror::Error;
 
 pub mod net;
@@ -20,8 +21,22 @@ pub enum Error {
     #[error("Cipher error: {0}")]
     Cipher(#[from] crate::crypto::Error),
 
+    #[error("Unexpected message received from network")]
+    UnexpectedMessage,
+
     #[error("{0}")]
     Custom(&'static str),
+}
+
+impl<'a> From<message::Error<'a>> for Error {
+    fn from(value: message::Error<'a>) -> Self {
+        match value.0 {
+            message::ErrorKind::Decryption(error) => Self::Cipher(error),
+            message::ErrorKind::CipherExpected
+            | message::ErrorKind::InsuficientBuffer
+            | message::ErrorKind::InvalidMessage => Self::UnexpectedMessage,
+        }
+    }
 }
 
 impl From<&'static str> for Error {

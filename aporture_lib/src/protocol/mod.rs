@@ -131,7 +131,7 @@ mod test {
             paste! {
                 #[test]
                 #[allow(non_snake_case)]
-                fn [<test_ $type _parser>]() {
+                fn [<test_ $type _parser>]() -> Result<(), Box<dyn std::error::Error>> {
                     let input: $type = $example;
 
                     let serialized = input.serialize_to();
@@ -140,9 +140,11 @@ mod test {
                         assert!(len >= serialized.len());
                     }
 
-                    let deserialized = $type::deserialize_from(&serialized).unwrap();
+                    let deserialized = $type::deserialize_from(&serialized)?;
 
                     assert_eq!(input, deserialized);
+
+                    Ok(())
                 }
             }
         };
