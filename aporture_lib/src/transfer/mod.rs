@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use tokio::fs::{File, OpenOptions};
-use tokio::io::{AsyncReadExt, BufReader};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::task::JoinSet;
 
 use crate::crypto::hasher::Hasher;
@@ -48,7 +48,7 @@ pub async fn send_file(path: &Path, pair_info: &mut PairInfo) -> Result<(), erro
 
     peer.write_ser_enc(&file_data).await?;
 
-    let hash = Box::pin(hash_and_send(file, &mut peer)).await?;
+    let hash = hash_and_send(file, &mut peer).await?;
 
     peer.write_ser_enc(&hash).await?;
 
@@ -90,31 +90,46 @@ pub async fn receive_file(
         dest.push(file_data.file_name);
     }
 
-    // let mut file = vec![0; usize::from_be_bytes(file_data.file_size)];
+    let tmp_path = dest.with_extension("downloading").with_extension(".tmp");
 
-    // peer.read_enc(&mut file).await?;
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&tmp_path)
+        .await?;
 
-    // let hash = blake3::hash(&file);
+    let hash = match hash_and_receive(file, &mut peer).await {
+        Ok(hash) => hash,
+        Err(e) => {
+            tokio::fs::remove_file(tmp_path).await?;
+            return Err(e.into());
+        }
+    };
 
-    // let response = if hash == file_data.hash {
-    //     TransferResponseCode::Ok
-    // } else {
-    //     TransferResponseCode::HashMismatch
-    // };
+    tokio::fs::rename(&tmp_path, &dest).await?;
 
-    // peer.write_ser_enc(&response).await?;
+    let received_hash = peer.read_ser_enc::<Hash>().await?;
 
-    // tokio::fs::write(&dest, file).await?;
+    let response = if hash == received_hash {
+        TransferResponseCode::Ok
+    } else {
+        TransferResponseCode::HashMismatch
+    };
+
+    peer.write_ser_enc(&response).await?;
 
     Ok(dest)
 }
 
-async fn hash_and_send(file: File, sender: &mut EncryptedNetworkPeer) -> Result<Hash, error::Send>
+async fn hash_and_send(
+    file: File,
+    sender: &mut EncryptedNetworkPeer,
+) -> Result<Hash, crate::io::Error>
 where
 {
     let mut reader = BufReader::new(file);
     let mut hasher = Hasher::default();
-    let mut buffer = [0; BUFFER_SIZE];
+    let mut buffer = vec![0; BUFFER_SIZE];
 
     loop {
         let count = reader.read(&mut buffer).await?;
@@ -129,21 +144,23 @@ where
     Ok(Hash(hasher.finalize()))
 }
 
-// async fn hash_and_receive(
-//     path: &Path,
-//     receiver: &mut EncryptedNetworkPeer,
-// ) -> Result<Hash, error::Send> {
-//     let file = OpenOptions::new()
-//         .write(true)
-//         .create_new(true)
-//         .open(path)
-//         .await?;
+async fn hash_and_receive(
+    file: File,
+    receiver: &mut EncryptedNetworkPeer,
+) -> Result<Hash, crate::io::Error> {
+    let mut writer = BufWriter::new(file);
+    let mut hasher = Hasher::default();
+    let mut buffer = vec![0; BUFFER_SIZE];
 
-//     let mut writer = BufWriter::new(file);
-//     let mut hasher = Hasher::default();
-//     let mut buffer = [0; BUFFER_SIZE];
+    loop {
+        let count = receiver.read_enc(&mut buffer).await?;
+        if count == 0 {
+            break;
+        }
 
-//     // receiver.read_enc(&mut writer);
+        hasher.add(&buffer[..count]);
+        writer.write_all(&buffer[..count]).await?;
+    }
 
-//     Ok(Hash(hasher.finalize()))
-// }
+    Ok(Hash(hasher.finalize()))
+}
