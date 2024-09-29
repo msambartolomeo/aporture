@@ -349,7 +349,7 @@ pub struct PairInfo {
 
 impl PairInfo {
     #[must_use]
-    pub fn cipher(&mut self) -> Arc<Cipher> {
+    pub fn cipher(&self) -> Arc<Cipher> {
         self.cipher.clone()
     }
 

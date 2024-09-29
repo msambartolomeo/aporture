@@ -18,6 +18,151 @@ pub use error::{Receive as ReceiveError, Send as SendError};
 
 const BUFFER_SIZE: usize = 16 * 1024;
 
+pub trait State {}
+
+pub struct Sender<'a>(&'a Path);
+impl<'a> State for Sender<'a> {}
+pub struct Receiver(Option<PathBuf>);
+impl State for Receiver {}
+
+pub struct AportureTransferProtocol<'a, S: State> {
+    pair_info: &'a mut PairInfo,
+    path: S,
+    tmp_file: Option<PathBuf>,
+}
+
+impl<'a> AportureTransferProtocol<'a, Sender<'a>> {
+    pub fn new(pair_info: &'a mut PairInfo, path: &'a Path) -> Self {
+        AportureTransferProtocol {
+            pair_info,
+            path: Sender(path),
+            tmp_file: None,
+        }
+    }
+
+    pub async fn transfer(self) -> Result<(), error::Send> {
+        let Some(file_name) = self.path.0.file_name() else {
+            return Err(error::Send::Path);
+        };
+
+        // TODO: Find better alternative
+        // TODO: Retry on each future somehow
+        // NOTE: Sleep to give time to receiver to bind
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        let options = self
+            .pair_info
+            .addresses()
+            .into_iter()
+            .fold(JoinSet::new(), |mut set, a| {
+                set.spawn(peer::connect(a, self.pair_info.cipher()));
+                set
+            });
+
+        let mut peer = peer::find(options, self.pair_info).await;
+
+        let file = OpenOptions::new().read(true).open(self.path.0).await?;
+        let file_data = FileData {
+            file_size: file.metadata().await?.len(),
+            // TODO: Test if this works cross platform (test also file_name.to_string_lossy())
+            file_name: file_name.to_owned(),
+        };
+
+        peer.write_ser_enc(&file_data).await?;
+
+        let hash = hash_and_send(file, &mut peer).await?;
+
+        peer.write_ser_enc(&hash).await?;
+
+        let response = peer.read_ser_enc::<TransferResponseCode>().await?;
+
+        match response {
+            TransferResponseCode::Ok => {
+                log::info!("File transferred correctly");
+                Ok(())
+            }
+            TransferResponseCode::HashMismatch => {
+                log::error!("Hash mismatch in file transfer");
+                Err(error::Send::HashMismatch)
+            }
+        }
+    }
+}
+
+impl<'a> AportureTransferProtocol<'a, Receiver> {
+    pub fn new(pair_info: &'a mut PairInfo, dest: Option<PathBuf>) -> Self {
+        AportureTransferProtocol {
+            pair_info,
+            path: Receiver(dest),
+            tmp_file: None,
+        }
+    }
+
+    pub async fn transfer(mut self) -> Result<PathBuf, error::Receive> {
+        let mut dest = self
+            .path
+            .0
+            .take()
+            .or_else(crate::fs::downloads_directory)
+            .ok_or(ReceiveError::Directory)?;
+
+        let options =
+            self.pair_info
+                .bind_addresses()
+                .into_iter()
+                .fold(JoinSet::new(), |mut set, (b, a)| {
+                    set.spawn(peer::bind(b, a, self.pair_info.cipher()));
+                    set
+                });
+
+        let mut peer = peer::find(options, self.pair_info).await;
+
+        let file_data = peer.read_ser_enc::<FileData>().await?;
+
+        if dest.is_dir() {
+            dest.push(file_data.file_name);
+        }
+
+        self.tmp_file = Some(dest.with_extension("downloading").with_extension(".tmp"));
+
+        let tmp_path = self
+            .tmp_file
+            .as_ref()
+            .expect("Exists as it was added just before");
+
+        let file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(tmp_path)
+            .await?;
+
+        let hash = hash_and_receive(file, &mut peer).await?;
+
+        tokio::fs::rename(tmp_path, &dest).await?;
+
+        let received_hash = peer.read_ser_enc::<Hash>().await?;
+
+        let response = if hash == received_hash {
+            TransferResponseCode::Ok
+        } else {
+            TransferResponseCode::HashMismatch
+        };
+
+        peer.write_ser_enc(&response).await?;
+
+        Ok(dest)
+    }
+}
+
+impl<'a, S: State> Drop for AportureTransferProtocol<'a, S> {
+    fn drop(&mut self) {
+        if let Some(ref path) = self.tmp_file {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+#[deprecated]
 pub async fn send_file(path: &Path, pair_info: &mut PairInfo) -> Result<(), error::Send> {
     let Some(file_name) = path.file_name() else {
         return Err(error::Send::Path);
@@ -66,6 +211,7 @@ pub async fn send_file(path: &Path, pair_info: &mut PairInfo) -> Result<(), erro
     }
 }
 
+#[deprecated]
 pub async fn receive_file(
     dest: Option<PathBuf>,
     pair_info: &mut PairInfo,
