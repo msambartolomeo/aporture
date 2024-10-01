@@ -1,11 +1,13 @@
 use std::net::IpAddr;
 use std::path::PathBuf;
 
+use generic_array::GenericArray;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use tokio::sync::OnceCell;
 
 use crate::crypto::hasher::Salt;
+use crate::parse;
 use crate::parser::{Parser, SerdeIO};
 
 use crate::fs::FileManager;
@@ -24,9 +26,7 @@ pub struct Config {
     pub password_salt: Salt,
 }
 
-impl Parser for Config {
-    type MinimumSerializedSize = generic_array::typenum::U0;
-}
+parse!(Config);
 
 impl Default for Config {
     fn default() -> Self {

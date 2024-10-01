@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Clone, Copy)]
 pub enum Error {
     #[error("Failure verifying MAC")]
     Decrypt,
