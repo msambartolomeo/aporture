@@ -1,3 +1,4 @@
+use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -10,6 +11,7 @@ use crate::net::EncryptedNetworkPeer;
 use crate::pairing::PairInfo;
 use crate::parser::EncryptedSerdeIO;
 use crate::protocol::{FileData, Hash, TransferResponseCode};
+use crate::{Receiver, Sender, State};
 
 mod deflate;
 mod peer;
@@ -19,30 +21,25 @@ pub use error::{Receive as ReceiveError, Send as SendError};
 
 const BUFFER_SIZE: usize = 16 * 1024;
 
-pub trait State {}
-
-pub struct Sender<'a>(&'a Path);
-impl<'a> State for Sender<'a> {}
-pub struct Receiver(Option<PathBuf>);
-impl State for Receiver {}
-
 pub struct AportureTransferProtocol<'a, S: State> {
     pair_info: &'a mut PairInfo,
-    path: S,
+    path: &'a Path,
     tar_file: Option<PathBuf>,
+    _phantom: PhantomData<S>,
 }
 
-impl<'a> AportureTransferProtocol<'a, Sender<'a>> {
+impl<'a> AportureTransferProtocol<'a, Sender> {
     pub fn new(pair_info: &'a mut PairInfo, path: &'a Path) -> Self {
         AportureTransferProtocol {
             pair_info,
-            path: Sender(path),
+            path,
             tar_file: None,
+            _phantom: PhantomData,
         }
     }
 
     pub async fn transfer(mut self) -> Result<(), error::Send> {
-        let path = tokio::fs::canonicalize(self.path.0)
+        let path = tokio::fs::canonicalize(self.path)
             .await
             .map_err(|_| error::Send::Path)?;
         let file_name = path.file_name().ok_or(error::Send::Path)?.to_owned();
@@ -106,22 +103,17 @@ impl<'a> AportureTransferProtocol<'a, Sender<'a>> {
 }
 
 impl<'a> AportureTransferProtocol<'a, Receiver> {
-    pub fn new(pair_info: &'a mut PairInfo, dest: Option<PathBuf>) -> Self {
+    pub fn new(pair_info: &'a mut PairInfo, dest: &'a Path) -> Self {
         AportureTransferProtocol {
             pair_info,
-            path: Receiver(dest),
+            path: dest,
             tar_file: None,
+            _phantom: PhantomData,
         }
     }
 
     pub async fn transfer(mut self) -> Result<PathBuf, error::Receive> {
-        let dest = self
-            .path
-            .0
-            .take()
-            .or_else(crate::fs::downloads_directory)
-            .ok_or(error::Receive::Directory)?;
-        let mut dest = tokio::fs::canonicalize(dest).await?;
+        let mut dest = tokio::fs::canonicalize(self.path).await?;
 
         let addresses = self.pair_info.bind_addresses();
         let cipher = self.pair_info.cipher();

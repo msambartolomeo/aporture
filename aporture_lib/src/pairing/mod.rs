@@ -14,6 +14,7 @@ use crate::parser::{EncryptedSerdeIO, SerdeIO};
 use crate::protocol::{
     Hello, KeyExchangePayload, NegotiationPayload, PairKind, PairingResponseCode,
 };
+use crate::{Receiver, Sender, State};
 
 mod upnp;
 
@@ -30,8 +31,6 @@ pub struct AporturePairingProtocolState {
     same_public_ip: bool,
 }
 
-pub trait State {}
-
 pub struct AporturePairingProtocol<S: State> {
     data: Box<AporturePairingProtocolState>,
     state: S,
@@ -39,8 +38,6 @@ pub struct AporturePairingProtocol<S: State> {
 
 pub trait Kind {}
 
-pub struct Sender {}
-impl State for Sender {}
 impl Kind for Sender {}
 
 impl AporturePairingProtocol<Sender> {
@@ -61,8 +58,6 @@ impl AporturePairingProtocol<Sender> {
     }
 }
 
-pub struct Receiver {}
-impl State for Receiver {}
 impl Kind for Receiver {}
 
 impl AporturePairingProtocol<Receiver> {

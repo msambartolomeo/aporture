@@ -1,3 +1,5 @@
+#![allow(clippy::similar_names)]
+
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -6,7 +8,9 @@ use relm4::prelude::*;
 use tokio::sync::RwLock;
 
 use aporture::fs::contacts::Contacts;
-use aporture::pairing::{AporturePairingProtocol, Receiver, Sender};
+use aporture::pairing::AporturePairingProtocol;
+use aporture::transfer::AportureTransferProtocol;
+use aporture::{Receiver, Sender};
 
 #[derive(Debug)]
 pub struct Peer {
@@ -110,7 +114,9 @@ impl Component for Peer {
 
                     // self.label = "Pairing successful!!\nTransferring file to peer";
 
-                    aporture::transfer::send_file(&path, &mut pair_info).await?;
+                    let atp = AportureTransferProtocol::<Sender>::new(&mut pair_info, &path);
+
+                    atp.transfer().await?;
 
                     let save_confirmation = pair_info.save_contact;
 
@@ -150,7 +156,15 @@ impl Component for Peer {
 
                     let mut pair_info = app.pair().await?;
 
-                    aporture::transfer::receive_file(destination, &mut pair_info).await?;
+                    let Some(destination) = destination.or_else(aporture::fs::downloads_directory)
+                    else {
+                        todo!()
+                    };
+
+                    let atp =
+                        AportureTransferProtocol::<Receiver>::new(&mut pair_info, &destination);
+
+                    atp.transfer().await?;
 
                     let save_confirmation = pair_info.save_contact;
 
