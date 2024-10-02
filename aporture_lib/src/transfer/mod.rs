@@ -11,6 +11,7 @@ use crate::pairing::PairInfo;
 use crate::parser::EncryptedSerdeIO;
 use crate::protocol::{FileData, Hash, TransferResponseCode};
 
+mod deflate;
 mod peer;
 
 mod error;
