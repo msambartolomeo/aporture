@@ -11,32 +11,38 @@ use crate::pairing::PairInfo;
 use crate::parser::EncryptedSerdeIO;
 use crate::protocol::TransferHello;
 
-pub async fn find(
-    mut options: JoinSet<Result<EncryptedNetworkPeer, (crate::io::Error, SocketAddr)>>,
-    pair_info: &mut PairInfo,
-) -> EncryptedNetworkPeer {
-    loop {
-        match options.join_next().await {
-            Some(Ok(Ok(peer))) => {
-                // NOTE: Drop fallback if unused
-                drop(pair_info.fallback());
+const RETRIES: usize = 10;
 
-                break peer;
-            }
-            Some(Ok(Err((e, a)))) => {
-                log::warn!("Could not connect to peer from ip {a}: {e}");
-                continue;
-            }
-            Some(_) => continue,
-            None => {
-                log::info!("Timeout waiting for peer connection, using server fallback");
-                break pair_info
-                    .fallback()
-                    .expect("Connection to server must exist")
-                    .add_cipher(pair_info.cipher());
+pub async fn find<F>(options_factory: F, pair_info: &mut PairInfo) -> EncryptedNetworkPeer
+where
+    F: Fn() -> JoinSet<Result<EncryptedNetworkPeer, (crate::io::Error, SocketAddr)>>,
+{
+    for _ in 0..RETRIES {
+        let mut options = options_factory();
+
+        loop {
+            match options.join_next().await {
+                Some(Ok(Ok(peer))) => {
+                    // NOTE: Drop fallback if unused
+                    drop(pair_info.fallback());
+
+                    return peer;
+                }
+                Some(Ok(Err((e, a)))) => {
+                    log::warn!("Could not connect to peer from ip {a}: {e}");
+                    continue;
+                }
+                Some(_) => continue,
+                None => break,
             }
         }
     }
+
+    log::info!("Timeout waiting for peer connection, using server fallback");
+    pair_info
+        .fallback()
+        .expect("Connection to server must exist")
+        .add_cipher(pair_info.cipher())
 }
 
 pub async fn bind(

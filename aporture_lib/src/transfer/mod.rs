@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::sync::Arc;
 
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
@@ -49,25 +49,23 @@ impl<'a> AportureTransferProtocol<'a, Sender<'a>> {
             return Err(error::Send::Path);
         }
 
-        // TODO: Find better alternative
-        // TODO: Retry on each future somehow
-        // NOTE: Sleep to give time to receiver to bind
-        tokio::time::sleep(Duration::from_secs(1)).await;
-
-        let options = self
-            .pair_info
-            .addresses()
-            .into_iter()
-            .fold(JoinSet::new(), |mut set, a| {
-                set.spawn(peer::connect(a, self.pair_info.cipher()));
         let is_file = path.is_file();
 
         // NOTE: build archive
         let tar_handle = tokio::task::spawn_blocking(move || deflate::compress(&path));
-                set
-            });
 
-        let mut peer = peer::find(options, self.pair_info).await;
+        let addresses = self.pair_info.addresses();
+        let cipher = self.pair_info.cipher();
+
+        let options_factory = || {
+            addresses.iter().fold(JoinSet::new(), |mut set, a| {
+                set.spawn(peer::connect(*a, Arc::clone(&cipher)));
+                set
+            })
+        };
+
+        let mut peer = peer::find(options_factory, self.pair_info).await;
+
         // NOTE: Add to struct for it to be deleted on Drop
         self.tar_file = Some(tar_handle.await.expect("Task was not aborted")?);
 
@@ -122,16 +120,17 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
             .or_else(crate::fs::downloads_directory)
             .ok_or(ReceiveError::Directory)?;
 
-        let options =
-            self.pair_info
-                .bind_addresses()
-                .into_iter()
-                .fold(JoinSet::new(), |mut set, (b, a)| {
-                    set.spawn(peer::bind(b, a, self.pair_info.cipher()));
-                    set
-                });
+        let addresses = self.pair_info.bind_addresses();
+        let cipher = self.pair_info.cipher();
 
-        let mut peer = peer::find(options, self.pair_info).await;
+        let options_factory = || {
+            addresses.iter().fold(JoinSet::new(), |mut set, (b, a)| {
+                set.spawn(peer::bind(*b, *a, Arc::clone(&cipher)));
+                set
+            })
+        };
+
+        let mut peer = peer::find(options_factory, self.pair_info).await;
 
         let file_data = peer.read_ser_enc::<FileData>().await?;
 
