@@ -152,7 +152,7 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
             .open(tmp_path)
             .await?;
 
-        let hash = hash_and_receive(file, &mut peer).await?;
+        let hash = hash_and_receive(file, file_data.file_size, &mut peer).await?;
 
         tokio::fs::rename(tmp_path, &dest).await?;
 
@@ -203,16 +203,29 @@ where
 
 async fn hash_and_receive(
     file: File,
+    file_size: u64,
     receiver: &mut EncryptedNetworkPeer,
 ) -> Result<Hash, crate::io::Error> {
     let mut writer = BufWriter::new(file);
     let mut hasher = Hasher::default();
     let mut buffer = vec![0; BUFFER_SIZE];
 
+    let file_size = file_size as usize;
+    let mut read = 0;
+
     loop {
         let count = receiver.read_enc(&mut buffer).await?;
-        if count == 0 {
+
+        read += count;
+
+        if file_size == read {
             break;
+        }
+
+        assert!(read < file_size);
+
+        if count == 0 {
+            return Err(std::io::Error::from(std::io::ErrorKind::ConnectionReset).into());
         }
 
         hasher.add(&buffer[..count]);
