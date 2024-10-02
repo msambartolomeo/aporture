@@ -42,7 +42,9 @@ impl<'a> AportureTransferProtocol<'a, Sender<'a>> {
     }
 
     pub async fn transfer(mut self) -> Result<(), error::Send> {
-        let path = self.path.0.canonicalize().map_err(|_| error::Send::Path)?;
+        let path = tokio::fs::canonicalize(self.path.0)
+            .await
+            .map_err(|_| error::Send::Path)?;
         let file_name = path.file_name().ok_or(error::Send::Path)?.to_owned();
 
         if !path.is_file() && !path.is_dir() {
@@ -79,7 +81,7 @@ impl<'a> AportureTransferProtocol<'a, Sender<'a>> {
             file_size: file.metadata().await?.len(),
             is_file,
             // TODO: Test if this works cross platform (test also file_name.to_string_lossy())
-            file_name: file_name.to_owned(),
+            file_name,
         };
 
         peer.write_ser_enc(&file_data).await?;
@@ -113,12 +115,13 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
     }
 
     pub async fn transfer(mut self) -> Result<PathBuf, error::Receive> {
-        let mut dest = self
+        let dest = self
             .path
             .0
             .take()
             .or_else(crate::fs::downloads_directory)
-            .ok_or(ReceiveError::Directory)?;
+            .ok_or(error::Receive::Directory)?;
+        let mut dest = tokio::fs::canonicalize(dest).await?;
 
         let addresses = self.pair_info.bind_addresses();
         let cipher = self.pair_info.cipher();
@@ -138,34 +141,36 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
             dest.push(file_data.file_name);
         }
 
-        self.tar_file = Some(dest.with_extension("downloading").with_extension(".tmp"));
-
-        let tmp_path = self
-            .tar_file
-            .as_ref()
-            .expect("Exists as it was added just before");
+        let tar_path = deflate::compressed_path(&dest);
+        self.tar_file = Some(tar_path.clone());
 
         let file = OpenOptions::new()
             .write(true)
             .create_new(true)
-            .open(tmp_path)
+            .open(&tar_path)
             .await?;
 
         let hash = hash_and_receive(file, file_data.file_size, &mut peer).await?;
 
-        tokio::fs::rename(tmp_path, &dest).await?;
-
         let received_hash = peer.read_ser_enc::<Hash>().await?;
 
-        let response = if hash == received_hash {
-            TransferResponseCode::Ok
+        let (response, result) = if hash == received_hash {
+            let dest = tokio::task::spawn_blocking(move || {
+                deflate::uncompress(&tar_path, dest, file_data.is_file)
+            })
+            .await
+            .expect("Task was not aborted")?;
+            (TransferResponseCode::Ok, Ok(dest))
         } else {
-            TransferResponseCode::HashMismatch
+            (
+                TransferResponseCode::HashMismatch,
+                Err(error::Receive::HashMismatch),
+            )
         };
 
         peer.write_ser_enc(&response).await?;
 
-        Ok(dest)
+        result
     }
 }
 
@@ -209,7 +214,7 @@ async fn hash_and_receive(
     let mut hasher = Hasher::default();
     let mut buffer = vec![0; BUFFER_SIZE];
 
-    let file_size = file_size as usize;
+    let file_size = usize::try_from(file_size).expect("u64 does not fit in usize");
     let mut read = 0;
 
     loop {

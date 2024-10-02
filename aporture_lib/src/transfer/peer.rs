@@ -15,7 +15,7 @@ const RETRIES: usize = 10;
 
 pub async fn find<F>(options_factory: F, pair_info: &mut PairInfo) -> EncryptedNetworkPeer
 where
-    F: Fn() -> JoinSet<Result<EncryptedNetworkPeer, (crate::io::Error, SocketAddr)>>,
+    F: Fn() -> JoinSet<Result<EncryptedNetworkPeer, (crate::io::Error, SocketAddr)>> + Send,
 {
     for _ in 0..RETRIES {
         let mut options = options_factory();

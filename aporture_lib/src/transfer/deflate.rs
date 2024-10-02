@@ -29,7 +29,7 @@ pub fn compress(path: &Path) -> Result<PathBuf, std::io::Error> {
     Ok(tar_gz_path)
 }
 
-pub fn uncompress(path: &Path, dest: &Path, is_file: bool) -> Result<(), std::io::Error> {
+pub fn uncompress(path: &Path, dest: PathBuf, is_file: bool) -> Result<PathBuf, std::io::Error> {
     let tar_gz = OpenOptions::new().read(true).open(path)?;
 
     let dec = flate2::read::GzDecoder::new(tar_gz);
@@ -41,12 +41,16 @@ pub fn uncompress(path: &Path, dest: &Path, is_file: bool) -> Result<(), std::io
         // that it only contains one element inside and we uncompress that.
         tar.entries()?
             .next()
-            .ok_or(std::io::Error::from(std::io::ErrorKind::InvalidData))??
-            .unpack(dest)?;
+            .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::InvalidData))??
+            .unpack(&dest)?;
     } else {
         // NOTE: If it is a directory unpack the entire archive
-        tar.unpack(dest)?;
+        tar.unpack(&dest)?;
     }
 
-    Ok(())
+    Ok(dest)
+}
+
+pub fn compressed_path(path: &Path) -> PathBuf {
+    path.with_extension("app.tar.gz")
 }
