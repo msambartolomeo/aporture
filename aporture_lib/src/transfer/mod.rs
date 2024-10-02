@@ -29,7 +29,7 @@ impl State for Receiver {}
 pub struct AportureTransferProtocol<'a, S: State> {
     pair_info: &'a mut PairInfo,
     path: S,
-    tmp_file: Option<PathBuf>,
+    tar_file: Option<PathBuf>,
 }
 
 impl<'a> AportureTransferProtocol<'a, Sender<'a>> {
@@ -37,14 +37,17 @@ impl<'a> AportureTransferProtocol<'a, Sender<'a>> {
         AportureTransferProtocol {
             pair_info,
             path: Sender(path),
-            tmp_file: None,
+            tar_file: None,
         }
     }
 
-    pub async fn transfer(self) -> Result<(), error::Send> {
-        let Some(file_name) = self.path.0.file_name() else {
+    pub async fn transfer(mut self) -> Result<(), error::Send> {
+        let path = self.path.0.canonicalize().map_err(|_| error::Send::Path)?;
+        let file_name = path.file_name().ok_or(error::Send::Path)?.to_owned();
+
+        if !path.is_file() && !path.is_dir() {
             return Err(error::Send::Path);
-        };
+        }
 
         // TODO: Find better alternative
         // TODO: Retry on each future somehow
@@ -57,14 +60,26 @@ impl<'a> AportureTransferProtocol<'a, Sender<'a>> {
             .into_iter()
             .fold(JoinSet::new(), |mut set, a| {
                 set.spawn(peer::connect(a, self.pair_info.cipher()));
+        let is_file = path.is_file();
+
+        // NOTE: build archive
+        let tar_handle = tokio::task::spawn_blocking(move || deflate::compress(&path));
                 set
             });
 
         let mut peer = peer::find(options, self.pair_info).await;
+        // NOTE: Add to struct for it to be deleted on Drop
+        self.tar_file = Some(tar_handle.await.expect("Task was not aborted")?);
 
-        let file = OpenOptions::new().read(true).open(self.path.0).await?;
+        let tar_path = self
+            .tar_file
+            .as_ref()
+            .expect("Exists as it was added just before");
+
+        let file = OpenOptions::new().read(true).open(tar_path).await?;
         let file_data = FileData {
             file_size: file.metadata().await?.len(),
+            is_file,
             // TODO: Test if this works cross platform (test also file_name.to_string_lossy())
             file_name: file_name.to_owned(),
         };
@@ -95,7 +110,7 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
         AportureTransferProtocol {
             pair_info,
             path: Receiver(dest),
-            tmp_file: None,
+            tar_file: None,
         }
     }
 
@@ -124,10 +139,10 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
             dest.push(file_data.file_name);
         }
 
-        self.tmp_file = Some(dest.with_extension("downloading").with_extension(".tmp"));
+        self.tar_file = Some(dest.with_extension("downloading").with_extension(".tmp"));
 
         let tmp_path = self
-            .tmp_file
+            .tar_file
             .as_ref()
             .expect("Exists as it was added just before");
 
@@ -157,7 +172,7 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
 
 impl<'a, S: State> Drop for AportureTransferProtocol<'a, S> {
     fn drop(&mut self) {
-        if let Some(ref path) = self.tmp_file {
+        if let Some(ref path) = self.tar_file {
             let _ = std::fs::remove_file(path);
         }
     }

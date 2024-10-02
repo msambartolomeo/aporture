@@ -3,9 +3,8 @@ use std::path::{Path, PathBuf};
 
 use flate2::Compression;
 
-pub async fn compress(path: &Path) -> Result<PathBuf, std::io::Error> {
+pub fn compress(path: &Path) -> Result<PathBuf, std::io::Error> {
     let tar_gz_path = path
-        .canonicalize()?
         .with_extension("app")
         .with_extension("tar")
         .with_extension("gz");
@@ -30,7 +29,7 @@ pub async fn compress(path: &Path) -> Result<PathBuf, std::io::Error> {
     Ok(tar_gz_path)
 }
 
-pub async fn uncompress(path: &Path, dest: &Path, is_file: bool) -> Result<(), std::io::Error> {
+pub fn uncompress(path: &Path, dest: &Path, is_file: bool) -> Result<(), std::io::Error> {
     let tar_gz = OpenOptions::new().read(true).open(path)?;
 
     let dec = flate2::read::GzDecoder::new(tar_gz);
