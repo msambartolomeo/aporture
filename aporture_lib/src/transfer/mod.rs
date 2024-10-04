@@ -2,24 +2,20 @@ use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use tokio::fs::{File, OpenOptions};
-use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
+use tokio::fs::OpenOptions;
 use tokio::task::JoinSet;
 
-use crate::crypto::hasher::Hasher;
-use crate::net::EncryptedNetworkPeer;
 use crate::pairing::PairInfo;
 use crate::parser::EncryptedSerdeIO;
 use crate::protocol::{FileData, Hash, TransferResponseCode};
 use crate::{Receiver, Sender, State};
 
 mod deflate;
+mod file;
 mod peer;
 
 mod error;
 pub use error::{Receive as ReceiveError, Send as SendError};
-
-const BUFFER_SIZE: usize = 16 * 1024;
 
 pub struct AportureTransferProtocol<'a, S: State> {
     pair_info: &'a mut PairInfo,
@@ -74,6 +70,7 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
             .expect("Exists as it was added just before");
 
         let file = OpenOptions::new().read(true).open(tar_path).await?;
+
         let file_data = FileData {
             file_size: file.metadata().await?.len(),
             is_file,
@@ -83,9 +80,9 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
 
         peer.write_ser_enc(&file_data).await?;
 
-        let hash = hash_and_send(file, &mut peer).await?;
+        let hash = file::hash_and_send(file, &mut peer).await?;
 
-        peer.write_ser_enc(&hash).await?;
+        peer.write_ser_enc(&Hash(hash)).await?;
 
         let response = peer.read_ser_enc::<TransferResponseCode>().await?;
 
@@ -142,11 +139,11 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
             .open(&tar_path)
             .await?;
 
-        let hash = hash_and_receive(file, file_data.file_size, &mut peer).await?;
+        let hash = file::hash_and_receive(file, file_data.file_size, &mut peer).await?;
 
         let received_hash = peer.read_ser_enc::<Hash>().await?;
 
-        let (response, result) = if hash == received_hash {
+        let (response, result) = if hash == received_hash.0 {
             let dest = tokio::task::spawn_blocking(move || {
                 deflate::uncompress(&tar_path, dest, file_data.is_file)
             })
@@ -172,61 +169,4 @@ impl<'a, S: State> Drop for AportureTransferProtocol<'a, S> {
             let _ = std::fs::remove_file(path);
         }
     }
-}
-
-async fn hash_and_send(
-    file: File,
-    sender: &mut EncryptedNetworkPeer,
-) -> Result<Hash, crate::io::Error>
-where
-{
-    let mut reader = BufReader::new(file);
-    let mut hasher = Hasher::default();
-    let mut buffer = vec![0; BUFFER_SIZE];
-
-    loop {
-        let count = reader.read(&mut buffer).await?;
-        if count == 0 {
-            break;
-        }
-
-        hasher.add(&buffer[..count]);
-        sender.write_enc(&mut buffer[..count]).await?;
-    }
-
-    Ok(Hash(hasher.finalize()))
-}
-
-async fn hash_and_receive(
-    file: File,
-    file_size: u64,
-    receiver: &mut EncryptedNetworkPeer,
-) -> Result<Hash, crate::io::Error> {
-    let mut writer = BufWriter::new(file);
-    let mut hasher = Hasher::default();
-    let mut buffer = vec![0; BUFFER_SIZE];
-
-    let file_size = usize::try_from(file_size).expect("u64 does not fit in usize");
-    let mut read = 0;
-
-    loop {
-        let count = receiver.read_enc(&mut buffer).await?;
-
-        read += count;
-
-        if file_size == read {
-            break;
-        }
-
-        assert!(read < file_size);
-
-        if count == 0 {
-            return Err(std::io::Error::from(std::io::ErrorKind::ConnectionReset).into());
-        }
-
-        hasher.add(&buffer[..count]);
-        writer.write_all(&buffer[..count]).await?;
-    }
-
-    Ok(Hash(hasher.finalize()))
 }
