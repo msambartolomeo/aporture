@@ -1,4 +1,6 @@
-use tokio::fs::File;
+use std::path::Path;
+
+use tokio::fs::OpenOptions;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
 
 use crate::crypto::hasher::{Hash, Hasher};
@@ -7,12 +9,12 @@ use crate::parser::EncryptedSerdeIO;
 
 const BUFFER_SIZE: usize = 16 * 1024;
 
-pub async fn hash_and_send(
-    file: File,
+pub async fn hash_and_send<P: AsRef<Path> + Send + Sync>(
+    path: P,
     sender: &mut EncryptedNetworkPeer,
-) -> Result<Hash, crate::io::Error>
-where
-{
+) -> Result<Hash, crate::io::Error> {
+    let file = OpenOptions::new().read(true).open(path).await?;
+
     let mut reader = BufReader::new(file);
     let mut hasher = Hasher::default();
     let mut buffer = vec![0; BUFFER_SIZE];
@@ -30,11 +32,17 @@ where
     Ok(hasher.finalize())
 }
 
-pub async fn hash_and_receive(
-    file: File,
+pub async fn hash_and_receive<P: AsRef<Path> + Send + Sync>(
+    path: P,
     file_size: u64,
     receiver: &mut EncryptedNetworkPeer,
 ) -> Result<Hash, crate::io::Error> {
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .await?;
+
     let mut writer = BufWriter::new(file);
     let mut hasher = Hasher::default();
     let mut buffer = vec![0; BUFFER_SIZE];

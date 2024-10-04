@@ -1,8 +1,8 @@
+use std::ffi::OsString;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use tokio::fs::OpenOptions;
 use tokio::task::JoinSet;
 
 use crate::pairing::PairInfo;
@@ -69,18 +69,18 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
             .as_ref()
             .expect("Exists as it was added just before");
 
-        let file = OpenOptions::new().read(true).open(tar_path).await?;
+        let file_size = tokio::fs::metadata(tar_path).await?.len();
 
         let file_data = FileData {
-            file_size: file.metadata().await?.len(),
-            is_file,
+            file_size,
             // TODO: Test if this works cross platform (test also file_name.to_string_lossy())
             file_name,
+            is_file,
         };
 
         peer.write_ser_enc(&file_data).await?;
 
-        let hash = file::hash_and_send(file, &mut peer).await?;
+        let hash = file::hash_and_send(tar_path, &mut peer).await?;
 
         peer.write_ser_enc(&Hash(hash)).await?;
 
@@ -133,18 +133,27 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
         let tar_path = deflate::compressed_path(&dest);
         self.tar_file = Some(tar_path.clone());
 
-        let file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&tar_path)
-            .await?;
-
-        let hash = file::hash_and_receive(file, file_data.file_size, &mut peer).await?;
+        let hash = file::hash_and_receive(&tar_path, file_data.file_size, &mut peer).await?;
 
         let received_hash = peer.read_ser_enc::<Hash>().await?;
 
         let (response, result) = if hash == received_hash.0 {
             let dest = tokio::task::spawn_blocking(move || {
+                let mut suffix = 0;
+                let extension = dest.extension().unwrap_or_default().to_owned();
+                let file_name = dest.file_stem().expect("Pushed before").to_owned();
+
+                while dest.try_exists().is_ok_and(|b| b) {
+                    suffix += 1;
+
+                    let extension = extension.clone();
+                    let file_name = file_name.clone();
+
+                    dest.set_file_name(
+                        [file_name, extension].join(&OsString::from(format!("_{suffix}"))),
+                    );
+                }
+
                 deflate::uncompress(&tar_path, dest, file_data.is_file)
             })
             .await
