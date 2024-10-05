@@ -31,7 +31,7 @@ bytes = "1.7.2"
 # NOTE: Protocol dependencies
 serde = { version = "1.0.210", features = ["derive"] }
 serde_bencode = "0.2.4"
-serde_with = "3.9.0"
+serde_with = "3.10.0"
 serde_repr = "0.1.19"
 generic-array = "1.1.0"
 rand = "0.8.5"
