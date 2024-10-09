@@ -127,39 +127,38 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
 
         let received_hash = peer.read_ser_enc::<Hash>().await?;
 
-        let (response, result) = if hash == received_hash.0 {
-            let mut tar_file = tar_file.into_std().await;
+        if hash != received_hash.0 {
+            peer.write_ser_enc(&TransferResponseCode::HashMismatch)
+                .await?;
 
-            let dest = tokio::task::spawn_blocking(move || {
-                let mut suffix = 0;
-                let extension = dest.extension().unwrap_or_default().to_owned();
-                let file_name = dest.file_stem().expect("Pushed before").to_owned();
+            return Err(error::Receive::HashMismatch);
+        }
 
-                while dest.try_exists().is_ok_and(|b| b) {
-                    suffix += 1;
+        let mut tar_file = tar_file.into_std().await;
 
-                    let extension = extension.clone();
-                    let file_name = file_name.clone();
+        let dest = tokio::task::spawn_blocking(move || {
+            let mut suffix = 0;
+            let extension = dest.extension().unwrap_or_default().to_owned();
+            let file_name = dest.file_stem().expect("Pushed before").to_owned();
 
-                    dest.set_file_name(
-                        [file_name, extension].join(&OsString::from(format!("_{suffix}"))),
-                    );
-                }
+            while dest.try_exists().is_ok_and(|b| b) {
+                suffix += 1;
 
-                deflate::uncompress(&mut tar_file, dest, file_data.is_file)
-            })
-            .await
-            .expect("Task was not aborted")?;
-            (TransferResponseCode::Ok, Ok(dest))
-        } else {
-            (
-                TransferResponseCode::HashMismatch,
-                Err(error::Receive::HashMismatch),
-            )
-        };
+                let extension = extension.clone();
+                let file_name = file_name.clone();
 
-        peer.write_ser_enc(&response).await?;
+                dest.set_file_name(
+                    [file_name, extension].join(&OsString::from(format!("_{suffix}"))),
+                );
+            }
 
-        result
+            deflate::uncompress(&mut tar_file, dest, file_data.is_file)
+        })
+        .await
+        .expect("Task was not aborted")?;
+
+        peer.write_ser_enc(&TransferResponseCode::Ok).await?;
+
+        Ok(dest)
     }
 }
