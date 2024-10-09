@@ -1,38 +1,37 @@
-use std::fs::OpenOptions;
+use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 
 use flate2::Compression;
 
-pub fn compress(path: &Path) -> Result<PathBuf, std::io::Error> {
-    let tar_gz_path = path
-        .with_extension("app")
-        .with_extension("tar")
-        .with_extension("gz");
+pub fn compress(path: &Path) -> Result<File, std::io::Error> {
+    let file = tempfile::tempfile()?;
 
-    let tar_gz = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&tar_gz_path)?;
-
-    let enc = flate2::write::GzEncoder::new(tar_gz, Compression::default());
+    let enc = flate2::write::GzEncoder::new(file, Compression::default());
 
     let mut tar = tar::Builder::new(enc);
 
     if path.is_file() {
-        tar.append_path(path)?;
+        let mut file = OpenOptions::new().read(true).open(path)?;
+        tar.append_file(
+            path.file_name()
+                .expect("File is absolute and requires filename"),
+            &mut file,
+        )?;
     } else {
         tar.append_dir_all("", path)?;
     }
 
-    tar.finish()?;
+    let file = tar.into_inner()?.finish()?;
 
-    Ok(tar_gz_path)
+    Ok(file)
 }
 
-pub fn uncompress(path: &Path, dest: PathBuf, is_file: bool) -> Result<PathBuf, std::io::Error> {
-    let tar_gz = OpenOptions::new().read(true).open(path)?;
-
-    let dec = flate2::read::GzDecoder::new(tar_gz);
+pub fn uncompress(
+    file: &mut File,
+    dest: PathBuf,
+    is_file: bool,
+) -> Result<PathBuf, std::io::Error> {
+    let dec = flate2::read::GzDecoder::new(file);
 
     let mut tar = tar::Archive::new(dec);
 
@@ -49,8 +48,4 @@ pub fn uncompress(path: &Path, dest: PathBuf, is_file: bool) -> Result<PathBuf, 
     }
 
     Ok(dest)
-}
-
-pub fn compressed_path(path: &Path) -> PathBuf {
-    path.with_extension("app.tar.gz")
 }

@@ -48,7 +48,7 @@ impl<'a> Message<'a> {
         let length = content.len();
 
         assert!(
-            length < u16::MAX.into(),
+            length <= u16::MAX.into(),
             "Message Payload must be smaller than u16::MAX"
         );
 
@@ -361,10 +361,6 @@ unsafe impl<'a> BufMut for MessageBuffer<'a> {
 mod test {
     use std::io::Read;
     use std::io::Write;
-
-    // use crate::parser::Parser;
-    // use crate::protocol::Hello;
-    // use crate::protocol::PairKind;
 
     use super::*;
 
