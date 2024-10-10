@@ -1,4 +1,5 @@
 use std::ffi::OsString;
+use std::io::Seek;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -38,6 +39,12 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
             .map_err(|_| error::Send::Path)?;
         let file_name = path.file_name().ok_or(error::Send::Path)?.to_owned();
 
+        log::info!(
+            "Sending file {} with name {}",
+            path.display(),
+            file_name.to_string_lossy()
+        );
+
         if !path.is_file() && !path.is_dir() {
             return Err(error::Send::Path);
         }
@@ -70,11 +77,14 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
             is_file,
         };
 
+        log::info!("Sending file information {file_data:?}");
         peer.write_ser_enc(&file_data).await?;
 
         let hash = file::hash_and_send(tar_file, &mut peer).await?;
 
+        log::info!("Sending file...");
         peer.write_ser_enc(&Hash(hash)).await?;
+        log::info!("File Sent");
 
         let response = peer.read_ser_enc::<TransferResponseCode>().await?;
 
@@ -101,8 +111,6 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
     }
 
     pub async fn transfer(self) -> Result<PathBuf, error::Receive> {
-        let mut dest = tokio::fs::canonicalize(self.path).await?;
-
         let addresses = self.pair_info.bind_addresses();
         let cipher = self.pair_info.cipher();
 
@@ -115,19 +123,29 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
 
         let mut peer = peer::find(options_factory, self.pair_info).await;
 
+        log::info!("Receiving file information");
         let file_data = peer.read_ser_enc::<FileData>().await?;
 
-        if dest.is_dir() {
+        log::info!("File data received: {file_data:?}");
+        let mut dest = self.path.to_path_buf();
+
+        if dest.try_exists()? && dest.canonicalize()?.is_dir() {
             dest.push(file_data.file_name);
         }
 
+        log::info!("Saving to path {}", dest.display());
+
         let mut tar_file = tokio::fs::File::from(tempfile::tempfile()?);
 
+        log::info!("Receiving file...");
         let hash = file::hash_and_receive(&mut tar_file, file_data.file_size, &mut peer).await?;
+        log::info!("File received");
 
         let received_hash = peer.read_ser_enc::<Hash>().await?;
 
         if hash != received_hash.0 {
+            log::error!("Calculated hash and received hash do not match");
+
             peer.write_ser_enc(&TransferResponseCode::HashMismatch)
                 .await?;
 
@@ -135,6 +153,7 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
         }
 
         let mut tar_file = tar_file.into_std().await;
+        tar_file.rewind()?;
 
         let dest = tokio::task::spawn_blocking(move || {
             let mut suffix = 0;
@@ -143,14 +162,20 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
 
             while dest.try_exists().is_ok_and(|b| b) {
                 suffix += 1;
+                log::warn!(
+                    "Path {} is not valid, trying suffix {suffix}",
+                    dest.display()
+                );
 
                 let extension = extension.clone();
                 let file_name = file_name.clone();
 
                 dest.set_file_name(
-                    [file_name, extension].join(&OsString::from(format!("_{suffix}"))),
+                    [file_name, extension].join(&OsString::from(format!(" ({suffix})."))),
                 );
             }
+
+            log::info!("Uncompressing file into {}", dest.display());
 
             deflate::uncompress(&mut tar_file, dest, file_data.is_file)
         })

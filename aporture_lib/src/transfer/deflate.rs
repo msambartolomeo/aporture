@@ -1,4 +1,5 @@
 use std::fs::{File, OpenOptions};
+use std::io::Seek;
 use std::path::{Path, PathBuf};
 
 use flate2::Compression;
@@ -21,14 +22,17 @@ pub fn compress(path: &Path) -> Result<File, std::io::Error> {
         tar.append_dir_all("", path)?;
     }
 
-    let file = tar.into_inner()?.finish()?;
+    let mut file = tar.into_inner()?.finish()?;
+
+    // NOTE: Rewind so the file can be used again
+    file.rewind()?;
 
     Ok(file)
 }
 
 pub fn uncompress(
     file: &mut File,
-    dest: PathBuf,
+    mut dest: PathBuf,
     is_file: bool,
 ) -> Result<PathBuf, std::io::Error> {
     let dec = flate2::read::GzDecoder::new(file);
@@ -38,14 +42,24 @@ pub fn uncompress(
     if is_file {
         // NOTE: If the archive is to be treated as a file, it is assumed
         // that it only contains one element inside and we uncompress that.
-        tar.entries()?
+        let mut entry = tar
+            .entries()?
             .next()
-            .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::InvalidData))??
-            .unpack(&dest)?;
+            .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::InvalidData))??;
+
+        if let Err(e) = entry.unpack(&dest) {
+            dest = crate::fs::downloads_directory().ok_or(e)?;
+
+            entry.unpack_in(&dest)?;
+        }
     } else {
         // NOTE: If it is a directory unpack the entire archive
-        tar.unpack(&dest)?;
-    }
+        if let Err(e) = tar.unpack(&dest) {
+            dest = crate::fs::downloads_directory().ok_or(e)?;
+
+            tar.unpack(&dest)?;
+        }
+    };
 
     Ok(dest)
 }

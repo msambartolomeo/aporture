@@ -40,16 +40,10 @@ pub async fn hash_and_receive(
     let file_size = usize::try_from(file_size).expect("u64 does not fit in usize");
     let mut read = 0;
 
-    loop {
+    while read < file_size {
         let count = receiver.read_enc(&mut buffer).await?;
 
         read += count;
-
-        if file_size == read {
-            break;
-        }
-
-        assert!(read < file_size);
 
         if count == 0 {
             return Err(std::io::Error::from(std::io::ErrorKind::ConnectionReset).into());
@@ -58,6 +52,8 @@ pub async fn hash_and_receive(
         hasher.add(&buffer[..count]);
         writer.write_all(&buffer[..count]).await?;
     }
+
+    writer.flush().await?;
 
     Ok(hasher.finalize())
 }
