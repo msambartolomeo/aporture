@@ -18,10 +18,19 @@ mod peer;
 mod error;
 pub use error::{Receive as ReceiveError, Send as SendError};
 
+type Channel = tokio::sync::mpsc::Sender<usize>;
+
 pub struct AportureTransferProtocol<'a, S: State> {
     pair_info: &'a mut PairInfo,
     path: &'a Path,
+    channel: Option<Channel>,
     _phantom: PhantomData<S>,
+}
+
+impl<'a, S: State> AportureTransferProtocol<'a, S> {
+    pub fn add_progress_notifier(&mut self, channel: Channel) {
+        self.channel = Some(channel);
+    }
 }
 
 impl<'a> AportureTransferProtocol<'a, Sender> {
@@ -29,6 +38,7 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
         AportureTransferProtocol {
             pair_info,
             path,
+            channel: None,
             _phantom: PhantomData,
         }
     }
@@ -80,7 +90,7 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
         log::info!("Sending file information {file_data:?}");
         peer.write_ser_enc(&file_data).await?;
 
-        let hash = file::hash_and_send(tar_file, &mut peer).await?;
+        let hash = file::hash_and_send(tar_file, &mut peer, self.channel).await?;
 
         log::info!("Sending file...");
         peer.write_ser_enc(&Hash(hash)).await?;
@@ -106,6 +116,7 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
         AportureTransferProtocol {
             pair_info,
             path: dest,
+            channel: None,
             _phantom: PhantomData,
         }
     }
@@ -138,7 +149,9 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
         let mut tar_file = tokio::fs::File::from(tempfile::tempfile()?);
 
         log::info!("Receiving file...");
-        let hash = file::hash_and_receive(&mut tar_file, file_data.file_size, &mut peer).await?;
+        let hash =
+            file::hash_and_receive(&mut tar_file, file_data.file_size, &mut peer, self.channel)
+                .await?;
         log::info!("File received");
 
         let received_hash = peer.read_ser_enc::<Hash>().await?;
