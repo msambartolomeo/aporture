@@ -104,6 +104,9 @@ pub struct FileData {
     pub file_size: u64,
 
     pub file_name: OsString,
+
+    #[serde_as(as = "DisplayFromStr")]
+    pub is_file: bool,
 }
 parse!(FileData);
 
@@ -177,6 +180,7 @@ mod test {
         FileData,
         FileData {
             file_size: 1,
+            is_file: false,
             file_name: OsString::new(),
         }
     );

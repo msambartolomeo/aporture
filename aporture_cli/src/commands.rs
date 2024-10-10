@@ -1,10 +1,14 @@
+#![allow(clippy::similar_names)]
+
 use std::path::PathBuf;
 
 use anyhow::{bail, Result};
 use colored::Colorize;
 
 use crate::contacts::Holder;
-use aporture::pairing::{AporturePairingProtocol, Receiver, Sender};
+use aporture::pairing::AporturePairingProtocol;
+use aporture::transfer::AportureTransferProtocol;
+use aporture::{Receiver, Sender};
 
 pub async fn send(
     passphrase: Vec<u8>,
@@ -24,7 +28,9 @@ pub async fn send(
         "peer".bright_cyan().bold().underline()
     );
 
-    aporture::transfer::send_file(&path, &mut pair_info).await?;
+    let atp = AportureTransferProtocol::<Sender>::new(&mut pair_info, &path);
+
+    atp.transfer().await?;
 
     let save_confirmation = pair_info.save_contact;
 
@@ -66,7 +72,13 @@ pub async fn receive(
         "peer".bright_cyan().bold().underline()
     );
 
-    let path = aporture::transfer::receive_file(destination, &mut pair_info).await?;
+    let Some(destination) = destination.or_else(aporture::fs::downloads_directory) else {
+        todo!()
+    };
+
+    let atp = AportureTransferProtocol::<Receiver>::new(&mut pair_info, &destination);
+
+    let path = atp.transfer().await?;
 
     let accepted_save_contact = pair_info.save_contact;
 
