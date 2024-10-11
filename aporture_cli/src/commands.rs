@@ -6,6 +6,7 @@ use anyhow::{bail, Result};
 use colored::Colorize;
 
 use crate::contacts::Holder;
+use crate::progress;
 use aporture::pairing::AporturePairingProtocol;
 use aporture::transfer::AportureTransferProtocol;
 use aporture::{Receiver, Sender};
@@ -28,7 +29,12 @@ pub async fn send(
         "peer".bright_cyan().bold().underline()
     );
 
-    let atp = AportureTransferProtocol::<Sender>::new(&mut pair_info, &path);
+    let mut atp = AportureTransferProtocol::<Sender>::new(&mut pair_info, &path);
+
+    let (snd, rcv) = tokio::sync::mpsc::channel(64);
+
+    atp.add_progress_notifier(snd);
+    progress::init_progress_bar(rcv);
 
     atp.transfer().await?;
 
@@ -73,10 +79,15 @@ pub async fn receive(
     );
 
     let Some(destination) = destination.or_else(aporture::fs::downloads_directory) else {
-        todo!()
+        bail!("Could not find destination directory");
     };
 
-    let atp = AportureTransferProtocol::<Receiver>::new(&mut pair_info, &destination);
+    let mut atp = AportureTransferProtocol::<Receiver>::new(&mut pair_info, &destination);
+
+    let (snd, rcv) = tokio::sync::mpsc::channel(64);
+
+    atp.add_progress_notifier(snd);
+    progress::init_progress_bar(rcv);
 
     let path = atp.transfer().await?;
 

@@ -10,6 +10,7 @@ mod args;
 mod commands;
 mod contacts;
 mod passphrase;
+mod progress;
 
 fn init_logger() {
     use std::io::Write;
