@@ -96,6 +96,7 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
 
         log::info!("Sending file...");
         if let Some(ref progress) = self.channel {
+            #[allow(clippy::cast_possible_truncation)]
             let _ = progress.send(file_size as usize).await;
         }
 
@@ -159,6 +160,7 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
         log::info!("Receiving file...");
 
         if let Some(ref progress) = self.channel {
+            #[allow(clippy::cast_possible_truncation)]
             let _ = progress.send(file_data.file_size as usize).await;
         }
 
@@ -183,7 +185,7 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
 
         let dest = tokio::task::spawn_blocking(move || {
             let mut suffix = 0;
-            let extension = dest.extension().unwrap_or_default().to_owned();
+            let extension = dest.extension().map(std::ffi::OsStr::to_os_string);
             let file_name = dest.file_stem().expect("Pushed before").to_owned();
 
             while dest.try_exists().is_ok_and(|b| b) {
@@ -193,12 +195,15 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
                     dest.display()
                 );
 
-                let extension = extension.clone();
-                let file_name = file_name.clone();
+                let mut file_name = file_name.clone();
 
-                dest.set_file_name(
-                    [file_name, extension].join(&OsString::from(format!(" ({suffix})."))),
-                );
+                file_name.push(OsString::from(format!(" ({suffix})")));
+                if let Some(ext) = extension.clone() {
+                    file_name.push(OsString::from("."));
+                    file_name.push(ext);
+                }
+
+                dest.set_file_name(file_name);
             }
 
             log::info!("Uncompressing file into {}", dest.display());
