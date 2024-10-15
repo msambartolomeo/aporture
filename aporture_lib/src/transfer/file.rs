@@ -16,7 +16,7 @@ use crate::protocol::{FileData, Hash, TransferResponseCode};
 const FILE_RETRIES: usize = 3;
 const BUFFER_SIZE: usize = 16 * 1024;
 
-pub async fn send_file(
+pub async fn send(
     peer: &mut EncryptedNetworkPeer,
     path: &Path,
     base: &Path,
@@ -72,7 +72,7 @@ pub async fn send_file(
     Err(super::error::Send::HashMismatch)
 }
 
-pub async fn receive_file(
+pub async fn receive(
     dest: &Path,
     peer: &mut EncryptedNetworkPeer,
     channel: &Option<Channel>,

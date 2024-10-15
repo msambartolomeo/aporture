@@ -43,7 +43,7 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
     }
 
     pub async fn transfer(self) -> Result<(), error::Send> {
-        let mut path = file::sanitize_path(&self.path)
+        let mut path = file::sanitize_path(self.path)
             .await
             .map_err(|_| error::Send::Path)?;
 
@@ -79,13 +79,11 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
                 },
             )?;
 
-        transfer_data.root_name = path
-            .file_name()
+        path.file_name()
             .expect("File Name Must be present as it was sanitized")
-            .to_owned();
+            .clone_into(&mut transfer_data.root_name);
 
-        let mut file = None;
-        if transfer_data.total_files > 150 {
+        let file = if transfer_data.total_files > 150 {
             // TODO: Tell ui compression is taking place
             log::info!("Folder will be compressed as it is too big");
 
@@ -94,15 +92,17 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
                 .expect("Task was aborted")?;
 
             let metadata = tar_file.as_file().metadata()?;
-            path = tar_file.path().to_owned();
+            path = tar_file.path().to_path_buf();
 
             transfer_data.total_files = 1;
             transfer_data.total_size = metadata.len();
             transfer_data.compressed = true;
 
             // NOTE: Save the file so that it is not dropped and not deleted
-            file = Some(tar_file);
-        }
+            Some(tar_file)
+        } else {
+            None
+        };
 
         log::info!("Sending transfer data information {transfer_data:?}");
         peer.write_ser_enc(&transfer_data).await?;
@@ -115,10 +115,10 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
         if path.is_file() {
             log::info!("Sending file...");
 
-            file::send_file(&mut peer, &path, &path, &self.channel).await?;
+            file::send(&mut peer, &path, &path, &self.channel).await?;
         } else {
             for entry in WalkDir::new(&path).follow_links(true).into_iter().skip(1) {
-                file::send_file(&mut peer, entry?.path(), &path, &self.channel).await?;
+                file::send(&mut peer, entry?.path(), &path, &self.channel).await?;
             }
         }
 
@@ -142,7 +142,7 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
         let addresses = self.pair_info.bind_addresses();
         let cipher = self.pair_info.cipher();
 
-        let mut dest = file::sanitize_path(&self.path)
+        let mut dest = file::sanitize_path(self.path)
             .await
             .map_err(|_| error::Receive::Destination)?;
 
@@ -177,7 +177,7 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
                 tempfile::NamedTempFile::new_in(parent_path)?
             };
 
-            file::receive_file(file.path(), &mut peer, &self.channel).await?;
+            file::receive(file.path(), &mut peer, &self.channel).await?;
 
             if dest.is_dir() {
                 dest.push(&transfer_data.root_name);
@@ -224,7 +224,7 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
             let mut files = 0;
 
             while files < transfer_data.total_files {
-                let file_data = file::receive_file(dir.path(), &mut peer, &self.channel).await?;
+                let file_data = file::receive(dir.path(), &mut peer, &self.channel).await?;
 
                 if file_data.is_file {
                     files += 1;
