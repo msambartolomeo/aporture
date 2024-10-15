@@ -43,7 +43,7 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
     }
 
     pub async fn transfer(self) -> Result<(), error::Send> {
-        let path = file::sanitize_path(&self.path)
+        let mut path = file::sanitize_path(&self.path)
             .await
             .map_err(|_| error::Send::Path)?;
 
@@ -84,6 +84,26 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
             .expect("File Name Must be present as it was sanitized")
             .to_owned();
 
+        let mut file = None;
+        if transfer_data.total_files > 150 {
+            // TODO: Tell ui compression is taking place
+            log::info!("Folder will be compressed as it is too big");
+
+            let tar_file = tokio::task::spawn_blocking(move || deflate::compress(&path))
+                .await
+                .expect("Task was aborted")?;
+
+            let metadata = tar_file.as_file().metadata()?;
+            path = tar_file.path().to_owned();
+
+            transfer_data.total_files = 1;
+            transfer_data.total_size = metadata.len();
+            transfer_data.compressed = true;
+
+            // NOTE: Save the file so that it is not dropped and not deleted
+            file = Some(tar_file);
+        }
+
         log::info!("Sending transfer data information {transfer_data:?}");
         peer.write_ser_enc(&transfer_data).await?;
 
@@ -102,53 +122,9 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
             }
         }
 
+        drop(file);
+
         Ok(())
-
-        // NOTE: build archive
-        // let tar_handle = tokio::task::spawn_blocking(move || deflate::compress(&path));
-
-        // log::info!("Waiting for file to be compressed...");
-
-        // // let tar_file = tokio::fs::File::from(tar_handle.await.expect("Task was aborted")?);
-        // let tar_file: tokio::fs::File = todo!();
-
-        // log::info!("Compression finished");
-
-        // let file_size = tar_file.metadata().await?.len();
-
-        // let file_data = FileData {
-        //     file_size,
-        //     // TODO: Test if this works cross platform (test also file_name.to_string_lossy())
-        //     file_name,
-        //     is_file: path.is_file(),
-        // };
-
-        // log::info!("Sending file information {file_data:?}");
-        // peer.write_ser_enc(&file_data).await?;
-
-        // log::info!("Sending file...");
-        // if let Some(ref progress) = self.channel {
-        //     #[allow(clippy::cast_possible_truncation)]
-        //     let _ = progress.send(file_size as usize).await;
-        // }
-
-        // let hash = file::hash_and_send(tar_file, &mut peer, &self.channel).await?;
-        // log::info!("File Sent");
-
-        // peer.write_ser_enc(&Hash(hash)).await?;
-
-        // let response = peer.read_ser_enc::<TransferResponseCode>().await?;
-
-        // match response {
-        //     TransferResponseCode::Ok => {
-        //         log::info!("File transferred correctly");
-        //         Ok(())
-        //     }
-        //     TransferResponseCode::HashMismatch => {
-        //         log::error!("Hash mismatch in file transfer");
-        //         Err(error::Send::HashMismatch)
-        //     }
-        // }
     }
 }
 
@@ -191,7 +167,7 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
         }
 
         if transfer_data.total_files == 1 {
-            let file = if dest.is_dir() {
+            let mut file = if dest.is_dir() {
                 tempfile::NamedTempFile::new_in(&dest)?
             } else {
                 let parent_path = dest
@@ -207,12 +183,22 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
                 dest.push(&transfer_data.root_name);
             }
 
-            let dest = file::non_existant_path(dest).await;
+            let mut dest = file::non_existant_path(dest).await;
 
-            log::info!("Persisting file to path {}", dest.display());
+            if transfer_data.compressed {
+                log::info!("Uncompressing file into path {}", dest.display());
 
-            file.persist(&dest)
-                .map_err(|_| error::Receive::Destination)?;
+                dest = tokio::task::spawn_blocking(move || {
+                    deflate::uncompress(file.as_file_mut(), dest)
+                })
+                .await
+                .expect("Task was aborted")?;
+            } else {
+                log::info!("Persisting file to path {}", dest.display());
+
+                file.persist(&dest)
+                    .map_err(|_| error::Receive::Destination)?;
+            }
 
             Ok(dest)
         } else {

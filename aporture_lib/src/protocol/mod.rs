@@ -106,6 +106,9 @@ pub struct TransferData {
     pub total_size: u64,
 
     pub root_name: OsString,
+
+    #[serde_as(as = "DisplayFromStr")]
+    pub compressed: bool,
 }
 parse!(TransferData);
 
@@ -193,6 +196,7 @@ mod test {
             total_files: 1,
             total_size: 2,
             root_name: OsString::from("/hello"),
+            compressed: false,
         }
     );
 
