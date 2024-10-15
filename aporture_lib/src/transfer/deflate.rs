@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use flate2::Compression;
 
+#[allow(unused)]
 pub fn compress(path: &Path) -> Result<File, std::io::Error> {
     let file = tempfile::tempfile()?;
 
@@ -30,6 +31,7 @@ pub fn compress(path: &Path) -> Result<File, std::io::Error> {
     Ok(file)
 }
 
+#[allow(unused)]
 pub fn uncompress(
     file: &mut File,
     mut dest: PathBuf,

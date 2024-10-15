@@ -214,6 +214,7 @@ mod error {
         ServerFailure,
         PairingFailure,
         FileNotFound,
+        FilePermission,
         HashMismatch,
         TransferFailure,
         NoContact,
@@ -247,7 +248,7 @@ mod error {
             log::warn!("Error: {e}");
 
             match e {
-                ReceiveError::File(_) | ReceiveError::Directory => Self::FileNotFound,
+                ReceiveError::File(_) | ReceiveError::Destination => Self::FileNotFound,
                 ReceiveError::Network(_) | ReceiveError::Cipher(_) => Self::TransferFailure,
                 ReceiveError::HashMismatch => Self::HashMismatch,
             }
@@ -260,6 +261,7 @@ mod error {
 
             match e {
                 SendError::File(_) | SendError::Path => Self::FileNotFound,
+                SendError::Subpath(_) => Self::FilePermission,
                 SendError::Network(_) => Self::TransferFailure,
                 SendError::HashMismatch => Self::HashMismatch,
             }

@@ -11,7 +11,7 @@ const BUFFER_SIZE: usize = 16 * 1024;
 pub async fn hash_and_send(
     file: File,
     sender: &mut EncryptedNetworkPeer,
-    channel: Option<Channel>,
+    channel: &Option<Channel>,
 ) -> Result<Hash, crate::io::Error> {
     let mut reader = BufReader::new(file);
     let mut hasher = Hasher::default();
@@ -39,7 +39,7 @@ pub async fn hash_and_receive(
     file: &mut File,
     file_size: u64,
     receiver: &mut EncryptedNetworkPeer,
-    channel: Option<Channel>,
+    channel: &Option<Channel>,
 ) -> Result<Hash, crate::io::Error> {
     let mut writer = BufWriter::new(file);
     let mut hasher = Hasher::default();
