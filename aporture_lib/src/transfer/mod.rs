@@ -1,16 +1,13 @@
-use std::ffi::OsString;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use tokio::fs::OpenOptions;
 use tokio::task::JoinSet;
 use walkdir::WalkDir;
 
-use crate::net::EncryptedNetworkPeer;
 use crate::pairing::PairInfo;
 use crate::parser::EncryptedSerdeIO;
-use crate::protocol::{FileData, Hash, TransferData, TransferResponseCode};
+use crate::protocol::TransferData;
 use crate::{Receiver, Sender, State};
 
 mod deflate;
@@ -19,8 +16,6 @@ mod peer;
 
 mod error;
 pub use error::{Receive as ReceiveError, Send as SendError};
-
-const FILE_RETRIES: usize = 3;
 
 type Channel = tokio::sync::mpsc::Sender<usize>;
 
@@ -48,7 +43,7 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
     }
 
     pub async fn transfer(self) -> Result<(), error::Send> {
-        let path = sanitize_path(&self.path)
+        let path = file::sanitize_path(&self.path)
             .await
             .map_err(|_| error::Send::Path)?;
 
@@ -100,10 +95,10 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
         if path.is_file() {
             log::info!("Sending file...");
 
-            send_file(&mut peer, &path, &path, &self.channel).await?;
+            file::send_file(&mut peer, &path, &path, &self.channel).await?;
         } else {
             for entry in WalkDir::new(&path).follow_links(true).into_iter().skip(1) {
-                send_file(&mut peer, entry?.path(), &path, &self.channel).await?;
+                file::send_file(&mut peer, entry?.path(), &path, &self.channel).await?;
             }
         }
 
@@ -157,62 +152,6 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
     }
 }
 
-async fn send_file(
-    peer: &mut EncryptedNetworkPeer,
-    path: &Path,
-    base: &Path,
-    channel: &Option<Channel>,
-) -> Result<(), error::Send> {
-    let is_file = path.is_file();
-    let file_size = if is_file { path.metadata()?.len() } else { 0 };
-
-    // TODO: Test if this works cross platform (test also file_name.to_string_lossy())
-    let file_name = path
-        .strip_prefix(base)
-        .expect("Path must be a subpath from base")
-        .to_owned()
-        .into_os_string();
-
-    log::info!("Sending file {}", path.display());
-
-    let file_data = FileData {
-        file_size,
-        file_name,
-        is_file,
-    };
-
-    peer.write_ser_enc(&file_data).await?;
-
-    // NOTE: If it is a directory finish after sending name
-    if !is_file {
-        return Ok(());
-    }
-
-    for _ in 0..FILE_RETRIES {
-        let file = OpenOptions::new().read(true).open(path).await?;
-
-        let hash = file::hash_and_send(file, peer, channel).await?;
-
-        peer.write_ser_enc(&Hash(hash)).await?;
-
-        let response = peer.read_ser_enc::<TransferResponseCode>().await?;
-
-        match response {
-            TransferResponseCode::Ok => return Ok(()),
-            TransferResponseCode::HashMismatch => {
-                log::warn!(
-                    "Hash mismatch in file transfer for {}, retrying...",
-                    path.display()
-                );
-            }
-        }
-    }
-
-    log::error!("Max retries reached for {}", path.display());
-
-    Err(error::Send::HashMismatch)
-}
-
 impl<'a> AportureTransferProtocol<'a, Receiver> {
     pub fn new(pair_info: &'a mut PairInfo, dest: &'a Path) -> Self {
         AportureTransferProtocol {
@@ -227,7 +166,7 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
         let addresses = self.pair_info.bind_addresses();
         let cipher = self.pair_info.cipher();
 
-        let mut dest = sanitize_path(&self.path)
+        let mut dest = file::sanitize_path(&self.path)
             .await
             .map_err(|_| error::Receive::Destination)?;
 
@@ -262,13 +201,13 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
                 tempfile::NamedTempFile::new_in(parent_path)?
             };
 
-            receive_file(file.path(), &mut peer, &self.channel).await?;
+            file::receive_file(file.path(), &mut peer, &self.channel).await?;
 
             if dest.is_dir() {
                 dest.push(&transfer_data.root_name);
             }
 
-            let dest = non_existant_path(dest).await;
+            let dest = file::non_existant_path(dest).await;
 
             log::info!("Persisting file to path {}", dest.display());
 
@@ -285,10 +224,6 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
                 return Err(error::Receive::Destination);
             }
 
-            // let root_data = peer.read_ser_enc::<FileData>().await?;
-
-            // log::info!("Received root data: {root_data:?}");
-
             let base_path = if tokio::fs::try_exists(&dest)
                 .await
                 .map_err(|_| error::Receive::Destination)?
@@ -303,7 +238,7 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
             let mut files = 0;
 
             while files < transfer_data.total_files {
-                let file_data = receive_file(dir.path(), &mut peer, &self.channel).await?;
+                let file_data = file::receive_file(dir.path(), &mut peer, &self.channel).await?;
 
                 if file_data.is_file {
                     files += 1;
@@ -314,7 +249,7 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
                 dest.push(transfer_data.root_name);
             }
 
-            let dest = non_existant_path(dest).await;
+            let dest = file::non_existant_path(dest).await;
 
             let tmp = dir.into_path();
             tokio::fs::rename(tmp, &dest).await?;
@@ -386,109 +321,4 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
 
         // Ok(dest)
     }
-}
-
-async fn receive_file(
-    dest: &Path,
-    peer: &mut EncryptedNetworkPeer,
-    channel: &Option<Channel>,
-) -> Result<FileData, error::Receive> {
-    let file_data = peer.read_ser_enc::<FileData>().await?;
-
-    let mut path = dest.to_owned();
-
-    let mut file = if dest.is_dir() {
-        path.push(&file_data.file_name);
-
-        if !file_data.is_file {
-            tokio::fs::create_dir(path).await?;
-
-            return Ok(file_data);
-        }
-
-        OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&path)
-            .await?
-    } else {
-        OpenOptions::new().write(true).open(&path).await?
-    };
-
-    for _ in 0..FILE_RETRIES {
-        log::info!("Receiving file {}", file_data.file_name.to_string_lossy());
-
-        let hash = file::hash_and_receive(&mut file, file_data.file_size, peer, channel).await?;
-
-        log::info!("File received");
-
-        let received_hash = peer.read_ser_enc::<Hash>().await?;
-
-        if hash == received_hash.0 {
-            peer.write_ser_enc(&TransferResponseCode::Ok).await?;
-
-            return Ok(file_data);
-        }
-
-        log::warn!("Calculated hash and received hash do not match, retrying...");
-
-        peer.write_ser_enc(&TransferResponseCode::HashMismatch)
-            .await?;
-    }
-
-    log::error!("Hash mismatch after retrying {FILE_RETRIES}");
-
-    Err(error::Receive::HashMismatch)
-}
-
-async fn non_existant_path(mut path: PathBuf) -> PathBuf {
-    let mut suffix = 0;
-    let extension = path.extension().map(std::ffi::OsStr::to_os_string);
-    let file_name = path.file_stem().expect("Pushed before").to_owned();
-
-    while tokio::fs::try_exists(&path).await.is_ok_and(|b| b) {
-        suffix += 1;
-        log::warn!(
-            "Path {} is not valid, trying suffix {suffix}",
-            path.display()
-        );
-
-        let mut file_name = file_name.clone();
-        file_name.push(OsString::from(format!(" ({suffix})")));
-
-        if let Some(ext) = extension.clone() {
-            file_name.push(OsString::from("."));
-            file_name.push(ext);
-        }
-
-        path.set_file_name(file_name);
-    }
-
-    path
-}
-
-async fn sanitize_path(path: &Path) -> Result<PathBuf, std::io::Error> {
-    if let Ok(sanitized) = tokio::fs::canonicalize(&path).await {
-        let metadata = tokio::fs::metadata(&sanitized).await?;
-
-        if !metadata.is_dir() && !metadata.is_file() {
-            return Err(std::io::Error::from(std::io::ErrorKind::Unsupported));
-        }
-
-        return Ok(sanitized);
-    }
-
-    let file_name = path
-        .file_name()
-        .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::NotFound))?;
-
-    let parent = match path.parent() {
-        Some(p) if p == PathBuf::default() => tokio::fs::canonicalize(PathBuf::from(".")).await?,
-        Some(p) => tokio::fs::canonicalize(p).await?,
-        None => tokio::fs::canonicalize(path).await?,
-    };
-
-    let sanitized = parent.join(file_name);
-
-    Ok(sanitized)
 }
