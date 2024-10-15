@@ -18,10 +18,19 @@ mod peer;
 mod error;
 pub use error::{Receive as ReceiveError, Send as SendError};
 
+type Channel = tokio::sync::mpsc::Sender<usize>;
+
 pub struct AportureTransferProtocol<'a, S: State> {
     pair_info: &'a mut PairInfo,
     path: &'a Path,
+    channel: Option<Channel>,
     _phantom: PhantomData<S>,
+}
+
+impl<'a, S: State> AportureTransferProtocol<'a, S> {
+    pub fn add_progress_notifier(&mut self, channel: Channel) {
+        self.channel = Some(channel);
+    }
 }
 
 impl<'a> AportureTransferProtocol<'a, Sender> {
@@ -29,6 +38,7 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
         AportureTransferProtocol {
             pair_info,
             path,
+            channel: None,
             _phantom: PhantomData,
         }
     }
@@ -66,7 +76,11 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
 
         let mut peer = peer::find(options_factory, self.pair_info).await;
 
+        log::info!("Waiting for file to be compressed...");
+
         let tar_file = tokio::fs::File::from(tar_handle.await.expect("Task was aborted")?);
+
+        log::info!("Compression finished");
 
         let file_size = tar_file.metadata().await?.len();
 
@@ -80,11 +94,16 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
         log::info!("Sending file information {file_data:?}");
         peer.write_ser_enc(&file_data).await?;
 
-        let hash = file::hash_and_send(tar_file, &mut peer).await?;
-
         log::info!("Sending file...");
-        peer.write_ser_enc(&Hash(hash)).await?;
+        if let Some(ref progress) = self.channel {
+            #[allow(clippy::cast_possible_truncation)]
+            let _ = progress.send(file_size as usize).await;
+        }
+
+        let hash = file::hash_and_send(tar_file, &mut peer, self.channel).await?;
         log::info!("File Sent");
+
+        peer.write_ser_enc(&Hash(hash)).await?;
 
         let response = peer.read_ser_enc::<TransferResponseCode>().await?;
 
@@ -106,6 +125,7 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
         AportureTransferProtocol {
             pair_info,
             path: dest,
+            channel: None,
             _phantom: PhantomData,
         }
     }
@@ -138,7 +158,15 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
         let mut tar_file = tokio::fs::File::from(tempfile::tempfile()?);
 
         log::info!("Receiving file...");
-        let hash = file::hash_and_receive(&mut tar_file, file_data.file_size, &mut peer).await?;
+
+        if let Some(ref progress) = self.channel {
+            #[allow(clippy::cast_possible_truncation)]
+            let _ = progress.send(file_data.file_size as usize).await;
+        }
+
+        let hash =
+            file::hash_and_receive(&mut tar_file, file_data.file_size, &mut peer, self.channel)
+                .await?;
         log::info!("File received");
 
         let received_hash = peer.read_ser_enc::<Hash>().await?;
@@ -157,7 +185,7 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
 
         let dest = tokio::task::spawn_blocking(move || {
             let mut suffix = 0;
-            let extension = dest.extension().unwrap_or_default().to_owned();
+            let extension = dest.extension().map(std::ffi::OsStr::to_os_string);
             let file_name = dest.file_stem().expect("Pushed before").to_owned();
 
             while dest.try_exists().is_ok_and(|b| b) {
@@ -167,12 +195,15 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
                     dest.display()
                 );
 
-                let extension = extension.clone();
-                let file_name = file_name.clone();
+                let mut file_name = file_name.clone();
 
-                dest.set_file_name(
-                    [file_name, extension].join(&OsString::from(format!(" ({suffix})."))),
-                );
+                file_name.push(OsString::from(format!(" ({suffix})")));
+                if let Some(ext) = extension.clone() {
+                    file_name.push(OsString::from("."));
+                    file_name.push(ext);
+                }
+
+                dest.set_file_name(file_name);
             }
 
             log::info!("Uncompressing file into {}", dest.display());

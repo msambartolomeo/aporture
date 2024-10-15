@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
 use clap::Parser;
 use colored::Colorize;
 
@@ -10,6 +10,7 @@ mod args;
 mod commands;
 mod contacts;
 mod passphrase;
+mod progress;
 
 fn init_logger() {
     use std::io::Write;
@@ -41,10 +42,6 @@ async fn main() -> Result<()> {
 
     match args.command {
         Commands::Send { path, method, save } => {
-            if !path.is_file() {
-                bail!("{} is not a valid file", path.display())
-            }
-
             let passphrase_method = if let Some(passphrase) = method.passphrase {
                 Method::Direct(passphrase)
             } else if let Some(ref name) = method.contact {

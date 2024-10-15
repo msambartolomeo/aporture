@@ -14,6 +14,7 @@ tabled = { version = "0.16.0", default-features = false, features = ["std"] }
 anyhow = "1.0.89"
 rpassword = "7.3.1"
 colored = "2.1.0"
+indicatif = "0.17.8"
 
 # NOTE: Shared dependencies
 aporture = { workspace = true, features = ["full"] }
