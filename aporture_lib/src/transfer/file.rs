@@ -7,6 +7,7 @@ use tokio::fs::OpenOptions;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
 
 use super::Channel;
+use super::ChannelMessage;
 use crate::crypto;
 use crate::crypto::hasher::Hasher;
 use crate::net::EncryptedNetworkPeer;
@@ -142,7 +143,7 @@ async fn hash_and_send(
 
         if let Some(progress) = channel.as_ref() {
             // NOTE: Ignore error if the channel is dropped
-            let _ = progress.send(count).await;
+            let _ = progress.send(ChannelMessage::Progress(count)).await;
         }
 
         hasher.add(&buffer[..count]);
@@ -176,7 +177,7 @@ async fn hash_and_receive(
 
         if let Some(progress) = channel.as_ref() {
             // NOTE: Ignore error if the channel is dropped
-            let _ = progress.send(count).await;
+            let _ = progress.send(ChannelMessage::Progress(count)).await;
         }
 
         hasher.add(&buffer[..count]);

@@ -7,8 +7,18 @@ use walkdir::WalkDir;
 
 use crate::pairing::PairInfo;
 use crate::parser::EncryptedSerdeIO;
-use crate::protocol::TransferData;
+use crate::protocol::{PairingResponseCode, TransferData, TransferResponseCode};
 use crate::{Receiver, Sender, State};
+
+type Channel = tokio::sync::mpsc::Sender<ChannelMessage>;
+
+pub enum ChannelMessage {
+    Compression,
+    ProgressSize(usize),
+    Progress(usize),
+    Uncompressing,
+    Finished,
+}
 
 mod deflate;
 mod file;
@@ -16,8 +26,6 @@ mod peer;
 
 mod error;
 pub use error::{Receive as ReceiveError, Send as SendError};
-
-type Channel = tokio::sync::mpsc::Sender<usize>;
 
 pub struct AportureTransferProtocol<'a, S: State> {
     pair_info: &'a mut PairInfo,
@@ -84,7 +92,15 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
             .clone_into(&mut transfer_data.root_name);
 
         let file = if transfer_data.total_files > 150 {
-            // TODO: Tell ui compression is taking place
+            if let Some(ref channel) = self.channel {
+                let _ = channel.send(ChannelMessage::Compression).await;
+            }
+
+            transfer_data.compressed = true;
+
+            log::info!("Sending original data information {transfer_data:?}");
+            peer.write_ser_enc(&transfer_data).await?;
+
             log::info!("Folder will be compressed as it is too big");
 
             let tar_file = tokio::task::spawn_blocking(move || deflate::compress(&path))
@@ -96,7 +112,6 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
 
             transfer_data.total_files = 1;
             transfer_data.total_size = metadata.len();
-            transfer_data.compressed = true;
 
             // NOTE: Save the file so that it is not dropped and not deleted
             Some(tar_file)
@@ -109,7 +124,11 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
 
         if let Some(ref progress) = self.channel {
             #[allow(clippy::cast_possible_truncation)]
-            let _ = progress.send(transfer_data.total_size as usize).await;
+            let _ = progress
+                .send(ChannelMessage::ProgressSize(
+                    transfer_data.total_size as usize,
+                ))
+                .await;
         }
 
         if path.is_file() {
@@ -122,9 +141,19 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
             }
         }
 
+        if let Some(ref channel) = self.channel {
+            let _ = channel.send(ChannelMessage::Finished).await;
+            if transfer_data.compressed {
+                let _ = channel.send(ChannelMessage::Uncompressing).await;
+            }
+        }
+
         drop(file);
 
-        Ok(())
+        match peer.read_ser_enc::<TransferResponseCode>().await? {
+            TransferResponseCode::Ok => Ok(()),
+            TransferResponseCode::HashMismatch => Err(error::Send::HashMismatch),
+        }
     }
 }
 
@@ -161,12 +190,20 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
         let transfer_data = peer.read_ser_enc::<TransferData>().await?;
         log::info!("File data received: {transfer_data:?}");
 
-        if let Some(ref progress) = self.channel {
+        if let Some(ref channel) = self.channel {
             #[allow(clippy::cast_possible_truncation)]
-            let _ = progress.send(transfer_data.total_size as usize).await;
+            let _ = channel
+                .send(ChannelMessage::ProgressSize(
+                    transfer_data.total_size as usize,
+                ))
+                .await;
+
+            if transfer_data.compressed {
+                let _ = channel.send(ChannelMessage::Compression).await;
+            }
         }
 
-        if transfer_data.total_files == 1 {
+        let dest = if transfer_data.total_files == 1 {
             let mut file = if dest.is_dir() {
                 tempfile::NamedTempFile::new_in(&dest)?
             } else {
@@ -178,6 +215,13 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
             };
 
             file::receive(file.path(), &mut peer, &self.channel).await?;
+
+            if let Some(ref channel) = self.channel {
+                let _ = channel.send(ChannelMessage::Finished).await;
+                if transfer_data.compressed {
+                    let _ = channel.send(ChannelMessage::Uncompressing).await;
+                }
+            }
 
             if dest.is_dir() {
                 dest.push(&transfer_data.root_name);
@@ -200,7 +244,7 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
                     .map_err(|_| error::Receive::Destination)?;
             }
 
-            Ok(dest)
+            dest
         } else {
             let parent = dest
                 .parent()
@@ -231,6 +275,10 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
                 }
             }
 
+            if let Some(ref channel) = self.channel {
+                let _ = channel.send(ChannelMessage::Finished).await;
+            }
+
             if dest.is_dir() {
                 dest.push(transfer_data.root_name);
             }
@@ -240,71 +288,11 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
             let tmp = dir.into_path();
             tokio::fs::rename(tmp, &dest).await?;
 
-            Ok(dest)
-        }
+            dest
+        };
 
-        // log::info!("Saving to path {}", dest.display());
+        peer.write_ser_enc(&PairingResponseCode::Ok).await?;
 
-        // let mut tar_file = tokio::fs::File::from(tempfile::tempfile()?);
-
-        // log::info!("Receiving file...");
-
-        // if let Some(ref progress) = self.channel {
-        //     #[allow(clippy::cast_possible_truncation)]
-        //     let _ = progress.send(file_data.file_size as usize).await;
-        // }
-
-        // let hash =
-        //     file::hash_and_receive(&mut tar_file, file_data.file_size, &mut peer, &self.channel)
-        //         .await?;
-        // log::info!("File received");
-
-        // let received_hash = peer.read_ser_enc::<Hash>().await?;
-
-        // if hash != received_hash.0 {
-        //     log::error!("Calculated hash and received hash do not match");
-
-        //     peer.write_ser_enc(&TransferResponseCode::HashMismatch)
-        //         .await?;
-
-        //     return Err(error::Receive::HashMismatch);
-        // }
-
-        // let mut tar_file = tar_file.into_std().await;
-        // tar_file.rewind()?;
-
-        // let dest = tokio::task::spawn_blocking(move || {
-        //     let mut suffix = 0;
-        //     let extension = dest.extension().map(std::ffi::OsStr::to_os_string);
-        //     let file_name = dest.file_stem().expect("Pushed before").to_owned();
-
-        //     while dest.try_exists().is_ok_and(|b| b) {
-        //         suffix += 1;
-        //         log::warn!(
-        //             "Path {} is not valid, trying suffix {suffix}",
-        //             dest.display()
-        //         );
-
-        //         let mut file_name = file_name.clone();
-
-        //         file_name.push(OsString::from(format!(" ({suffix})")));
-        //         if let Some(ext) = extension.clone() {
-        //             file_name.push(OsString::from("."));
-        //             file_name.push(ext);
-        //         }
-
-        //         dest.set_file_name(file_name);
-        //     }
-
-        //     log::info!("Uncompressing file into {}", dest.display());
-
-        //     deflate::uncompress(&mut tar_file, dest, file_data.is_file)
-        // })
-        // .await
-        // .expect("Task was not aborted")?;
-
-        // peer.write_ser_enc(&TransferResponseCode::Ok).await?;
-
-        // Ok(dest)
+        Ok(dest)
     }
 }

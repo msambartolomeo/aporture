@@ -4,21 +4,38 @@ use indicatif::{ProgressBar, ProgressState, ProgressStyle};
 use tokio::sync::mpsc::Receiver;
 use tokio::task::JoinHandle;
 
-pub fn init_progress_bar(mut channel: Receiver<usize>) -> JoinHandle<()> {
+use aporture::transfer::ChannelMessage;
+
+pub fn init_progress_bar(mut channel: Receiver<ChannelMessage>) -> JoinHandle<()> {
     tokio::spawn(async move {
-        let Some(total) = channel.recv().await else {
-            return;
-        };
+        let mut progress = None;
 
-        let progress = ProgressBar::new(total as u64);
-
-        progress.set_style(style());
-
-        while let Some(n) = channel.recv().await {
-            progress.inc(n as u64);
+        while let Some(message) = channel.recv().await {
+            match message {
+                ChannelMessage::Compression => {
+                    println!("The folder to send had too many files!");
+                    println!("Please be patient, it will be compressed before the transfer...");
+                }
+                ChannelMessage::ProgressSize(total) => {
+                    let p = ProgressBar::new(total as u64);
+                    p.set_style(style());
+                    progress = Some(p)
+                }
+                ChannelMessage::Progress(n) => {
+                    if let Some(ref p) = progress {
+                        p.inc(n as u64);
+                    }
+                }
+                ChannelMessage::Uncompressing => {
+                    println!("Waiting for transfered file to be uncompressed...");
+                }
+                ChannelMessage::Finished => {
+                    if let Some(p) = progress.take() {
+                        p.finish();
+                    }
+                }
+            }
         }
-
-        progress.finish();
     })
 }
 
