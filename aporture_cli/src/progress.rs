@@ -19,7 +19,7 @@ pub fn init_progress_bar(mut channel: Receiver<ChannelMessage>) -> JoinHandle<()
                 ChannelMessage::ProgressSize(total) => {
                     let p = ProgressBar::new(total as u64);
                     p.set_style(style());
-                    progress = Some(p)
+                    progress = Some(p);
                 }
                 ChannelMessage::Progress(n) => {
                     if let Some(ref p) = progress {
