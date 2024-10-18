@@ -6,13 +6,13 @@ use tokio::fs::File;
 use tokio::fs::OpenOptions;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
 
-use super::Channel;
-use super::ChannelMessage;
 use crate::crypto;
 use crate::crypto::hasher::Hasher;
 use crate::net::EncryptedNetworkPeer;
 use crate::parser::EncryptedSerdeIO;
 use crate::protocol::{FileData, Hash, TransferResponseCode};
+use crate::transfer::channel;
+use crate::transfer::channel::{Channel, Message};
 
 const FILE_RETRIES: usize = 3;
 const BUFFER_SIZE: usize = 16 * 1024;
@@ -141,10 +141,7 @@ async fn hash_and_send(
             break;
         }
 
-        if let Some(progress) = channel.as_ref() {
-            // NOTE: Ignore error if the channel is dropped
-            let _ = progress.send(ChannelMessage::Progress(count)).await;
-        }
+        channel::send(channel, Message::Progress(count)).await;
 
         hasher.add(&buffer[..count]);
         sender.write_enc(&mut buffer[..count]).await?;
@@ -175,10 +172,7 @@ async fn hash_and_receive(
             return Err(std::io::Error::from(std::io::ErrorKind::ConnectionReset).into());
         }
 
-        if let Some(progress) = channel.as_ref() {
-            // NOTE: Ignore error if the channel is dropped
-            let _ = progress.send(ChannelMessage::Progress(count)).await;
-        }
+        channel::send(channel, Message::Progress(count)).await;
 
         hasher.add(&buffer[..count]);
         writer.write_all(&buffer[..count]).await?;

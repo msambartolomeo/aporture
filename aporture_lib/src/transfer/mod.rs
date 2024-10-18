@@ -5,26 +5,20 @@ use std::sync::Arc;
 use tokio::task::JoinSet;
 use walkdir::WalkDir;
 
+use self::channel::{Channel, Message};
+use crate::net::EncryptedNetworkPeer;
 use crate::pairing::PairInfo;
 use crate::parser::EncryptedSerdeIO;
 use crate::protocol::{PairingResponseCode, TransferData, TransferResponseCode};
 use crate::{Receiver, Sender, State};
 
-type Channel = tokio::sync::mpsc::Sender<ChannelMessage>;
-
-pub enum ChannelMessage {
-    Compression,
-    ProgressSize(usize),
-    Progress(usize),
-    Uncompressing,
-    Finished,
-}
-
+mod channel;
 mod deflate;
+mod error;
 mod file;
 mod peer;
 
-mod error;
+pub use channel::Message as ChannelMessage;
 pub use error::{Receive as ReceiveError, Send as SendError};
 
 pub struct AportureTransferProtocol<'a, S: State> {
@@ -122,14 +116,9 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
         log::info!("Sending transfer data information {transfer_data:?}");
         peer.write_ser_enc(&transfer_data).await?;
 
-        if let Some(ref progress) = self.channel {
-            #[allow(clippy::cast_possible_truncation)]
-            let _ = progress
-                .send(ChannelMessage::ProgressSize(
-                    transfer_data.total_size as usize,
-                ))
-                .await;
-        }
+        #[allow(clippy::cast_possible_truncation)]
+        let progress_len = transfer_data.total_size as usize;
+        channel::send(&self.channel, Message::ProgressSize(progress_len)).await;
 
         if path.is_file() {
             log::info!("Sending file...");
@@ -141,14 +130,13 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
             }
         }
 
-        if let Some(ref channel) = self.channel {
-            let _ = channel.send(ChannelMessage::Finished).await;
-            if transfer_data.compressed {
-                let _ = channel.send(ChannelMessage::Uncompressing).await;
-            }
-        }
+        // NOTE: keep the file alve until it is finished sending
+        drop(tar_file_holder);
 
-        drop(file);
+        channel::send(&self.channel, Message::Finished).await;
+        if transfer_data.compressed {
+            channel::send(&self.channel, Message::Uncompressing).await;
+        }
 
         match peer.read_ser_enc::<TransferResponseCode>().await? {
             TransferResponseCode::Ok => Ok(()),
@@ -192,23 +180,16 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
 
         // NOTE: If the data should be compressed compressed, the sender will send the compressed information again
         if transfer_data.compressed {
-            if let Some(ref channel) = self.channel {
-                let _ = channel.send(ChannelMessage::Compression).await;
-            }
+            channel::send(&self.channel, Message::Compression).await;
 
             log::info!("Receiving tar.gz information");
             transfer_data = peer.read_ser_enc::<TransferData>().await?;
             log::info!("tar.gz received: {transfer_data:?}");
         }
 
-        if let Some(ref channel) = self.channel {
-            #[allow(clippy::cast_possible_truncation)]
-            let _ = channel
-                .send(ChannelMessage::ProgressSize(
-                    transfer_data.total_size as usize,
-                ))
-                .await;
-        }
+        #[allow(clippy::cast_possible_truncation)]
+        let progress_len = transfer_data.total_size as usize;
+        channel::send(&self.channel, Message::ProgressSize(progress_len)).await;
 
         let dest = if transfer_data.total_files == 1 {
             let mut file = if dest.is_dir() {
@@ -223,9 +204,7 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
 
             file::receive(file.path(), &mut peer, &self.channel).await?;
 
-            if let Some(ref channel) = self.channel {
-                let _ = channel.send(ChannelMessage::Finished).await;
-            }
+            channel::send(&self.channel, Message::Finished).await;
 
             if dest.is_dir() {
                 dest.push(&transfer_data.root_name);
@@ -234,10 +213,7 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
             let mut dest = file::non_existant_path(dest).await;
 
             if transfer_data.compressed {
-                if let Some(ref channel) = self.channel {
-                    let _ = channel.send(ChannelMessage::Uncompressing).await;
-                }
-
+                channel::send(&self.channel, Message::Uncompressing).await;
                 log::info!("Uncompressing file into path {}", dest.display());
 
                 dest = tokio::task::spawn_blocking(move || {
@@ -283,9 +259,7 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
                 }
             }
 
-            if let Some(ref channel) = self.channel {
-                let _ = channel.send(ChannelMessage::Finished).await;
-            }
+            channel::send(&self.channel, Message::Finished).await;
 
             if dest.is_dir() {
                 dest.push(transfer_data.root_name);
