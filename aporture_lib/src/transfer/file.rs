@@ -1,18 +1,136 @@
+use std::ffi::OsString;
+use std::path::Path;
+use std::path::PathBuf;
+
 use tokio::fs::File;
+use tokio::fs::OpenOptions;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
 
-use super::Channel;
-use crate::crypto::hasher::{Hash, Hasher};
+use crate::crypto;
+use crate::crypto::hasher::Hasher;
 use crate::net::EncryptedNetworkPeer;
 use crate::parser::EncryptedSerdeIO;
+use crate::protocol::{FileData, Hash, TransferResponseCode};
+use crate::transfer::channel;
+use crate::transfer::channel::{Channel, Message};
 
+const FILE_RETRIES: usize = 3;
 const BUFFER_SIZE: usize = 16 * 1024;
 
-pub async fn hash_and_send(
+pub async fn send(
+    peer: &mut EncryptedNetworkPeer,
+    path: &Path,
+    base: &Path,
+    channel: &Option<Channel>,
+) -> Result<(), super::error::Send> {
+    let is_file = path.is_file();
+    let file_size = if is_file { path.metadata()?.len() } else { 0 };
+
+    // TODO: Test if this works cross platform (test also file_name.to_string_lossy())
+    let file_name = path
+        .strip_prefix(base)
+        .expect("Path must be a subpath from base")
+        .to_owned()
+        .into_os_string();
+
+    log::info!("Sending file {}", path.display());
+
+    let file_data = FileData {
+        file_size,
+        file_name,
+        is_file,
+    };
+
+    peer.write_ser_enc(&file_data).await?;
+
+    // NOTE: If it is a directory finish after sending name
+    if !is_file {
+        return Ok(());
+    }
+
+    for _ in 0..FILE_RETRIES {
+        let file = OpenOptions::new().read(true).open(path).await?;
+
+        let hash = hash_and_send(file, peer, channel).await?;
+
+        peer.write_ser_enc(&Hash(hash)).await?;
+
+        let response = peer.read_ser_enc::<TransferResponseCode>().await?;
+
+        match response {
+            TransferResponseCode::Ok => return Ok(()),
+            TransferResponseCode::HashMismatch => {
+                log::warn!(
+                    "Hash mismatch in file transfer for {}, retrying...",
+                    path.display()
+                );
+            }
+        }
+    }
+
+    log::error!("Max retries reached for {}", path.display());
+
+    Err(super::error::Send::HashMismatch)
+}
+
+pub async fn receive(
+    dest: &Path,
+    peer: &mut EncryptedNetworkPeer,
+    channel: &Option<Channel>,
+) -> Result<FileData, super::error::Receive> {
+    let file_data = peer.read_ser_enc::<FileData>().await?;
+
+    let mut path = dest.to_owned();
+
+    let mut file = if dest.is_dir() {
+        path.push(&file_data.file_name);
+
+        if !file_data.is_file {
+            tokio::fs::create_dir(path).await?;
+
+            return Ok(file_data);
+        }
+
+        OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .await?
+    } else {
+        OpenOptions::new().write(true).open(&path).await?
+    };
+
+    for _ in 0..FILE_RETRIES {
+        log::info!("Receiving file {}", file_data.file_name.to_string_lossy());
+
+        let hash = hash_and_receive(&mut file, file_data.file_size, peer, channel).await?;
+
+        log::info!("File received");
+
+        let received_hash = peer.read_ser_enc::<Hash>().await?;
+
+        if hash == received_hash.0 {
+            peer.write_ser_enc(&TransferResponseCode::Ok).await?;
+
+            return Ok(file_data);
+        }
+
+        log::warn!("Calculated hash and received hash do not match, retrying...");
+
+        peer.write_ser_enc(&TransferResponseCode::HashMismatch)
+            .await?;
+    }
+
+    log::error!("Hash mismatch after retrying {FILE_RETRIES}");
+
+    Err(super::error::Receive::HashMismatch)
+}
+
+async fn hash_and_send(
     file: File,
     sender: &mut EncryptedNetworkPeer,
-    channel: Option<Channel>,
-) -> Result<Hash, crate::io::Error> {
+    channel: &Option<Channel>,
+) -> Result<crypto::hasher::Hash, crate::io::Error> {
     let mut reader = BufReader::new(file);
     let mut hasher = Hasher::default();
     let mut buffer = vec![0; BUFFER_SIZE];
@@ -23,10 +141,7 @@ pub async fn hash_and_send(
             break;
         }
 
-        if let Some(progress) = channel.as_ref() {
-            // NOTE: Ignore error if the channel is dropped
-            let _ = progress.send(count).await;
-        }
+        channel::send(channel, Message::Progress(count)).await;
 
         hasher.add(&buffer[..count]);
         sender.write_enc(&mut buffer[..count]).await?;
@@ -35,12 +150,12 @@ pub async fn hash_and_send(
     Ok(hasher.finalize())
 }
 
-pub async fn hash_and_receive(
+async fn hash_and_receive(
     file: &mut File,
     file_size: u64,
     receiver: &mut EncryptedNetworkPeer,
-    channel: Option<Channel>,
-) -> Result<Hash, crate::io::Error> {
+    channel: &Option<Channel>,
+) -> Result<crypto::hasher::Hash, crate::io::Error> {
     let mut writer = BufWriter::new(file);
     let mut hasher = Hasher::default();
     let mut buffer = vec![0; BUFFER_SIZE];
@@ -57,10 +172,7 @@ pub async fn hash_and_receive(
             return Err(std::io::Error::from(std::io::ErrorKind::ConnectionReset).into());
         }
 
-        if let Some(progress) = channel.as_ref() {
-            // NOTE: Ignore error if the channel is dropped
-            let _ = progress.send(count).await;
-        }
+        channel::send(channel, Message::Progress(count)).await;
 
         hasher.add(&buffer[..count]);
         writer.write_all(&buffer[..count]).await?;
@@ -69,4 +181,56 @@ pub async fn hash_and_receive(
     writer.flush().await?;
 
     Ok(hasher.finalize())
+}
+
+pub async fn non_existant_path(mut path: PathBuf) -> PathBuf {
+    let mut suffix = 0;
+    let extension = path.extension().map(std::ffi::OsStr::to_os_string);
+    let file_name = path.file_stem().expect("Pushed before").to_owned();
+
+    while tokio::fs::try_exists(&path).await.is_ok_and(|b| b) {
+        suffix += 1;
+        log::warn!(
+            "Path {} is not valid, trying suffix {suffix}",
+            path.display()
+        );
+
+        let mut file_name = file_name.clone();
+        file_name.push(OsString::from(format!(" ({suffix})")));
+
+        if let Some(ext) = extension.clone() {
+            file_name.push(OsString::from("."));
+            file_name.push(ext);
+        }
+
+        path.set_file_name(file_name);
+    }
+
+    path
+}
+
+pub async fn sanitize_path(path: &Path) -> Result<PathBuf, std::io::Error> {
+    if let Ok(sanitized) = tokio::fs::canonicalize(&path).await {
+        let metadata = tokio::fs::metadata(&sanitized).await?;
+
+        if !metadata.is_dir() && !metadata.is_file() {
+            return Err(std::io::Error::from(std::io::ErrorKind::Unsupported));
+        }
+
+        return Ok(sanitized);
+    }
+
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::NotFound))?;
+
+    let parent = match path.parent() {
+        Some(p) if p == PathBuf::default() => tokio::fs::canonicalize(PathBuf::from(".")).await?,
+        Some(p) => tokio::fs::canonicalize(p).await?,
+        None => tokio::fs::canonicalize(path).await?,
+    };
+
+    let sanitized = parent.join(file_name);
+
+    Ok(sanitized)
 }

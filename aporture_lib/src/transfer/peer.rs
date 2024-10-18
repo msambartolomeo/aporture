@@ -94,15 +94,19 @@ async fn exchange_hello(
         .await
         .map_err(|e| (e, a))?;
 
-    let difference = std::time::SystemTime::now()
+    let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::SystemTime::UNIX_EPOCH)
-        .expect("Now is after unix epoch")
-        .checked_sub(peer_hello.timestamp);
+        .expect("Now is after unix epoch");
 
-    if &peer_hello.tag == b"aporture" && difference.is_some_and(|s| s.as_secs() < 11) {
+    let difference = timestamp
+        .checked_sub(peer_hello.timestamp)
+        .or_else(|| peer_hello.timestamp.checked_sub(timestamp));
+
+    if &peer_hello.tag == b"aporture" && difference.is_some_and(|s| s.as_secs() < 15) {
         log::info!("Connected to peer on {}", a);
         Ok(peer)
     } else {
+        log::error!("Invalid hello {hello:?} or difference {difference:?}");
         Err((crate::io::Error::Custom("Invalid tag and timestamp"), a))
     }
 }

@@ -187,6 +187,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "walkdir",
 ]
 
 [[package]]
@@ -370,9 +371,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.1.28"
+version = "1.1.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e80e3b6a3ab07840e1cae9b0666a63970dc28e8ed5ffbcdacbfc760c281bfc1"
+checksum = "b16803a61b81d9eabb7eae2588776c4c1e584b738ede45fdbb4c972cec1e9945"
 dependencies = [
  "shlex",
 ]
@@ -1918,9 +1919,9 @@ checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
 
 [[package]]
 name = "relm4"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf0363f92b6a7eefd985b47f27b7ae168dd2fd5cd4013a338c9b111c33744d1f"
+checksum = "30837553c1a8cfea1a404c83ec387c5c8ff9358e1060b057c274c5daa5035ad1"
 dependencies = [
  "flume",
  "fragile",
@@ -1965,9 +1966,9 @@ dependencies = [
 
 [[package]]
 name = "relm4-macros"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc5885640821d60062497737dd42fd04248d13c7ecccee620caaa4b210fe9905"
+checksum = "5a895a7455441a857d100ca679bd24a92f91d28b5e3df63296792ac1af2eddde"
 dependencies = [
  "proc-macro2",
  "quote",

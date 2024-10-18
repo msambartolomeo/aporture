@@ -99,6 +99,20 @@ impl Default for TransferHello {
 }
 
 #[serde_as]
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TransferData {
+    pub total_files: u64,
+
+    pub total_size: u64,
+
+    pub root_name: OsString,
+
+    #[serde_as(as = "DisplayFromStr")]
+    pub compressed: bool,
+}
+parse!(TransferData);
+
+#[serde_as]
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileData {
     pub file_size: u64,
@@ -173,6 +187,16 @@ mod test {
         NegotiationPayload {
             addresses: vec![SocketAddr::from(([0, 0, 0, 0], 0))],
             save_contact: true,
+        }
+    );
+
+    test_parsed!(
+        TransferData,
+        TransferData {
+            total_files: 1,
+            total_size: 2,
+            root_name: OsString::from("/hello"),
+            compressed: false,
         }
     );
 
