@@ -120,7 +120,7 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
         let addresses = self.pair_info.bind_addresses();
         let cipher = self.pair_info.cipher();
 
-        let mut dest = file::sanitize_path(self.path)
+        let dest = file::sanitize_path(self.path)
             .await
             .map_err(|_| error::Receive::Destination)?;
 
@@ -153,85 +153,9 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
         channel::send(&self.channel, Message::ProgressSize(progress_len)).await;
 
         let dest = if transfer_data.total_files == 1 {
-            let mut file = if dest.is_dir() {
-                tempfile::NamedTempFile::new_in(&dest)?
-            } else {
-                let parent_path = dest
-                    .parent()
-                    .expect("Parent must exist as path is sanitized");
-
-                tempfile::NamedTempFile::new_in(parent_path)?
-            };
-
-            file::receive(file.path(), &mut peer, &self.channel).await?;
-
-            channel::send(&self.channel, Message::Finished).await;
-
-            if dest.is_dir() {
-                dest.push(&transfer_data.root_name);
-            }
-
-            let mut dest = file::non_existant_path(dest).await;
-
-            if transfer_data.compressed {
-                channel::send(&self.channel, Message::Uncompressing).await;
-                log::info!("Uncompressing file into path {}", dest.display());
-
-                dest = tokio::task::spawn_blocking(move || {
-                    deflate::uncompress(file.as_file_mut(), dest)
-                })
-                .await
-                .expect("Task was aborted")?;
-            } else {
-                log::info!("Persisting file to path {}", dest.display());
-
-                file.persist(&dest)
-                    .map_err(|_| error::Receive::Destination)?;
-            }
-
-            dest
+            receive_file(dest, &transfer_data, &mut peer, &self.channel).await?
         } else {
-            let parent = dest
-                .parent()
-                .expect("Parent must exist as path is sanitized");
-
-            if dest.is_file() || !parent.exists() {
-                return Err(error::Receive::Destination);
-            }
-
-            let base_path = if tokio::fs::try_exists(&dest)
-                .await
-                .map_err(|_| error::Receive::Destination)?
-            {
-                &dest
-            } else {
-                parent
-            };
-
-            let dir = tempfile::tempdir_in(base_path)?;
-
-            let mut files = 0;
-
-            while files < transfer_data.total_files {
-                let file_data = file::receive(dir.path(), &mut peer, &self.channel).await?;
-
-                if file_data.is_file {
-                    files += 1;
-                }
-            }
-
-            channel::send(&self.channel, Message::Finished).await;
-
-            if dest.is_dir() {
-                dest.push(transfer_data.root_name);
-            }
-
-            let dest = file::non_existant_path(dest).await;
-
-            let tmp = dir.into_path();
-            tokio::fs::rename(tmp, &dest).await?;
-
-            dest
+            receive_folder(dest, transfer_data, &mut peer, &self.channel).await?
         };
 
         peer.write_ser_enc(&PairingResponseCode::Ok).await?;
@@ -293,10 +217,94 @@ async fn compress_folder(
     Ok(tar_file)
 }
 
-async fn receive_file() -> Result<(), error::Receive> {
-    todo!()
+async fn receive_file(
+    mut dest: PathBuf,
+    transfer_data: &TransferData,
+    peer: &mut EncryptedNetworkPeer,
+    channel: &Option<Channel>,
+) -> Result<PathBuf, error::Receive> {
+    let mut file = if dest.is_dir() {
+        tempfile::NamedTempFile::new_in(&dest)?
+    } else {
+        let parent_path = dest
+            .parent()
+            .expect("Parent must exist as path is sanitized");
+
+        tempfile::NamedTempFile::new_in(parent_path)?
+    };
+
+    file::receive(file.path(), peer, channel).await?;
+
+    channel::send(channel, Message::Finished).await;
+
+    if dest.is_dir() {
+        dest.push(&transfer_data.root_name);
+    }
+
+    let mut dest = file::non_existant_path(dest).await;
+
+    if transfer_data.compressed {
+        channel::send(channel, Message::Uncompressing).await;
+        log::info!("Uncompressing file into path {}", dest.display());
+
+        dest = tokio::task::spawn_blocking(move || deflate::uncompress(file.as_file_mut(), dest))
+            .await
+            .expect("Task was aborted")?;
+    } else {
+        log::info!("Persisting file to path {}", dest.display());
+
+        file.persist(&dest)
+            .map_err(|_| error::Receive::Destination)?;
+    }
+
+    Ok(dest)
 }
 
-async fn receive_folder() -> Result<(), error::Receive> {
-    todo!()
+async fn receive_folder(
+    mut dest: PathBuf,
+    transfer_data: TransferData,
+    peer: &mut EncryptedNetworkPeer,
+    channel: &Option<Channel>,
+) -> Result<PathBuf, error::Receive> {
+    let parent = dest
+        .parent()
+        .expect("Parent must exist as path is sanitized");
+
+    if dest.is_file() || !parent.exists() {
+        return Err(error::Receive::Destination);
+    }
+
+    let base_path = if tokio::fs::try_exists(&dest)
+        .await
+        .map_err(|_| error::Receive::Destination)?
+    {
+        &dest
+    } else {
+        parent
+    };
+
+    let dir = tempfile::tempdir_in(base_path)?;
+
+    let mut files = 0;
+
+    while files < transfer_data.total_files {
+        let file_data = file::receive(dir.path(), peer, channel).await?;
+
+        if file_data.is_file {
+            files += 1;
+        }
+    }
+
+    channel::send(channel, Message::Finished).await;
+
+    if dest.is_dir() {
+        dest.push(transfer_data.root_name);
+    }
+
+    let dest = file::non_existant_path(dest).await;
+
+    let tmp = dir.into_path();
+    tokio::fs::rename(tmp, &dest).await?;
+
+    Ok(dest)
 }
