@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use tempfile::NamedTempFile;
 use tokio::task::JoinSet;
 use walkdir::WalkDir;
 
@@ -63,52 +64,12 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
 
         let mut peer = peer::find(options_factory, self.pair_info).await;
 
-        let mut transfer_data = WalkDir::new(&path)
-            .follow_links(true)
-            .into_iter()
-            .try_fold(
-                TransferData::default(),
-                |mut data, entry| -> Result<TransferData, error::Send> {
-                    let metadata = entry?.metadata()?;
+        let mut transfer_data = get_transfer_data(&path)?;
 
-                    if metadata.is_file() {
-                        let file_length = metadata.len();
-
-                        data.total_files += 1;
-                        data.total_size += file_length;
-                    }
-                    Ok(data)
-                },
-            )?;
-
-        path.file_name()
-            .expect("File Name Must be present as it was sanitized")
-            .clone_into(&mut transfer_data.root_name);
-
-        let file = if transfer_data.total_files > 150 {
-            if let Some(ref channel) = self.channel {
-                let _ = channel.send(ChannelMessage::Compression).await;
-            }
-
-            transfer_data.compressed = true;
-
-            log::info!("Sending original data information {transfer_data:?}");
-            peer.write_ser_enc(&transfer_data).await?;
-
-            log::info!("Folder will be compressed as it is too big");
-
-            let tar_file = tokio::task::spawn_blocking(move || deflate::compress(&path))
-                .await
-                .expect("Task was aborted")?;
-
-            let metadata = tar_file.as_file().metadata()?;
-            path = tar_file.path().to_path_buf();
-
-            transfer_data.total_files = 1;
-            transfer_data.total_size = metadata.len();
-
-            // NOTE: Save the file so that it is not dropped and not deleted
-            Some(tar_file)
+        let tar_file_holder = if transfer_data.total_files > 150 {
+            let file = compress_folder(&mut transfer_data, path, &mut peer, &self.channel).await?;
+            path = file.path().to_owned();
+            Some(file)
         } else {
             None
         };
@@ -277,4 +238,65 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
 
         Ok(dest)
     }
+}
+
+fn get_transfer_data(path: &Path) -> Result<TransferData, error::Send> {
+    let mut transfer_data = WalkDir::new(&path)
+        .follow_links(true)
+        .into_iter()
+        .try_fold(
+            TransferData::default(),
+            |mut data, entry| -> Result<TransferData, error::Send> {
+                let metadata = entry?.metadata()?;
+
+                if metadata.is_file() {
+                    let file_length = metadata.len();
+
+                    data.total_files += 1;
+                    data.total_size += file_length;
+                }
+                Ok(data)
+            },
+        )?;
+
+    path.file_name()
+        .expect("File Name Must be present as it was sanitized")
+        .clone_into(&mut transfer_data.root_name);
+
+    Ok(transfer_data)
+}
+
+async fn compress_folder(
+    transfer_data: &mut TransferData,
+    path: PathBuf,
+    peer: &mut EncryptedNetworkPeer,
+    channel: &Option<Channel>,
+) -> Result<NamedTempFile, error::Send> {
+    channel::send(channel, Message::Compression).await;
+    transfer_data.compressed = true;
+
+    log::info!("Sending original data information {transfer_data:?}");
+    peer.write_ser_enc(&*transfer_data).await?;
+
+    log::info!("Folder will be compressed as it is too big");
+
+    let tar_file = tokio::task::spawn_blocking(move || deflate::compress(&path))
+        .await
+        .expect("Task was aborted")?;
+
+    let metadata = tar_file.as_file().metadata()?;
+
+    transfer_data.total_files = 1;
+    transfer_data.total_size = metadata.len();
+
+    // NOTE: Save the file so that it is not dropped and not deleted
+    Ok(tar_file)
+}
+
+async fn receive_file() -> Result<(), error::Receive> {
+    todo!()
+}
+
+async fn receive_folder() -> Result<(), error::Receive> {
+    todo!()
 }
