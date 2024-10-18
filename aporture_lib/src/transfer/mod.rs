@@ -67,8 +67,8 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
         let mut transfer_data = get_transfer_data(&path)?;
 
         let tar_file_holder = if transfer_data.total_files > 150 {
-            let file = compress_folder(&mut transfer_data, path, &mut peer, &self.channel).await?;
-            path = file.path().to_owned();
+            let file = compress_folder(&mut transfer_data, &path, &mut peer, &self.channel).await?;
+            file.path().clone_into(&mut path);
             Some(file)
         } else {
             None
@@ -165,23 +165,20 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
 }
 
 fn get_transfer_data(path: &Path) -> Result<TransferData, error::Send> {
-    let mut transfer_data = WalkDir::new(&path)
-        .follow_links(true)
-        .into_iter()
-        .try_fold(
-            TransferData::default(),
-            |mut data, entry| -> Result<TransferData, error::Send> {
-                let metadata = entry?.metadata()?;
+    let mut transfer_data = WalkDir::new(path).follow_links(true).into_iter().try_fold(
+        TransferData::default(),
+        |mut data, entry| -> Result<TransferData, error::Send> {
+            let metadata = entry?.metadata()?;
 
-                if metadata.is_file() {
-                    let file_length = metadata.len();
+            if metadata.is_file() {
+                let file_length = metadata.len();
 
-                    data.total_files += 1;
-                    data.total_size += file_length;
-                }
-                Ok(data)
-            },
-        )?;
+                data.total_files += 1;
+                data.total_size += file_length;
+            }
+            Ok(data)
+        },
+    )?;
 
     path.file_name()
         .expect("File Name Must be present as it was sanitized")
@@ -192,7 +189,7 @@ fn get_transfer_data(path: &Path) -> Result<TransferData, error::Send> {
 
 async fn compress_folder(
     transfer_data: &mut TransferData,
-    path: PathBuf,
+    path: &Path,
     peer: &mut EncryptedNetworkPeer,
     channel: &Option<Channel>,
 ) -> Result<NamedTempFile, error::Send> {
@@ -204,7 +201,8 @@ async fn compress_folder(
 
     log::info!("Folder will be compressed as it is too big");
 
-    let tar_file = tokio::task::spawn_blocking(move || deflate::compress(&path))
+    let p = path.to_owned();
+    let tar_file = tokio::task::spawn_blocking(move || deflate::compress(&p))
         .await
         .expect("Task was aborted")?;
 
