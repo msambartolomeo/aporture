@@ -186,9 +186,20 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
 
         let mut peer = peer::find(options_factory, self.pair_info).await;
 
-        log::info!("Receiving file information");
-        let transfer_data = peer.read_ser_enc::<TransferData>().await?;
-        log::info!("File data received: {transfer_data:?}");
+        log::info!("Receiving Transfer information");
+        let mut transfer_data = peer.read_ser_enc::<TransferData>().await?;
+        log::info!("Transfer data received: {transfer_data:?}");
+
+        // NOTE: If the data should be compressed compressed, the sender will send the compressed information again
+        if transfer_data.compressed {
+            if let Some(ref channel) = self.channel {
+                let _ = channel.send(ChannelMessage::Compression).await;
+            }
+
+            log::info!("Receiving tar.gz information");
+            transfer_data = peer.read_ser_enc::<TransferData>().await?;
+            log::info!("tar.gz received: {transfer_data:?}");
+        }
 
         if let Some(ref channel) = self.channel {
             #[allow(clippy::cast_possible_truncation)]
@@ -197,10 +208,6 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
                     transfer_data.total_size as usize,
                 ))
                 .await;
-
-            if transfer_data.compressed {
-                let _ = channel.send(ChannelMessage::Compression).await;
-            }
         }
 
         let dest = if transfer_data.total_files == 1 {
@@ -218,9 +225,6 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
 
             if let Some(ref channel) = self.channel {
                 let _ = channel.send(ChannelMessage::Finished).await;
-                if transfer_data.compressed {
-                    let _ = channel.send(ChannelMessage::Uncompressing).await;
-                }
             }
 
             if dest.is_dir() {
@@ -230,6 +234,10 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
             let mut dest = file::non_existant_path(dest).await;
 
             if transfer_data.compressed {
+                if let Some(ref channel) = self.channel {
+                    let _ = channel.send(ChannelMessage::Uncompressing).await;
+                }
+
                 log::info!("Uncompressing file into path {}", dest.display());
 
                 dest = tokio::task::spawn_blocking(move || {

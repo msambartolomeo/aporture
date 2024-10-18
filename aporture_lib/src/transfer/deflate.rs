@@ -1,5 +1,4 @@
 use std::fs::File;
-use std::io::Seek;
 use std::path::{Path, PathBuf};
 
 use flate2::Compression;
@@ -16,9 +15,6 @@ pub fn compress(path: &Path) -> Result<NamedTempFile, std::io::Error> {
     tar.append_dir_all("", path)?;
 
     let mut file = tar.into_inner()?.finish()?;
-
-    // NOTE: Rewind so the file can be used again
-    file.rewind()?;
 
     Ok(file)
 }

@@ -30,7 +30,7 @@ pub enum Receive {
     Destination,
     #[error("Could not write file to disk")]
     File(#[from] std::io::Error),
-    #[error("Could not received file to peer over the network")]
+    #[error("Could not receive file from peer over the network")]
     Network(crate::io::Error),
     #[error("Error in cryptography: {0}")]
     Cipher(crate::crypto::Error),
