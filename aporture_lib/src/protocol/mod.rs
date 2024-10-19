@@ -137,6 +137,8 @@ parse!(TransferResponseCode, size: n::U3);
 pub struct Hash(#[serde_as(as = "Bytes")] pub [u8; 32]);
 parse!(Hash, size: n::U35);
 
+parse!(SocketAddr);
+
 #[cfg(test)]
 mod test {
     use super::*;
