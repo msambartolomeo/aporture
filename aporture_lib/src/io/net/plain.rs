@@ -25,24 +25,18 @@ impl SerdeIO for NetworkPeer {
     async fn write_ser<P: Parser + Sync>(&mut self, input: &P) -> Result<(), crate::io::Error> {
         let mut serialized = input.serialize_to();
 
-        let message = Message::new(&mut serialized, None);
+        let message = Message::new(&mut serialized);
 
         let mut buf = message.into_buf();
 
         self.stream.write_all_buf(&mut buf).await?;
-
-        // let in_buf = input.serialize_to();
-
-        // self.stream.write_all(&in_buf.len().to_be_bytes()).await?;
-
-        // self.stream.write_all(&in_buf).await?;
 
         Ok(())
     }
 
     async fn read_ser<P: Parser + Sync>(&mut self) -> Result<P, crate::io::Error> {
         if let Some(mut buffer) = P::buffer() {
-            let message = Message::new(&mut buffer, None);
+            let message = Message::new(&mut buffer);
 
             let mut buf = message.into_buf();
 
@@ -50,13 +44,13 @@ impl SerdeIO for NetworkPeer {
                 self.stream.read_buf(&mut buf).await?;
             }
 
-            let n = buf.consume(None)?;
+            let n = buf.consume()?;
 
             Ok(P::deserialize_from(&buffer[..n])?)
         } else {
             let mut buffer = vec![0; u16::MAX as usize];
 
-            let message = Message::new(&mut buffer, None);
+            let message = Message::new(&mut buffer);
 
             let mut buf = message.into_buf();
 
@@ -64,33 +58,9 @@ impl SerdeIO for NetworkPeer {
                 self.stream.read_buf(&mut buf).await?;
             }
 
-            let n = buf.consume(None)?;
+            let n = buf.consume()?;
 
             Ok(P::deserialize_from(&buffer[..n])?)
         }
-
-        // let mut length = [0; 8];
-
-        // self.stream.read_exact(&mut length).await?;
-
-        // let length = usize::from_be_bytes(length);
-
-        // if length == P::serialized_size() {
-        //     let mut buffer = P::buffer();
-
-        //     self.stream.read_exact(&mut buffer).await?;
-
-        //     let deserialized = P::deserialize_from(&buffer)?;
-
-        //     Ok(deserialized)
-        // } else {
-        //     let mut buffer = vec![0; length];
-
-        //     self.stream.read_exact(&mut buffer).await?;
-
-        //     let deserialized = P::deserialize_from(&buffer)?;
-
-        //     Ok(deserialized)
-        // }
     }
 }

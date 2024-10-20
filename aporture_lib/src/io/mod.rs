@@ -31,6 +31,7 @@ pub enum Error {
 impl<'a> From<message::Error<'a>> for Error {
     fn from(value: message::Error<'a>) -> Self {
         match value.0 {
+            #[cfg(feature = "full")]
             message::ErrorKind::Decryption(error) => Self::Cipher(error),
             message::ErrorKind::CipherExpected
             | message::ErrorKind::InsuficientBuffer
