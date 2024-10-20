@@ -137,7 +137,18 @@ parse!(TransferResponseCode, size: n::U3);
 pub struct Hash(#[serde_as(as = "Bytes")] pub [u8; 32]);
 parse!(Hash, size: n::U35);
 
-parse!(SocketAddr);
+// UDP HOLE PUNCHING
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize_repr, Serialize_repr)]
+#[repr(u8)]
+pub enum HolePunchingRequest {
+    None = 0,
+    Address = 1,
+    Relay = 2,
+}
+parse!(HolePunchingRequest, size: n::U3);
+
+parse!(SocketAddr, size: n::U24);
 
 #[cfg(test)]
 mod test {
@@ -214,4 +225,8 @@ mod test {
     test_parsed!(TransferResponseCode, TransferResponseCode::Ok);
 
     test_parsed!(Hash, Hash([0; 32]));
+
+    test_parsed!(SocketAddr, ([200, 200, 200, 200], 65535).into());
+
+    test_parsed!(HolePunchingRequest, HolePunchingRequest::None);
 }
