@@ -7,7 +7,6 @@ use aporture::protocol::HolePunchingRequest;
 use net::Connection;
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::sync::Mutex;
-use tokio::task::JoinSet;
 
 mod net;
 
@@ -37,14 +36,14 @@ const DEFAULT_PORT: u16 = 8765;
 async fn main() -> Result<(), std::io::Error> {
     init_logger();
 
-    let mut handlers = JoinSet::default();
-
     let address = ([0, 0, 0, 0], DEFAULT_PORT).into();
 
-    handlers.spawn(app_handler(address));
-    handlers.spawn(address_handler(address));
+    tokio::try_join! {
+        app_handler(address),
+        address_handler(address),
+    }?;
 
-    handlers.join_all().await.into_iter().collect()
+    Ok(())
 }
 
 async fn app_handler(address: SocketAddr) -> Result<(), std::io::Error> {
@@ -68,6 +67,8 @@ async fn address_handler(address: SocketAddr) -> Result<(), std::io::Error> {
 
     let socket = Mutex::new(Arc::new(UdpSocket::bind(address).await?));
 
+    log::info!("Server ready to accept udp connections");
+
     loop {
         let socket = socket.lock().await;
         let s = Arc::clone(&socket);
@@ -76,11 +77,11 @@ async fn address_handler(address: SocketAddr) -> Result<(), std::io::Error> {
 
         let (len, address) = s.recv_from(&mut buffer).await?;
 
-        log::info!("UDP connection");
+        log::debug!("UDP message");
 
         tokio::spawn(async move {
             let Ok(message) = HolePunchingRequest::deserialize_from(&buffer[..len]) else {
-                log::warn!("Invalid udp connection");
+                log::warn!("Invalid UDP message");
                 return;
             };
 
