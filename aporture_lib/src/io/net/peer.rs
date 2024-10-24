@@ -10,8 +10,8 @@ use crate::crypto::cipher::Cipher;
 use crate::parser::EncryptedSerdeIO;
 
 pub trait Peer {
-    fn writer(&mut self) -> impl AsyncWriteExt + Unpin;
-    fn reader(&mut self) -> impl AsyncReadExt + Unpin;
+    fn writer(&mut self) -> impl AsyncWriteExt + Unpin + Send;
+    fn reader(&mut self) -> impl AsyncReadExt + Unpin + Send;
 }
 
 #[cfg(feature = "full")]
@@ -19,7 +19,7 @@ pub trait Encryptable {
     fn cipher(&self) -> impl AsRef<Cipher>;
 }
 
-impl<T: Peer> SerdeIO for T {
+impl<T: Peer + Send> SerdeIO for T {
     async fn write_ser<P: crate::parser::Parser + Sync>(
         &mut self,
         input: &P,
@@ -67,7 +67,7 @@ impl<T: Peer> SerdeIO for T {
 }
 
 #[cfg(feature = "full")]
-impl<T: Peer + Encryptable> EncryptedSerdeIO for T {
+impl<T: Peer + Encryptable + Send> EncryptedSerdeIO for T {
     async fn write_ser_enc<P: crate::parser::Parser + Sync>(
         &mut self,
         input: &P,
