@@ -142,9 +142,8 @@ parse!(Hash, size: n::U35);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize_repr, Serialize_repr)]
 #[repr(u8)]
 pub enum HolePunchingRequest {
-    None = 0,
-    Address = 1,
-    Relay = 2,
+    Address = 0,
+    Relay = 1,
 }
 parse!(HolePunchingRequest, size: n::U3);
 
@@ -228,5 +227,5 @@ mod test {
 
     test_parsed!(SocketAddr, ([200, 200, 200, 200], 65535).into());
 
-    test_parsed!(HolePunchingRequest, HolePunchingRequest::None);
+    test_parsed!(HolePunchingRequest, HolePunchingRequest::Address);
 }

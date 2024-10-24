@@ -86,7 +86,6 @@ async fn address_handler(address: SocketAddr) -> Result<(), std::io::Error> {
             };
 
             match message {
-                HolePunchingRequest::None => log::debug!("Keepalive holepunching from {address}"),
                 HolePunchingRequest::Address => {
                     let serialized = address.serialize_to();
 
