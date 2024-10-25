@@ -100,7 +100,11 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
             channel::send(&self.channel, Message::Uncompressing).await;
         }
 
-        match peer.read_ser_enc::<TransferResponseCode>().await? {
+        let response = peer.read_ser_enc::<TransferResponseCode>().await?;
+
+        connection.finish().await;
+
+        match response {
             TransferResponseCode::Ok => Ok(()),
             TransferResponseCode::HashMismatch => Err(error::Send::HashMismatch),
         }
@@ -162,6 +166,8 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
         };
 
         peer.write_ser_enc(&PairingResponseCode::Ok).await?;
+
+        connection.finish().await;
 
         Ok(dest)
     }

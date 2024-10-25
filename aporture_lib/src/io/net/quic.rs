@@ -15,6 +15,7 @@ use crate::net::peer::{Encryptable, Peer};
 #[derive(Debug)]
 pub struct QuicConnection {
     cipher: Arc<Cipher>,
+    endpoint: Endpoint,
     connection: Connection,
     kind: Kind,
 }
@@ -64,16 +65,13 @@ impl QuicConnection {
 
         Ok(Self {
             cipher,
+            endpoint,
             connection,
             kind: Kind::Client,
         })
     }
 
-    pub async fn server(
-        socket: UdpSocket,
-        cipher: Arc<Cipher>,
-        client_address: SocketAddr,
-    ) -> Result<Self, crate::io::Error> {
+    pub async fn server(socket: UdpSocket, cipher: Arc<Cipher>) -> Result<Self, crate::io::Error> {
         let self_signed = Certificate::default();
 
         let config = ServerConfig::with_single_cert(vec![self_signed.cert], self_signed.key)
@@ -92,15 +90,23 @@ impl QuicConnection {
             .expect("Valid quinn endpoint configuration")
             .await?;
 
-        (connection.remote_address() == client_address)
-            .then_some(Self {
-                cipher,
-                connection,
-                kind: Kind::Server,
-            })
-            .ok_or(crate::io::Error::Custom(
-                "Received Peer in connection was not expected",
-            ))
+        Ok(Self {
+            cipher,
+            endpoint,
+            connection,
+            kind: Kind::Server,
+        })
+    }
+
+    pub async fn finish(self) {
+        match self.kind {
+            Kind::Server => {
+                self.connection.closed().await;
+            }
+            Kind::Client => self.connection.close(0u16.into(), &[]),
+        }
+
+        self.endpoint.wait_idle().await
     }
 
     pub async fn new_stream(&mut self) -> Result<QuicNetworkPeer, std::io::Error> {

@@ -55,7 +55,7 @@ pub async fn bind(
 
     let timeout = tokio::time::timeout(
         Duration::from_secs(10),
-        QuicConnection::server(socket, cipher, a),
+        QuicConnection::server(socket, cipher),
     );
 
     let peer = timeout
