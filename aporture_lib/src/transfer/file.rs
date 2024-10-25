@@ -8,7 +8,6 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
 
 use crate::crypto;
 use crate::crypto::hasher::Hasher;
-use crate::net::EncryptedNetworkPeer;
 use crate::parser::EncryptedSerdeIO;
 use crate::protocol::{FileData, Hash, TransferResponseCode};
 use crate::transfer::channel;
@@ -18,7 +17,7 @@ const FILE_RETRIES: usize = 3;
 const BUFFER_SIZE: usize = 16 * 1024;
 
 pub async fn send(
-    peer: &mut EncryptedNetworkPeer,
+    peer: &mut impl EncryptedSerdeIO,
     path: &Path,
     base: &Path,
     channel: &Option<Channel>,
@@ -75,7 +74,7 @@ pub async fn send(
 
 pub async fn receive(
     dest: &Path,
-    peer: &mut EncryptedNetworkPeer,
+    peer: &mut impl EncryptedSerdeIO,
     channel: &Option<Channel>,
 ) -> Result<FileData, super::error::Receive> {
     let file_data = peer.read_ser_enc::<FileData>().await?;
@@ -128,7 +127,7 @@ pub async fn receive(
 
 async fn hash_and_send(
     file: File,
-    sender: &mut EncryptedNetworkPeer,
+    sender: &mut impl EncryptedSerdeIO,
     channel: &Option<Channel>,
 ) -> Result<crypto::hasher::Hash, crate::io::Error> {
     let mut reader = BufReader::new(file);
@@ -153,7 +152,7 @@ async fn hash_and_send(
 async fn hash_and_receive(
     file: &mut File,
     file_size: u64,
-    receiver: &mut EncryptedNetworkPeer,
+    receiver: &mut impl EncryptedSerdeIO,
     channel: &Option<Channel>,
 ) -> Result<crypto::hasher::Hash, crate::io::Error> {
     let mut writer = BufWriter::new(file);

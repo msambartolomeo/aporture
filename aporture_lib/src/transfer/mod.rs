@@ -7,7 +7,6 @@ use tokio::task::JoinSet;
 use walkdir::WalkDir;
 
 use self::channel::{Channel, Message};
-use crate::net::EncryptedNetworkPeer;
 use crate::pairing::PairInfo;
 use crate::parser::EncryptedSerdeIO;
 use crate::protocol::{PairingResponseCode, TransferData, TransferResponseCode};
@@ -62,7 +61,9 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
             })
         };
 
-        let mut peer = peer::find(options_factory, self.pair_info).await;
+        let mut connection = peer::find(options_factory, self.pair_info).await;
+
+        let mut peer = connection.new_stream().await?;
 
         let mut transfer_data = get_transfer_data(&path)?;
 
@@ -133,7 +134,9 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
             })
         };
 
-        let mut peer = peer::find(options_factory, self.pair_info).await;
+        let mut connection = peer::find(options_factory, self.pair_info).await;
+
+        let mut peer = connection.new_stream().await?;
 
         log::info!("Receiving Transfer information");
         let mut transfer_data = peer.read_ser_enc::<TransferData>().await?;
@@ -190,7 +193,7 @@ fn get_transfer_data(path: &Path) -> Result<TransferData, error::Send> {
 async fn compress_folder(
     transfer_data: &mut TransferData,
     path: &Path,
-    peer: &mut EncryptedNetworkPeer,
+    peer: &mut impl EncryptedSerdeIO,
     channel: &Option<Channel>,
 ) -> Result<NamedTempFile, error::Send> {
     channel::send(channel, Message::Compression).await;
@@ -218,7 +221,7 @@ async fn compress_folder(
 async fn receive_file(
     mut dest: PathBuf,
     transfer_data: &TransferData,
-    peer: &mut EncryptedNetworkPeer,
+    peer: &mut impl EncryptedSerdeIO,
     channel: &Option<Channel>,
 ) -> Result<PathBuf, error::Receive> {
     let mut file = if dest.is_dir() {
@@ -261,7 +264,7 @@ async fn receive_file(
 async fn receive_folder(
     mut dest: PathBuf,
     transfer_data: TransferData,
-    peer: &mut EncryptedNetworkPeer,
+    peer: &mut impl EncryptedSerdeIO,
     channel: &Option<Channel>,
 ) -> Result<PathBuf, error::Receive> {
     let parent = dest

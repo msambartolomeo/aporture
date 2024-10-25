@@ -1,14 +1,14 @@
+#![allow(clippy::module_name_repetitions)]
+
 use std::net::{SocketAddr, UdpSocket};
 use std::sync::Arc;
 
 use quinn::crypto::rustls::QuicClientConfig;
-use quinn::rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
-use quinn::{
-    ClientConfig, Connection, Endpoint, EndpointConfig, RecvStream, SendStream, ServerConfig,
-    TokioRuntime,
-};
+use quinn::{ClientConfig, ServerConfig, TokioRuntime};
+use quinn::{Connection, Endpoint, EndpointConfig, RecvStream, SendStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+use crate::crypto::cert::Certificate;
 use crate::crypto::cipher::Cipher;
 use crate::net::peer::{Encryptable, Peer};
 
@@ -38,7 +38,7 @@ impl QuicConnection {
         socket: UdpSocket,
         cipher: Arc<Cipher>,
         server_address: SocketAddr,
-    ) -> Option<Self> {
+    ) -> Result<Self, crate::io::Error> {
         let config = ClientConfig::new(Arc::new(
             QuicClientConfig::try_from(
                 quinn::rustls::ClientConfig::builder()
@@ -46,7 +46,7 @@ impl QuicConnection {
                     .with_custom_certificate_verifier(remove::SkipServerVerification::new())
                     .with_no_client_auth(),
             )
-            .ok()?,
+            .expect("Valid quinn client configuration"),
         ));
 
         let mut endpoint = Endpoint::new(
@@ -54,17 +54,15 @@ impl QuicConnection {
             None,
             socket,
             Arc::new(TokioRuntime),
-        )
-        .ok()?;
+        )?;
         endpoint.set_default_client_config(config);
 
         let connection = endpoint
             .connect(server_address, "localhost")
-            .ok()?
-            .await
-            .ok()?;
+            .expect("Valid quinn endpoint configuration")
+            .await?;
 
-        Some(Self {
+        Ok(Self {
             cipher,
             connection,
             kind: Kind::Client,
@@ -75,29 +73,34 @@ impl QuicConnection {
         socket: UdpSocket,
         cipher: Arc<Cipher>,
         client_address: SocketAddr,
-    ) -> Option<Self> {
-        let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).ok()?;
-        let cert_der = CertificateDer::from(cert.cert);
-        let priv_key = PrivatePkcs8KeyDer::from(cert.key_pair.serialize_der());
+    ) -> Result<Self, crate::io::Error> {
+        let self_signed = Certificate::default();
 
-        let config =
-            ServerConfig::with_single_cert(vec![cert_der.clone()], priv_key.into()).ok()?;
+        let config = ServerConfig::with_single_cert(vec![self_signed.cert], self_signed.key)
+            .expect("Valid quinn server configuration");
 
         let endpoint = Endpoint::new(
             EndpointConfig::default(),
             Some(config),
             socket,
             Arc::new(TokioRuntime),
-        )
-        .ok()?;
+        )?;
 
-        let connection = endpoint.accept().await?.await.ok()?;
+        let connection = endpoint
+            .accept()
+            .await
+            .expect("Valid quinn endpoint configuration")
+            .await?;
 
-        (connection.remote_address() == client_address).then_some(Self {
-            cipher,
-            connection,
-            kind: Kind::Server,
-        })
+        (connection.remote_address() == client_address)
+            .then_some(Self {
+                cipher,
+                connection,
+                kind: Kind::Server,
+            })
+            .ok_or(crate::io::Error::Custom(
+                "Received Peer in connection was not expected",
+            ))
     }
 
     pub async fn new_stream(&mut self) -> Result<QuicNetworkPeer, std::io::Error> {
