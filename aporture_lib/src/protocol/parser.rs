@@ -1,3 +1,6 @@
+use crate::io::Error;
+use std::future::Future;
+
 use generic_array::{ArrayLength, GenericArray};
 use serde::{Deserialize, Serialize};
 
@@ -19,19 +22,21 @@ pub trait Parser: Serialize + for<'a> Deserialize<'a> {
     }
 }
 
-#[allow(async_fn_in_trait)]
 pub trait SerdeIO {
-    async fn write_ser<P: Parser + Sync>(&mut self, input: &P) -> Result<(), crate::io::Error>;
-    async fn read_ser<P: Parser + Sync>(&mut self) -> Result<P, crate::io::Error>;
+    fn read_ser<P: Parser + Sync>(&mut self) -> impl Future<Output = Result<P, Error>> + Send;
+    fn write_ser<P>(&mut self, input: &P) -> impl Future<Output = Result<(), Error>> + Send
+    where
+        P: Parser + Sync;
 }
 
 #[cfg(feature = "full")]
-#[allow(async_fn_in_trait)]
 pub trait EncryptedSerdeIO: SerdeIO {
-    async fn write_ser_enc<P: Parser + Sync>(&mut self, input: &P) -> Result<(), crate::io::Error>;
-    async fn write_enc(&mut self, input: &mut [u8]) -> Result<(), crate::io::Error>;
-    async fn read_ser_enc<P: Parser + Sync>(&mut self) -> Result<P, crate::io::Error>;
-    async fn read_enc(&mut self, buffer: &mut [u8]) -> Result<usize, crate::io::Error>;
+    fn read_enc(&mut self, buffer: &mut [u8]) -> impl Future<Output = Result<usize, Error>> + Send;
+    fn read_ser_enc<P: Parser + Sync>(&mut self) -> impl Future<Output = Result<P, Error>> + Send;
+    fn write_enc(&mut self, input: &mut [u8]) -> impl Future<Output = Result<(), Error>> + Send;
+    fn write_ser_enc<P>(&mut self, input: &P) -> impl Future<Output = Result<(), Error>> + Send
+    where
+        P: Parser + Sync;
 }
 
 #[macro_export]

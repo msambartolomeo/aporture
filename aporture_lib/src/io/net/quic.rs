@@ -106,7 +106,7 @@ impl QuicConnection {
             Kind::Client => self.connection.close(0u16.into(), &[]),
         }
 
-        self.endpoint.wait_idle().await
+        self.endpoint.wait_idle().await;
     }
 
     pub async fn new_stream(&mut self) -> Result<QuicNetworkPeer, std::io::Error> {

@@ -196,12 +196,15 @@ fn get_transfer_data(path: &Path) -> Result<TransferData, error::Send> {
     Ok(transfer_data)
 }
 
-async fn compress_folder(
+async fn compress_folder<Ep>(
     transfer_data: &mut TransferData,
     path: &Path,
-    peer: &mut impl EncryptedSerdeIO,
+    peer: &mut Ep,
     channel: &Option<Channel>,
-) -> Result<NamedTempFile, error::Send> {
+) -> Result<NamedTempFile, error::Send>
+where
+    Ep: EncryptedSerdeIO + Send,
+{
     channel::send(channel, Message::Compression).await;
     transfer_data.compressed = true;
 
@@ -224,12 +227,15 @@ async fn compress_folder(
     Ok(tar_file)
 }
 
-async fn receive_file(
+async fn receive_file<Ep>(
     mut dest: PathBuf,
     transfer_data: &TransferData,
-    peer: &mut impl EncryptedSerdeIO,
+    peer: &mut Ep,
     channel: &Option<Channel>,
-) -> Result<PathBuf, error::Receive> {
+) -> Result<PathBuf, error::Receive>
+where
+    Ep: EncryptedSerdeIO + Send,
+{
     let mut file = if dest.is_dir() {
         tempfile::NamedTempFile::new_in(&dest)?
     } else {
@@ -267,12 +273,15 @@ async fn receive_file(
     Ok(dest)
 }
 
-async fn receive_folder(
+async fn receive_folder<Ep>(
     mut dest: PathBuf,
     transfer_data: TransferData,
-    peer: &mut impl EncryptedSerdeIO,
+    peer: &mut Ep,
     channel: &Option<Channel>,
-) -> Result<PathBuf, error::Receive> {
+) -> Result<PathBuf, error::Receive>
+where
+    Ep: EncryptedSerdeIO + Send,
+{
     let parent = dest
         .parent()
         .expect("Parent must exist as path is sanitized");

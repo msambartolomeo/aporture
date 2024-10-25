@@ -61,7 +61,7 @@ pub async fn bind(
     let peer = timeout
         .await
         .map_err(|e| (std::io::Error::from(e).into(), a))?
-        .map_err(|e| (e.into(), a))?;
+        .map_err(|e| (e, a))?;
 
     Ok(peer)
 }
@@ -82,7 +82,7 @@ pub async fn connect(
     let peer = timeout
         .await
         .map_err(|e| (std::io::Error::from(e).into(), a))?
-        .map_err(|e| (e.into(), a))?;
+        .map_err(|e| (e, a))?;
 
     Ok(peer)
 }
