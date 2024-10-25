@@ -13,10 +13,10 @@ use crate::protocol::{PairingResponseCode, TransferData, TransferResponseCode};
 use crate::{Receiver, Sender, State};
 
 mod channel;
+mod connection;
 mod deflate;
 mod error;
 mod file;
-mod peer;
 
 pub use channel::Message as ChannelMessage;
 pub use error::{Receive as ReceiveError, Send as SendError};
@@ -56,12 +56,12 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
 
         let options_factory = || {
             addresses.iter().fold(JoinSet::new(), |mut set, a| {
-                set.spawn(peer::connect(*a, Arc::clone(&cipher)));
+                set.spawn(connection::connect(*a, Arc::clone(&cipher)));
                 set
             })
         };
 
-        let mut connection = peer::find(options_factory, self.pair_info).await;
+        let mut connection = connection::find(options_factory, self.pair_info).await;
 
         let mut peer = connection.new_stream().await?;
 
@@ -129,12 +129,12 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
 
         let options_factory = || {
             addresses.iter().fold(JoinSet::new(), |mut set, (b, a)| {
-                set.spawn(peer::bind(*b, *a, Arc::clone(&cipher)));
+                set.spawn(connection::bind(*b, *a, Arc::clone(&cipher)));
                 set
             })
         };
 
-        let mut connection = peer::find(options_factory, self.pair_info).await;
+        let mut connection = connection::find(options_factory, self.pair_info).await;
 
         let mut peer = connection.new_stream().await?;
 
