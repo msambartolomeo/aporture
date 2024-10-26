@@ -80,6 +80,8 @@ impl Gateway {
 
 #[derive(Debug, Error)]
 pub enum Error {
+    #[error("Could not create a socket to use with upnp")]
+    SocketError(#[from] std::io::Error),
     #[error("Could not find local ip address")]
     LocalIpNotFound(#[from] local_ip_address::Error),
     #[error("Could not find upnp enabled gateway")]

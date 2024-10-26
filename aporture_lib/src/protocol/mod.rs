@@ -1,6 +1,5 @@
 use std::ffi::OsString;
 use std::net::SocketAddr;
-use std::time::Duration;
 
 use generic_array::typenum as n;
 use generic_array::{typenum::Unsigned, GenericArray};
@@ -74,29 +73,6 @@ pub struct NegotiationPayload {
     pub save_contact: bool,
 }
 parse!(NegotiationPayload);
-
-#[serde_as]
-#[derive(Debug, PartialEq, Eq, Deserialize, Serialize)]
-pub struct TransferHello {
-    #[serde_as(as = "Bytes")]
-    // NOTE: Must be aporture
-    pub tag: [u8; 8],
-
-    // NOTE: milis from epoch as bytes
-    pub timestamp: Duration,
-}
-parse!(TransferHello);
-
-impl Default for TransferHello {
-    fn default() -> Self {
-        Self {
-            tag: b"aporture".to_owned(),
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::SystemTime::UNIX_EPOCH)
-                .expect("Now is after unix epoch"),
-        }
-    }
-}
 
 #[serde_as]
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

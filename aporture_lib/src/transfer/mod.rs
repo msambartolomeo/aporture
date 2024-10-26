@@ -1,9 +1,7 @@
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use tempfile::NamedTempFile;
-use tokio::task::JoinSet;
 use walkdir::WalkDir;
 
 use self::channel::{Channel, Message};
@@ -51,17 +49,7 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
 
         log::info!("Sending file {}", path.display());
 
-        let addresses = self.pair_info.addresses();
-        let cipher = self.pair_info.cipher();
-
-        let options_factory = || {
-            addresses.iter().fold(JoinSet::new(), |mut set, a| {
-                set.spawn(connection::connect(*a, Arc::clone(&cipher)));
-                set
-            })
-        };
-
-        let mut connection = connection::find(options_factory, self.pair_info).await;
+        let mut connection = connection::find(self.pair_info).await;
 
         let mut peer = connection.new_stream().await?;
 
@@ -122,23 +110,13 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
     }
 
     pub async fn transfer(self) -> Result<PathBuf, error::Receive> {
-        let addresses = self.pair_info.bind_addresses();
-        let cipher = self.pair_info.cipher();
-
         let dest = file::sanitize_path(self.path)
             .await
             .map_err(|_| error::Receive::Destination)?;
 
         log::info!("File will try to be saved to {}", dest.display());
 
-        let options_factory = || {
-            addresses.iter().fold(JoinSet::new(), |mut set, (b, a)| {
-                set.spawn(connection::bind(*b, *a, Arc::clone(&cipher)));
-                set
-            })
-        };
-
-        let mut connection = connection::find(options_factory, self.pair_info).await;
+        let mut connection = connection::find(self.pair_info).await;
 
         let mut peer = connection.new_stream().await?;
 

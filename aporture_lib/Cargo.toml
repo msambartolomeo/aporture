@@ -44,6 +44,7 @@ bytes = "1.8.0"
 tokio = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
+stunclient = "0.4.1"
 
 [features]
 default = ["full"]

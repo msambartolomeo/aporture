@@ -10,18 +10,43 @@ use crate::pairing::PairInfo;
 
 const RETRIES: usize = 10;
 
-pub async fn find<F>(options_factory: F, pair_info: &mut PairInfo) -> QuicConnection
-where
-    F: Fn() -> JoinSet<Result<QuicConnection, (crate::io::Error, SocketAddr)>> + Send,
-{
+fn options_factory(
+    pair_info: &PairInfo,
+) -> Result<JoinSet<Result<QuicConnection, (crate::io::Error, SocketAddr)>>, crate::io::Error> {
+    let cipher = pair_info.cipher();
+    let sockets = pair_info.sockets();
+    let addresses = pair_info.pair_addresses();
+
+    let mut set = JoinSet::new();
+
+    for a in addresses {
+        let fut = connect(*a, Arc::clone(&cipher));
+
+        set.spawn(fut);
+    }
+
+    for (s, a) in &sockets {
+        let fut = bind(s.try_clone()?, *a, Arc::clone(&cipher));
+
+        set.spawn(fut);
+    }
+
+    Ok(set)
+}
+
+pub async fn find(pair_info: &mut PairInfo) -> QuicConnection {
     for _ in 0..RETRIES {
-        let mut options = options_factory();
+        let Ok(mut options) = options_factory(&pair_info) else {
+            break;
+        };
 
         loop {
             match options.join_next().await {
                 Some(Ok(Ok(peer))) => {
                     // NOTE: Drop fallback if unused
                     drop(pair_info.fallback());
+
+                    log::info!("Connected on {}", peer.address());
 
                     return peer;
                 }
@@ -45,17 +70,15 @@ where
 }
 
 pub async fn bind(
-    bind_address: SocketAddr,
+    socket: UdpSocket,
     a: SocketAddr,
     cipher: Arc<Cipher>,
 ) -> Result<QuicConnection, (crate::io::Error, SocketAddr)> {
     log::info!("Waiting for peer on {}, port {}", a.ip(), a.port());
 
-    let socket = UdpSocket::bind(bind_address).map_err(|e| (e.into(), a))?;
-
     let timeout = tokio::time::timeout(
         Duration::from_secs(10),
-        QuicConnection::server(socket, cipher),
+        QuicConnection::server(a, socket, cipher),
     );
 
     let peer = timeout
@@ -86,33 +109,3 @@ pub async fn connect(
 
     Ok(peer)
 }
-
-// async fn exchange_hello(
-//     mut peer: EncryptedNetworkPeer,
-//     a: SocketAddr,
-// ) -> Result<EncryptedNetworkPeer, (crate::io::Error, SocketAddr)> {
-//     let hello = TransferHello::default();
-
-//     peer.write_ser_enc(&hello).await.map_err(|e| (e, a))?;
-
-//     let peer_hello = peer
-//         .read_ser_enc::<TransferHello>()
-//         .await
-//         .map_err(|e| (e, a))?;
-
-//     let timestamp = std::time::SystemTime::now()
-//         .duration_since(std::time::SystemTime::UNIX_EPOCH)
-//         .expect("Now is after unix epoch");
-
-//     let difference = timestamp
-//         .checked_sub(peer_hello.timestamp)
-//         .or_else(|| peer_hello.timestamp.checked_sub(timestamp));
-
-//     if &peer_hello.tag == b"aporture" && difference.is_some_and(|s| s.as_secs() < 15) {
-//         log::info!("Connected to peer on {}", a);
-//         Ok(peer)
-//     } else {
-//         log::error!("Invalid hello {hello:?} or difference {difference:?}");
-//         Err((crate::io::Error::Custom("Invalid tag and timestamp"), a))
-//     }
-// }

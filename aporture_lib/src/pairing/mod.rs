@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::Arc;
+use std::time::Duration;
 
 use spake2::{Ed25519Group, Identity, Password, Spake2};
 use tokio::net::TcpStream;
@@ -10,9 +11,10 @@ use crate::crypto::hasher::Hasher;
 use crate::crypto::Key;
 use crate::fs::config::Config;
 use crate::net::{EncryptedNetworkPeer, NetworkPeer};
-use crate::parser::{EncryptedSerdeIO, SerdeIO};
+use crate::parser::{EncryptedSerdeIO, Parser, SerdeIO};
 use crate::protocol::{
-    Hello, KeyExchangePayload, NegotiationPayload, PairKind, PairingResponseCode,
+    Hello, HolePunchingRequest, KeyExchangePayload, NegotiationPayload, PairKind,
+    PairingResponseCode,
 };
 use crate::{Receiver, Sender, State};
 
@@ -21,7 +23,7 @@ mod upnp;
 pub mod error;
 pub use error::Error;
 
-const DEFAULT_RECEIVER_PORT: u16 = 8082;
+const ANY_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0);
 
 pub struct AporturePairingProtocolState {
     protocol_version: u8,
@@ -87,25 +89,32 @@ impl<K: Kind> State for Start<K> {}
 
 impl AporturePairingProtocol<Start<Sender>> {
     pub async fn pair(self) -> Result<PairInfo, Error> {
-        let pair_info = self
-            .connect()
-            .await?
-            .exchange_key()
-            .await?
-            .exchange()
-            .await?;
+        let mut address_collector = self.connect().await?.exchange_key().await?;
+
+        if let Err(e) = address_collector.add_upnp().await {
+            log::warn!("Could not enable upnp - {e}");
+        }
+
+        if let Err(e) = address_collector.add_hole_punching().await {
+            log::warn!("Could not enable hole punching - {e}");
+        }
+
+        let pair_info = address_collector.exchange().await?;
 
         Ok(pair_info)
     }
 }
 
 impl AporturePairingProtocol<Start<Receiver>> {
-    // TODO: notify peer if error ocurred
     pub async fn pair(self) -> Result<PairInfo, Error> {
         let mut address_collector = self.connect().await?.exchange_key().await?;
 
         if let Err(e) = address_collector.add_upnp().await {
             log::warn!("Could not enable upnp - {e}");
+        }
+
+        if let Err(e) = address_collector.add_hole_punching().await {
+            log::warn!("Could not enable hole punching - {e}");
         }
 
         if address_collector.data.same_public_ip {
@@ -238,40 +247,7 @@ impl<K: Kind> Negotiation<K> {
     }
 }
 
-impl AporturePairingProtocol<Negotiation<Sender>> {
-    pub async fn exchange(mut self) -> Result<PairInfo, error::Negotiation> {
-        log::info!("Starting APP Negotiation");
-
-        let write = NegotiationPayload {
-            addresses: Vec::new(),
-            save_contact: self.data.save_contact,
-        };
-
-        self.state.server.write_ser_enc(&write).await?;
-
-        let read: NegotiationPayload = self.state.server.read_ser_enc().await?;
-
-        log::debug!("Peer payload: {read:#?}");
-
-        log::info!("Finished APP Negotiation");
-
-        let (server, cipher) = self.state.server.extract_cipher();
-
-        Ok(PairInfo {
-            key: self.state.key,
-            cipher,
-            transfer_info: read
-                .addresses
-                .into_iter()
-                .map(TransferInfo::Address)
-                .collect(),
-            server_fallback: Some(server),
-            save_contact: read.save_contact,
-        })
-    }
-}
-
-impl AporturePairingProtocol<Negotiation<Receiver>> {
+impl<K: Kind> AporturePairingProtocol<Negotiation<K>> {
     pub async fn exchange(mut self) -> Result<PairInfo, error::Negotiation> {
         log::info!("Starting APP Negotiation");
 
@@ -300,19 +276,48 @@ impl AporturePairingProtocol<Negotiation<Receiver>> {
         Ok(PairInfo {
             key: self.state.key,
             cipher,
+            pair_addresses: read.addresses,
             transfer_info: self.state.addresses,
             server_fallback: Some(server),
             save_contact: read.save_contact,
         })
     }
+}
 
+impl AporturePairingProtocol<Negotiation<Receiver>> {
+    pub fn add_local(&mut self) -> Result<(), std::io::Error> {
+        let ip = local_ip_address::local_ip()
+            .map_err(|_| std::io::Error::from(std::io::ErrorKind::AddrNotAvailable))?;
+
+        let socket = UdpSocket::bind(ANY_ADDR)?;
+
+        let port = socket.local_addr()?.port();
+
+        let external_address = (ip, port).into();
+
+        let info = TransferInfo::Socket {
+            socket,
+            external_address,
+        };
+
+        self.state.addresses.push(info);
+
+        Ok(())
+    }
+}
+
+impl<K: Kind> AporturePairingProtocol<Negotiation<K>> {
     pub async fn add_upnp(&mut self) -> Result<(), upnp::Error> {
         let mut gateway = upnp::Gateway::new().await?;
 
-        let external_address = gateway.open_port(DEFAULT_RECEIVER_PORT).await?;
+        let socket = UdpSocket::bind(ANY_ADDR)?;
+        let local_port = socket.local_addr()?.port();
+
+        let external_address = gateway.open_port(local_port).await?;
 
         let info = TransferInfo::UPnP {
-            local_port: DEFAULT_RECEIVER_PORT,
+            socket,
+            local_port,
             external_address,
             gateway,
         };
@@ -322,10 +327,46 @@ impl AporturePairingProtocol<Negotiation<Receiver>> {
         Ok(())
     }
 
-    pub fn add_local(&mut self) -> Result<(), local_ip_address::Error> {
-        let ip = local_ip_address::local_ip()?;
+    pub async fn add_hole_punching(&mut self) -> Result<(), std::io::Error> {
+        let config = Config::get().await;
 
-        let info = TransferInfo::Address((ip, DEFAULT_RECEIVER_PORT).into());
+        let socket = tokio::net::UdpSocket::bind(ANY_ADDR).await?;
+
+        let request = HolePunchingRequest::Address.serialize_to();
+
+        let mut address = None;
+
+        for _ in 0..15 {
+            socket.send_to(&request, config.server_address()).await?;
+
+            let mut buf = vec![0; 32];
+
+            if let Ok(Ok((len, from))) =
+                tokio::time::timeout(Duration::from_secs(2), socket.recv_from(&mut buf)).await
+            {
+                if from != config.server_address() {
+                    continue;
+                }
+
+                if let Ok(a) = SocketAddr::deserialize_from(&buf[..len]) {
+                    if !is_private_ip(a) {
+                        address = Some(a);
+                    }
+                    break;
+                };
+            }
+        }
+
+        let (socket, external_address) = match address {
+            Some(address) => (socket.into_std()?, address),
+            // TODO: CHANGE
+            None => stunclient::just_give_me_the_udp_socket_and_its_external_address(),
+        };
+
+        let info = TransferInfo::Socket {
+            socket,
+            external_address,
+        };
 
         self.state.addresses.push(info);
 
@@ -333,10 +374,18 @@ impl AporturePairingProtocol<Negotiation<Receiver>> {
     }
 }
 
+fn is_private_ip(socket_addr: SocketAddr) -> bool {
+    match socket_addr.ip() {
+        IpAddr::V4(ipv4) => ipv4.is_private(),
+        _ => unreachable!("AAAAAAA"),
+    }
+}
+
 #[derive(Debug)]
 pub struct PairInfo {
     key: Key,
     cipher: Arc<Cipher>,
+    pair_addresses: Vec<SocketAddr>,
     transfer_info: Vec<TransferInfo>,
     server_fallback: Option<NetworkPeer>,
     pub save_contact: bool,
@@ -361,11 +410,16 @@ impl PairInfo {
     }
 
     #[must_use]
-    pub fn bind_addresses(&self) -> Vec<(SocketAddr, SocketAddr)> {
+    pub fn sockets(&self) -> Vec<(&UdpSocket, SocketAddr)> {
         self.transfer_info
             .iter()
-            .map(|t| (t.get_bind_address(), t.get_connection_address()))
+            .map(|t| (t.get_socket(), t.get_connection_address()))
             .collect()
+    }
+
+    #[must_use]
+    pub fn pair_addresses(&self) -> &[SocketAddr] {
+        &self.pair_addresses
     }
 
     pub async fn finalize(self) -> Key {
@@ -378,8 +432,12 @@ impl PairInfo {
 
 #[derive(Debug)]
 pub enum TransferInfo {
-    Address(SocketAddr),
+    Socket {
+        socket: UdpSocket,
+        external_address: SocketAddr,
+    },
     UPnP {
+        socket: UdpSocket,
         local_port: u16,
         external_address: SocketAddr,
         gateway: upnp::Gateway,
@@ -388,29 +446,27 @@ pub enum TransferInfo {
 
 impl TransferInfo {
     #[must_use]
-    pub const fn get_connection_address(&self) -> SocketAddr {
+    pub fn get_connection_address(&self) -> SocketAddr {
         match self {
-            Self::Address(a) => *a,
-            Self::UPnP {
+            Self::Socket {
+                external_address, ..
+            }
+            | Self::UPnP {
                 external_address, ..
             } => *external_address,
         }
     }
 
     #[must_use]
-    pub fn get_bind_address(&self) -> SocketAddr {
+    pub fn get_socket(&self) -> &UdpSocket {
         match self {
-            Self::Address(a) => match a {
-                SocketAddr::V4(_) => (Ipv4Addr::UNSPECIFIED, a.port()).into(),
-                SocketAddr::V6(_) => (Ipv6Addr::UNSPECIFIED, a.port()).into(),
-            },
-            Self::UPnP { local_port, .. } => (Ipv4Addr::UNSPECIFIED, *local_port).into(),
+            Self::Socket { socket, .. } | Self::UPnP { socket, .. } => socket,
         }
     }
 
     async fn finalize(self) {
         match self {
-            Self::Address(_) => (),
+            Self::Socket { .. } => (),
             Self::UPnP { mut gateway, .. } => {
                 let _ = gateway.close_port().await;
             }

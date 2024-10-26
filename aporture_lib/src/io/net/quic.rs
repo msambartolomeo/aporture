@@ -14,6 +14,7 @@ use crate::net::peer::{Encryptable, Peer};
 
 #[derive(Debug)]
 pub struct QuicConnection {
+    connection_address: SocketAddr,
     cipher: Arc<Cipher>,
     endpoint: Endpoint,
     connection: Connection,
@@ -64,6 +65,7 @@ impl QuicConnection {
             .await?;
 
         Ok(Self {
+            connection_address: server_address,
             cipher,
             endpoint,
             connection,
@@ -71,7 +73,11 @@ impl QuicConnection {
         })
     }
 
-    pub async fn server(socket: UdpSocket, cipher: Arc<Cipher>) -> Result<Self, crate::io::Error> {
+    pub async fn server(
+        connection_address: SocketAddr,
+        socket: UdpSocket,
+        cipher: Arc<Cipher>,
+    ) -> Result<Self, crate::io::Error> {
         let self_signed = Certificate::default();
 
         let config = ServerConfig::with_single_cert(vec![self_signed.cert], self_signed.key)
@@ -91,6 +97,7 @@ impl QuicConnection {
             .await?;
 
         Ok(Self {
+            connection_address,
             cipher,
             endpoint,
             connection,
@@ -120,6 +127,10 @@ impl QuicConnection {
             sender,
             receiver,
         })
+    }
+
+    pub fn address(&self) -> SocketAddr {
+        self.connection_address
     }
 }
 
