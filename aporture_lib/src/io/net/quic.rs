@@ -129,7 +129,8 @@ impl QuicConnection {
         })
     }
 
-    pub fn address(&self) -> SocketAddr {
+    #[must_use]
+    pub const fn address(&self) -> SocketAddr {
         self.connection_address
     }
 }

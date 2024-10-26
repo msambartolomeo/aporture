@@ -247,7 +247,7 @@ impl<K: Kind> Negotiation<K> {
     }
 }
 
-impl<K: Kind> AporturePairingProtocol<Negotiation<K>> {
+impl<K: Kind + Send> AporturePairingProtocol<Negotiation<K>> {
     pub async fn exchange(mut self) -> Result<PairInfo, error::Negotiation> {
         log::info!("Starting APP Negotiation");
 
@@ -306,7 +306,7 @@ impl AporturePairingProtocol<Negotiation<Receiver>> {
     }
 }
 
-impl<K: Kind> AporturePairingProtocol<Negotiation<K>> {
+impl<K: Kind + Send> AporturePairingProtocol<Negotiation<K>> {
     pub async fn add_upnp(&mut self) -> Result<(), upnp::Error> {
         let mut gateway = upnp::Gateway::new().await?;
 
@@ -377,7 +377,7 @@ impl<K: Kind> AporturePairingProtocol<Negotiation<K>> {
 fn is_private_ip(socket_addr: SocketAddr) -> bool {
     match socket_addr.ip() {
         IpAddr::V4(ipv4) => ipv4.is_private(),
-        _ => unreachable!("AAAAAAA"),
+        IpAddr::V6(_) => unreachable!("No ipv6 support"),
     }
 }
 
@@ -446,7 +446,7 @@ pub enum TransferInfo {
 
 impl TransferInfo {
     #[must_use]
-    pub fn get_connection_address(&self) -> SocketAddr {
+    pub const fn get_connection_address(&self) -> SocketAddr {
         match self {
             Self::Socket {
                 external_address, ..
@@ -458,7 +458,7 @@ impl TransferInfo {
     }
 
     #[must_use]
-    pub fn get_socket(&self) -> &UdpSocket {
+    pub const fn get_socket(&self) -> &UdpSocket {
         match self {
             Self::Socket { socket, .. } | Self::UPnP { socket, .. } => socket,
         }

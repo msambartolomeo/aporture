@@ -36,7 +36,7 @@ fn options_factory(
 
 pub async fn find(pair_info: &mut PairInfo) -> QuicConnection {
     for _ in 0..RETRIES {
-        let Ok(mut options) = options_factory(&pair_info) else {
+        let Ok(mut options) = options_factory(pair_info) else {
             break;
         };
 

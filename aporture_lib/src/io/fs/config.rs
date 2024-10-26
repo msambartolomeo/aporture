@@ -67,6 +67,7 @@ impl Config {
         }
     }
 
+    #[must_use]
     pub fn server_address(&self) -> SocketAddr {
         (self.server_address, self.server_port).into()
     }
