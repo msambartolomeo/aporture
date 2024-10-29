@@ -96,6 +96,7 @@ async fn address_handler(address: SocketAddr) -> Result<(), std::io::Error> {
                     }
                 }
                 HolePunchingRequest::Relay => todo!(),
+                HolePunchingRequest::None => (),
             }
         });
     }
