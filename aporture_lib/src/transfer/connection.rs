@@ -10,9 +10,11 @@ use crate::pairing::PairInfo;
 
 const RETRIES: usize = 10;
 
+type AddressError = (crate::io::Error, SocketAddr);
+
 fn options_factory(
     pair_info: &PairInfo,
-) -> Result<JoinSet<Result<QuicConnection, (crate::io::Error, SocketAddr)>>, crate::io::Error> {
+) -> Result<JoinSet<Result<QuicConnection, AddressError>>, crate::io::Error> {
     let cipher = pair_info.cipher();
     let binding_sockets = pair_info.binding_sockets();
     let connecting_sockets = pair_info.connecting_sockets();
@@ -82,7 +84,7 @@ pub async fn bind(
     destination: SocketAddr,
     a: SocketAddr,
     cipher: Arc<Cipher>,
-) -> Result<QuicConnection, (crate::io::Error, SocketAddr)> {
+) -> Result<QuicConnection, AddressError> {
     log::info!(
         "Waiting for peer on {}, port {}; Peer address is {destination}",
         a.ip(),
@@ -110,7 +112,7 @@ pub async fn connect(
     a: SocketAddr,
     source: SocketAddr,
     cipher: Arc<Cipher>,
-) -> Result<QuicConnection, (crate::io::Error, SocketAddr)> {
+) -> Result<QuicConnection, AddressError> {
     log::info!(
         "Trying to connect to peer on {}, port {}; My address is {source}",
         a.ip(),

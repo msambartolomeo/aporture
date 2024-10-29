@@ -433,28 +433,25 @@ async fn get_external_socket() -> Result<UdpSocketAddr, crate::io::Error> {
         }
     }
 
-    let (socket, external_address, handle) = match address {
-        Some(address) => {
-            let socket = socket.into_std()?;
+    let (socket, external_address, handle) = if let Some(address) = address {
+        let socket = socket.into_std()?;
 
-            let s = socket.try_clone()?;
+        let s = socket.try_clone()?;
 
-            let request = HolePunchingRequest::None.serialize_to();
+        let request = HolePunchingRequest::None.serialize_to();
 
-            let handle = tokio::spawn(async move {
-                let _ = s.send_to(&request, config.server_address());
-                tokio::time::sleep(Duration::from_secs(10)).await;
-            });
+        let handle = tokio::spawn(async move {
+            let _ = s.send_to(&request, config.server_address());
+            tokio::time::sleep(Duration::from_secs(10)).await;
+        });
 
-            (socket, address, Some(handle))
-        }
-        // TODO: CHANGE
-        None => {
-            let (socket, address) =
-                stunclient::just_give_me_the_udp_socket_and_its_external_address();
+        (socket, address, Some(handle))
+    } else
+    // TODO: CHANGE
+    {
+        let (socket, address) = stunclient::just_give_me_the_udp_socket_and_its_external_address();
 
-            (socket, address, None)
-        }
+        (socket, address, None)
     };
 
     Ok(UdpSocketAddr {
@@ -491,13 +488,13 @@ impl PairInfo {
         self.server_fallback.take()
     }
 
-    pub fn connecting_sockets<'a>(&'a self) -> impl Iterator<Item = ConnectionIdentifier<'a>> {
+    pub fn connecting_sockets(&self) -> impl Iterator<Item = ConnectionIdentifier<'_>> {
         self.connecting_sockets
             .iter()
             .map(ConnectionIdentifier::from)
     }
 
-    pub fn binding_sockets<'a>(&'a self) -> impl Iterator<Item = ConnectionIdentifier<'a>> {
+    pub fn binding_sockets(&self) -> impl Iterator<Item = ConnectionIdentifier<'_>> {
         self.binding_sockets.iter().map(ConnectionIdentifier::from)
     }
 
@@ -536,7 +533,7 @@ pub struct ConnectionIdentifier<'a> {
 impl<'a> From<&'a (TransferInfo, SocketAddr)> for ConnectionIdentifier<'a> {
     fn from((t, a): &'a (TransferInfo, SocketAddr)) -> Self {
         ConnectionIdentifier {
-            local_socket: &t.get_socket(),
+            local_socket: t.get_socket(),
             self_address: t.get_connection_address(),
             peer_address: *a,
         }
