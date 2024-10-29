@@ -49,7 +49,7 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
 
         log::info!("Sending file {}", path.display());
 
-        let mut connection = connection::find(self.pair_info).await;
+        let connection = connection::find(self.pair_info).await;
 
         let mut peer = connection.new_stream().await?;
 
@@ -116,7 +116,7 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
 
         log::info!("File will try to be saved to {}", dest.display());
 
-        let mut connection = connection::find(self.pair_info).await;
+        let connection = connection::find(self.pair_info).await;
 
         let mut peer = connection.new_stream().await?;
 
@@ -124,7 +124,7 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
         let mut transfer_data = peer.read_ser_enc::<TransferData>().await?;
         log::info!("Transfer data received: {transfer_data:?}");
 
-        // NOTE: If the data should be compressed compressed, the sender will send the compressed information again
+        // NOTE: If the data should be compressed, the sender will send the compressed information again
         if transfer_data.compressed {
             channel::send(&self.channel, Message::Compression).await;
 
@@ -201,7 +201,6 @@ where
     transfer_data.total_files = 1;
     transfer_data.total_size = metadata.len();
 
-    // NOTE: Save the file so that it is not dropped and not deleted
     Ok(tar_file)
 }
 

@@ -124,7 +124,7 @@ impl QuicConnection {
         self.endpoint.wait_idle().await;
     }
 
-    pub async fn new_stream(&mut self) -> Result<QuicNetworkPeer, std::io::Error> {
+    pub async fn new_stream(&self) -> Result<QuicNetworkPeer, std::io::Error> {
         let (sender, receiver) = match self.kind {
             Kind::Server => self.connection.accept_bi().await?,
             Kind::Client => self.connection.open_bi().await?,
