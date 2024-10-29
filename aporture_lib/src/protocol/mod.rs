@@ -120,6 +120,7 @@ parse!(Hash, size: n::U35);
 pub enum HolePunchingRequest {
     Address = 0,
     Relay = 1,
+    None = 2,
 }
 parse!(HolePunchingRequest, size: n::U3);
 

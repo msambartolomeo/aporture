@@ -2,7 +2,7 @@ use std::net::{SocketAddr, UdpSocket};
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::task::JoinSet;
+use tokio::task::{JoinHandle, JoinSet};
 
 use crate::crypto::cipher::Cipher;
 use crate::net::quic::QuicConnection;
@@ -14,19 +14,27 @@ fn options_factory(
     pair_info: &PairInfo,
 ) -> Result<JoinSet<Result<QuicConnection, (crate::io::Error, SocketAddr)>>, crate::io::Error> {
     let cipher = pair_info.cipher();
-    let sockets = pair_info.sockets();
-    let addresses = pair_info.pair_addresses();
+    let binding_sockets = pair_info.binding_sockets();
+    let connecting_sockets = pair_info.connecting_sockets();
 
     let mut set = JoinSet::new();
 
-    for a in addresses {
-        let fut = connect(*a, Arc::clone(&cipher));
+    for id in connecting_sockets {
+        let socket = id.local_socket.try_clone()?;
+        let destination = id.peer_address;
+        let address = id.self_address;
+
+        let fut = connect(socket, destination, address, Arc::clone(&cipher));
 
         set.spawn(fut);
     }
 
-    for (s, a) in &sockets {
-        let fut = bind(s.try_clone()?, *a, Arc::clone(&cipher));
+    for id in binding_sockets {
+        let socket = id.local_socket.try_clone()?;
+        let destination = id.peer_address;
+        let address = id.self_address;
+
+        let fut = bind(socket, destination, address, Arc::clone(&cipher));
 
         set.spawn(fut);
     }
@@ -71,14 +79,22 @@ pub async fn find(pair_info: &mut PairInfo) -> QuicConnection {
 
 pub async fn bind(
     socket: UdpSocket,
+    destination: SocketAddr,
     a: SocketAddr,
     cipher: Arc<Cipher>,
 ) -> Result<QuicConnection, (crate::io::Error, SocketAddr)> {
-    log::info!("Waiting for peer on {}, port {}", a.ip(), a.port());
+    log::info!(
+        "Waiting for peer on {}, port {}; Peer address is {destination}",
+        a.ip(),
+        a.port()
+    );
+
+    let s = socket.try_clone().map_err(|e| (e.into(), a))?;
+    let handle = keepalive(s, destination);
 
     let timeout = tokio::time::timeout(
         Duration::from_secs(10),
-        QuicConnection::server(a, socket, cipher),
+        QuicConnection::server(destination, socket, cipher, handle),
     );
 
     let peer = timeout
@@ -90,16 +106,23 @@ pub async fn bind(
 }
 
 pub async fn connect(
+    socket: UdpSocket,
     a: SocketAddr,
+    source: SocketAddr,
     cipher: Arc<Cipher>,
 ) -> Result<QuicConnection, (crate::io::Error, SocketAddr)> {
-    log::info!("Trying to connect to peer on {}, port {}", a.ip(), a.port());
+    log::info!(
+        "Trying to connect to peer on {}, port {}; My address is {source}",
+        a.ip(),
+        a.port()
+    );
 
-    let socket = UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], 0))).map_err(|e| (e.into(), a))?;
+    let s = socket.try_clone().map_err(|e| (e.into(), a))?;
+    let handle = keepalive(s, a);
 
     let timeout = tokio::time::timeout(
         Duration::from_secs(10),
-        QuicConnection::client(socket, cipher, a),
+        QuicConnection::client(a, socket, cipher, handle),
     );
 
     let peer = timeout
@@ -108,4 +131,13 @@ pub async fn connect(
         .map_err(|e| (e, a))?;
 
     Ok(peer)
+}
+
+fn keepalive(socket: UdpSocket, peer: SocketAddr) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        loop {
+            let _ = socket.send_to(b"ka", peer);
+            tokio::time::sleep(Duration::from_secs(10)).await;
+        }
+    })
 }

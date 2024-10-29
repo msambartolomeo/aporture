@@ -7,6 +7,7 @@ use quinn::crypto::rustls::QuicClientConfig;
 use quinn::{ClientConfig, ServerConfig, TokioRuntime};
 use quinn::{Connection, Endpoint, EndpointConfig, RecvStream, SendStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::task::JoinHandle;
 
 use crate::crypto::cert::Certificate;
 use crate::crypto::cipher::Cipher;
@@ -18,6 +19,7 @@ pub struct QuicConnection {
     cipher: Arc<Cipher>,
     endpoint: Endpoint,
     connection: Connection,
+    keepalive_handle: JoinHandle<()>,
     kind: Kind,
 }
 
@@ -37,9 +39,10 @@ pub struct QuicNetworkPeer {
 // TODO: USE REAL CERTIFIATES
 impl QuicConnection {
     pub async fn client(
+        server_address: SocketAddr,
         socket: UdpSocket,
         cipher: Arc<Cipher>,
-        server_address: SocketAddr,
+        keepalive_handle: JoinHandle<()>,
     ) -> Result<Self, crate::io::Error> {
         let config = ClientConfig::new(Arc::new(
             QuicClientConfig::try_from(
@@ -69,6 +72,7 @@ impl QuicConnection {
             cipher,
             endpoint,
             connection,
+            keepalive_handle,
             kind: Kind::Client,
         })
     }
@@ -77,6 +81,7 @@ impl QuicConnection {
         connection_address: SocketAddr,
         socket: UdpSocket,
         cipher: Arc<Cipher>,
+        keepalive_handle: JoinHandle<()>,
     ) -> Result<Self, crate::io::Error> {
         let self_signed = Certificate::default();
 
@@ -101,6 +106,7 @@ impl QuicConnection {
             cipher,
             endpoint,
             connection,
+            keepalive_handle,
             kind: Kind::Server,
         })
     }
@@ -112,6 +118,8 @@ impl QuicConnection {
             }
             Kind::Client => self.connection.close(0u16.into(), &[]),
         }
+
+        self.keepalive_handle.abort();
 
         self.endpoint.wait_idle().await;
     }
