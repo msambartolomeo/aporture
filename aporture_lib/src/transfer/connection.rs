@@ -44,7 +44,7 @@ fn options_factory(
     Ok(set)
 }
 
-pub async fn find(pair_info: &mut PairInfo) -> QuicConnection {
+pub async fn find(pair_info: &mut PairInfo) -> Option<QuicConnection> {
     for _ in 0..RETRIES {
         let Ok(mut options) = options_factory(pair_info) else {
             break;
@@ -58,7 +58,7 @@ pub async fn find(pair_info: &mut PairInfo) -> QuicConnection {
 
                     log::info!("Connected on {}", peer.address());
 
-                    return peer;
+                    return Some(peer);
                 }
                 Some(Ok(Err((e, a)))) => {
                     log::warn!("Could not connect to peer from ip {a}: {e}");
@@ -70,13 +70,7 @@ pub async fn find(pair_info: &mut PairInfo) -> QuicConnection {
         }
     }
 
-    log::info!("Timeout waiting for peer connection, using server fallback");
-    pair_info
-        .fallback()
-        .expect("Connection to server must exist")
-        .add_cipher(pair_info.cipher());
-
-    todo!();
+    None
 }
 
 pub async fn bind(

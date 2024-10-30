@@ -5,6 +5,7 @@ use tempfile::NamedTempFile;
 use walkdir::WalkDir;
 
 use self::channel::{Channel, Message};
+use crate::net::peer::{Encryptable, Peer};
 use crate::pairing::PairInfo;
 use crate::parser::EncryptedSerdeIO;
 use crate::protocol::{PairingResponseCode, TransferData, TransferResponseCode};
@@ -43,16 +44,37 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
     }
 
     pub async fn transfer(self) -> Result<(), error::Send> {
+        let connection = connection::find(self.pair_info).await;
+
+        if let Some(connection) = connection {
+            let peer = connection.new_stream().await?;
+
+            self.transfer_peer(peer).await?;
+
+            connection.finish().await;
+        } else {
+            log::info!("Timeout waiting for peer connection, using server fallback");
+            let peer = self
+                .pair_info
+                .fallback()
+                .expect("Connection to server must exist")
+                .add_cipher(self.pair_info.cipher());
+
+            self.transfer_peer(peer).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn transfer_peer<Ep>(self, mut peer: Ep) -> Result<(), error::Send>
+    where
+        Ep: Encryptable + Peer + Send,
+    {
         let mut path = file::sanitize_path(self.path)
             .await
             .map_err(|_| error::Send::Path)?;
 
         log::info!("Sending file {}", path.display());
-
-        let connection = connection::find(self.pair_info).await;
-
-        let mut peer = connection.new_stream().await?;
-
         let mut transfer_data = get_transfer_data(&path)?;
 
         let tar_file_holder = if transfer_data.total_files > 150 {
@@ -90,8 +112,6 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
 
         let response = peer.read_ser_enc::<TransferResponseCode>().await?;
 
-        connection.finish().await;
-
         match response {
             TransferResponseCode::Ok => Ok(()),
             TransferResponseCode::HashMismatch => Err(error::Send::HashMismatch),
@@ -110,15 +130,39 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
     }
 
     pub async fn transfer(self) -> Result<PathBuf, error::Receive> {
+        let connection = connection::find(self.pair_info).await;
+
+        let destination = if let Some(connection) = connection {
+            let peer = connection.new_stream().await?;
+
+            let destination = self.transfer_peer(peer).await?;
+
+            connection.finish().await;
+
+            destination
+        } else {
+            log::info!("Timeout waiting for peer connection, using server fallback");
+            let peer = self
+                .pair_info
+                .fallback()
+                .expect("Connection to server must exist")
+                .add_cipher(self.pair_info.cipher());
+
+            self.transfer_peer(peer).await?
+        };
+
+        Ok(destination)
+    }
+
+    async fn transfer_peer<Ep>(self, mut peer: Ep) -> Result<PathBuf, error::Receive>
+    where
+        Ep: Encryptable + Peer + Send,
+    {
         let dest = file::sanitize_path(self.path)
             .await
             .map_err(|_| error::Receive::Destination)?;
 
         log::info!("File will try to be saved to {}", dest.display());
-
-        let connection = connection::find(self.pair_info).await;
-
-        let mut peer = connection.new_stream().await?;
 
         log::info!("Receiving Transfer information");
         let mut transfer_data = peer.read_ser_enc::<TransferData>().await?;
@@ -144,8 +188,6 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
         };
 
         peer.write_ser_enc(&PairingResponseCode::Ok).await?;
-
-        connection.finish().await;
 
         Ok(dest)
     }

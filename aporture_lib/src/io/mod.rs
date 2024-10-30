@@ -1,4 +1,5 @@
 use net::message;
+#[cfg(feature = "full")]
 use quinn::ConnectionError;
 use thiserror::Error;
 
