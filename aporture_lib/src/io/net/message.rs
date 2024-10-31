@@ -1,3 +1,4 @@
+#[cfg(feature = "full")]
 use crate::crypto::cipher::Cipher;
 use bytes::{Buf, BufMut};
 use thiserror::Error;
@@ -44,7 +45,7 @@ impl EncryptedContent {
 
 impl<'a> Message<'a> {
     #[allow(clippy::cast_possible_truncation)] // As truncation is checked explicitly
-    pub fn new(content: &'a mut [u8], cipher: Option<&Cipher>) -> Self {
+    pub fn new(content: &'a mut [u8]) -> Self {
         let length = content.len();
 
         assert!(
@@ -54,21 +55,31 @@ impl<'a> Message<'a> {
 
         let length = (length as u16).to_be_bytes();
 
-        match cipher {
-            Some(cipher) => {
-                let (nonce, tag) = cipher.encrypt(content);
+        Self {
+            length,
+            encrypted: EncryptedContent::plain(),
+            content,
+        }
+    }
 
-                Self {
-                    length,
-                    encrypted: EncryptedContent::encrypted(nonce, tag),
-                    content,
-                }
-            }
-            None => Self {
-                length,
-                encrypted: EncryptedContent::plain(),
-                content,
-            },
+    #[cfg(feature = "full")]
+    #[allow(clippy::cast_possible_truncation)] // As truncation is checked explicitly
+    pub fn new_encrypted(content: &'a mut [u8], cipher: &Cipher) -> Self {
+        let length = content.len();
+
+        assert!(
+            length <= u16::MAX.into(),
+            "Message Payload must be smaller than u16::MAX"
+        );
+
+        let length = (length as u16).to_be_bytes();
+
+        let (nonce, tag) = cipher.encrypt(content);
+
+        Self {
+            length,
+            encrypted: EncryptedContent::encrypted(nonce, tag),
+            content,
         }
     }
 
@@ -119,6 +130,7 @@ pub struct MessageBuffer<'a> {
 pub enum ErrorKind {
     #[error("Message is encrypted but no cipher was provided")]
     CipherExpected,
+    #[cfg(feature = "full")]
     #[error("Error decrypting message")]
     Decryption(#[from] crate::crypto::Error),
     #[error("The provided buffer was not sufficient to read all the data")]
@@ -155,7 +167,25 @@ impl<'a> MessageBuffer<'a> {
         }
     }
 
-    pub fn consume(self, cipher: Option<&'a Cipher>) -> Result<usize, Error> {
+    pub fn consume(self) -> Result<usize, Error<'a>> {
+        if let Some(err) = self.error {
+            return Err(Error(err, self));
+        }
+
+        let length = self.message.length();
+
+        match &self.message.encrypted {
+            EncryptedContent::Plain { .. } => (),
+            EncryptedContent::Encrypted { .. } => {
+                return Err(Error(ErrorKind::CipherExpected, self))
+            }
+        }
+
+        Ok(length)
+    }
+
+    #[cfg(feature = "full")]
+    pub fn consume_encrypted(self, cipher: &Cipher) -> Result<usize, Error<'a>> {
         if let Some(err) = self.error {
             return Err(Error(err, self));
         }
@@ -163,15 +193,13 @@ impl<'a> MessageBuffer<'a> {
         let length = self.message.length();
         let content = &mut self.message.content[..length];
 
-        match (&self.message.encrypted, cipher) {
-            (EncryptedContent::Encrypted { nonce, tag, .. }, Some(c)) => {
-                c.decrypt(content, nonce, tag)
+        match &self.message.encrypted {
+            EncryptedContent::Encrypted { nonce, tag, .. } => {
+                cipher
+                    .decrypt(content, nonce, tag)
                     .map_err(move |e| Error(e.into(), self))?;
             }
-            (EncryptedContent::Plain { .. }, _) => (),
-            (EncryptedContent::Encrypted { .. }, None) => {
-                return Err(Error(ErrorKind::CipherExpected, self))
-            }
+            EncryptedContent::Plain { .. } => (),
         }
 
         Ok(length)
@@ -370,7 +398,7 @@ mod test {
 
         let mut input = *hello;
 
-        let message = Message::new(&mut input, None);
+        let message = Message::new(&mut input);
 
         assert!(!message.is_encrypted());
         assert_eq!(hello.len(), message.length());
@@ -383,7 +411,7 @@ mod test {
 
         let mut input = *hello;
 
-        let message = Message::new(&mut input, None);
+        let message = Message::new(&mut input);
 
         let buf = message.into_buf();
         let mut reader = buf.reader();
@@ -420,7 +448,7 @@ mod test {
 
         let mut buffer = [0; 1000];
 
-        let message = Message::new(&mut buffer, None);
+        let message = Message::new(&mut buffer);
 
         let buf = message.into_buf();
         let mut writer = buf.writer();
@@ -448,7 +476,7 @@ mod test {
         assert_eq!(input[..2], message.length);
         assert_eq!([0], message.get_encryption_bit());
 
-        let n = buf.consume(None).map_err(Error::ignore)?;
+        let n = buf.consume().map_err(Error::ignore)?;
 
         assert_eq!(&input[3..], &buffer[..n]);
         assert_eq!(b"Hello", &buffer[..n]);
@@ -464,7 +492,7 @@ mod test {
 
         let cipher = Cipher::new(&[b'a'; 32]);
 
-        let message = Message::new(&mut input, Some(&cipher));
+        let message = Message::new_encrypted(&mut input, &cipher);
 
         assert!(message.is_encrypted());
         assert_eq!(hello.len(), message.length());
@@ -478,7 +506,7 @@ mod test {
 
         let cipher = Cipher::new(&[b'a'; 32]);
 
-        let message = Message::new(&mut input, Some(&cipher));
+        let message = Message::new_encrypted(&mut input, &cipher);
 
         let content_length = message.length();
 
@@ -537,7 +565,7 @@ mod test {
 
         let mut buffer = [0; 1000];
 
-        let message = Message::new(&mut buffer, Some(&cipher));
+        let message = Message::new_encrypted(&mut buffer, &cipher);
 
         let buf = message.into_buf();
         let mut writer = buf.writer();
@@ -565,7 +593,7 @@ mod test {
         assert_eq!(input[..2], message.length);
         assert_eq!([1], message.get_encryption_bit());
 
-        let n = buf.consume(Some(&cipher)).map_err(Error::ignore)?;
+        let n = buf.consume_encrypted(&cipher).map_err(Error::ignore)?;
         assert_eq!(b"Hello", &buffer[..n]);
 
         Ok(())

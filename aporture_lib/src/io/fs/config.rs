@@ -1,4 +1,4 @@
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 
 use generic_array::GenericArray;
@@ -65,6 +65,11 @@ impl Config {
                 })
                 .await
         }
+    }
+
+    #[must_use]
+    pub fn server_address(&self) -> SocketAddr {
+        (self.server_address, self.server_port).into()
     }
 
     async fn from_file() -> Result<Self, crate::io::Error> {

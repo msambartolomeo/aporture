@@ -1,6 +1,5 @@
 use std::ffi::OsString;
 use std::net::SocketAddr;
-use std::time::Duration;
 
 use generic_array::typenum as n;
 use generic_array::{typenum::Unsigned, GenericArray};
@@ -76,29 +75,6 @@ pub struct NegotiationPayload {
 parse!(NegotiationPayload);
 
 #[serde_as]
-#[derive(Debug, PartialEq, Eq, Deserialize, Serialize)]
-pub struct TransferHello {
-    #[serde_as(as = "Bytes")]
-    // NOTE: Must be aporture
-    pub tag: [u8; 8],
-
-    // NOTE: milis from epoch as bytes
-    pub timestamp: Duration,
-}
-parse!(TransferHello);
-
-impl Default for TransferHello {
-    fn default() -> Self {
-        Self {
-            tag: b"aporture".to_owned(),
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::SystemTime::UNIX_EPOCH)
-                .expect("Now is after unix epoch"),
-        }
-    }
-}
-
-#[serde_as]
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TransferData {
     pub total_files: u64,
@@ -136,6 +112,19 @@ parse!(TransferResponseCode, size: n::U3);
 #[derive(Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Hash(#[serde_as(as = "Bytes")] pub [u8; 32]);
 parse!(Hash, size: n::U35);
+
+// UDP HOLE PUNCHING
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize_repr, Serialize_repr)]
+#[repr(u8)]
+pub enum HolePunchingRequest {
+    Address = 0,
+    Relay = 1,
+    None = 2,
+}
+parse!(HolePunchingRequest, size: n::U3);
+
+parse!(SocketAddr, size: n::U24);
 
 #[cfg(test)]
 mod test {
@@ -212,4 +201,8 @@ mod test {
     test_parsed!(TransferResponseCode, TransferResponseCode::Ok);
 
     test_parsed!(Hash, Hash([0; 32]));
+
+    test_parsed!(SocketAddr, ([200, 200, 200, 200], 65535).into());
+
+    test_parsed!(HolePunchingRequest, HolePunchingRequest::Address);
 }

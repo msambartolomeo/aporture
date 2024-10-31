@@ -44,7 +44,7 @@ impl Gateway {
         let external_address = self
             .igd
             .get_any_address(
-                PortMappingProtocol::TCP,
+                PortMappingProtocol::UDP,
                 local_address,
                 3600,
                 PORT_DESCRIPTION,
@@ -56,7 +56,7 @@ impl Gateway {
                 log::warn!("Router does not support temporary upnp, trying permanent leasing");
 
                 self.igd
-                    .get_any_address(PortMappingProtocol::TCP, local_address, 0, PORT_DESCRIPTION)
+                    .get_any_address(PortMappingProtocol::UDP, local_address, 0, PORT_DESCRIPTION)
                     .await
             }
             a => a,
@@ -70,7 +70,7 @@ impl Gateway {
     pub async fn close_port(&mut self) -> Result<(), Error> {
         if let Some(port) = self.port.take() {
             self.igd
-                .remove_port(igd::PortMappingProtocol::TCP, port)
+                .remove_port(igd::PortMappingProtocol::UDP, port)
                 .await?;
         };
 
@@ -80,6 +80,8 @@ impl Gateway {
 
 #[derive(Debug, Error)]
 pub enum Error {
+    #[error("Could not create a socket to use with upnp")]
+    Socket(#[from] std::io::Error),
     #[error("Could not find local ip address")]
     LocalIpNotFound(#[from] local_ip_address::Error),
     #[error("Could not find upnp enabled gateway")]

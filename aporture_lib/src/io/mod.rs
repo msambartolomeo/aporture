@@ -1,4 +1,6 @@
 use net::message;
+#[cfg(feature = "full")]
+use quinn::ConnectionError;
 use thiserror::Error;
 
 pub mod net;
@@ -10,6 +12,10 @@ pub mod fs;
 pub enum Error {
     #[error("IO error: {0}")]
     IO(#[from] std::io::Error),
+
+    #[cfg(feature = "full")]
+    #[error("Quic connection error: {0}")]
+    Quic(#[from] ConnectionError),
 
     #[error("Config directory not found")]
     Config,
@@ -31,6 +37,7 @@ pub enum Error {
 impl<'a> From<message::Error<'a>> for Error {
     fn from(value: message::Error<'a>) -> Self {
         match value.0 {
+            #[cfg(feature = "full")]
             message::ErrorKind::Decryption(error) => Self::Cipher(error),
             message::ErrorKind::CipherExpected
             | message::ErrorKind::InsuficientBuffer

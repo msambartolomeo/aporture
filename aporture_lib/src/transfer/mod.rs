@@ -1,23 +1,21 @@
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use tempfile::NamedTempFile;
-use tokio::task::JoinSet;
 use walkdir::WalkDir;
 
 use self::channel::{Channel, Message};
-use crate::net::EncryptedNetworkPeer;
+use crate::net::peer::{Encryptable, Peer};
 use crate::pairing::PairInfo;
 use crate::parser::EncryptedSerdeIO;
 use crate::protocol::{PairingResponseCode, TransferData, TransferResponseCode};
 use crate::{Receiver, Sender, State};
 
 mod channel;
+mod connection;
 mod deflate;
 mod error;
 mod file;
-mod peer;
 
 pub use channel::Message as ChannelMessage;
 pub use error::{Receive as ReceiveError, Send as SendError};
@@ -46,24 +44,37 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
     }
 
     pub async fn transfer(self) -> Result<(), error::Send> {
+        let connection = connection::find(self.pair_info).await;
+
+        if let Some(connection) = connection {
+            let peer = connection.new_stream().await?;
+
+            self.transfer_peer(peer).await?;
+
+            connection.finish().await;
+        } else {
+            log::info!("Timeout waiting for peer connection, using server fallback");
+            let peer = self
+                .pair_info
+                .fallback()
+                .expect("Connection to server must exist")
+                .add_cipher(self.pair_info.cipher());
+
+            self.transfer_peer(peer).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn transfer_peer<Ep>(self, mut peer: Ep) -> Result<(), error::Send>
+    where
+        Ep: Encryptable + Peer + Send,
+    {
         let mut path = file::sanitize_path(self.path)
             .await
             .map_err(|_| error::Send::Path)?;
 
         log::info!("Sending file {}", path.display());
-
-        let addresses = self.pair_info.addresses();
-        let cipher = self.pair_info.cipher();
-
-        let options_factory = || {
-            addresses.iter().fold(JoinSet::new(), |mut set, a| {
-                set.spawn(peer::connect(*a, Arc::clone(&cipher)));
-                set
-            })
-        };
-
-        let mut peer = peer::find(options_factory, self.pair_info).await;
-
         let mut transfer_data = get_transfer_data(&path)?;
 
         let tar_file_holder = if transfer_data.total_files > 150 {
@@ -99,7 +110,9 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
             channel::send(&self.channel, Message::Uncompressing).await;
         }
 
-        match peer.read_ser_enc::<TransferResponseCode>().await? {
+        let response = peer.read_ser_enc::<TransferResponseCode>().await?;
+
+        match response {
             TransferResponseCode::Ok => Ok(()),
             TransferResponseCode::HashMismatch => Err(error::Send::HashMismatch),
         }
@@ -117,29 +130,45 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
     }
 
     pub async fn transfer(self) -> Result<PathBuf, error::Receive> {
-        let addresses = self.pair_info.bind_addresses();
-        let cipher = self.pair_info.cipher();
+        let connection = connection::find(self.pair_info).await;
 
+        let destination = if let Some(connection) = connection {
+            let peer = connection.new_stream().await?;
+
+            let destination = self.transfer_peer(peer).await?;
+
+            connection.finish().await;
+
+            destination
+        } else {
+            log::info!("Timeout waiting for peer connection, using server fallback");
+            let peer = self
+                .pair_info
+                .fallback()
+                .expect("Connection to server must exist")
+                .add_cipher(self.pair_info.cipher());
+
+            self.transfer_peer(peer).await?
+        };
+
+        Ok(destination)
+    }
+
+    async fn transfer_peer<Ep>(self, mut peer: Ep) -> Result<PathBuf, error::Receive>
+    where
+        Ep: Encryptable + Peer + Send,
+    {
         let dest = file::sanitize_path(self.path)
             .await
             .map_err(|_| error::Receive::Destination)?;
 
         log::info!("File will try to be saved to {}", dest.display());
 
-        let options_factory = || {
-            addresses.iter().fold(JoinSet::new(), |mut set, (b, a)| {
-                set.spawn(peer::bind(*b, *a, Arc::clone(&cipher)));
-                set
-            })
-        };
-
-        let mut peer = peer::find(options_factory, self.pair_info).await;
-
         log::info!("Receiving Transfer information");
         let mut transfer_data = peer.read_ser_enc::<TransferData>().await?;
         log::info!("Transfer data received: {transfer_data:?}");
 
-        // NOTE: If the data should be compressed compressed, the sender will send the compressed information again
+        // NOTE: If the data should be compressed, the sender will send the compressed information again
         if transfer_data.compressed {
             channel::send(&self.channel, Message::Compression).await;
 
@@ -187,12 +216,15 @@ fn get_transfer_data(path: &Path) -> Result<TransferData, error::Send> {
     Ok(transfer_data)
 }
 
-async fn compress_folder(
+async fn compress_folder<Ep>(
     transfer_data: &mut TransferData,
     path: &Path,
-    peer: &mut EncryptedNetworkPeer,
+    peer: &mut Ep,
     channel: &Option<Channel>,
-) -> Result<NamedTempFile, error::Send> {
+) -> Result<NamedTempFile, error::Send>
+where
+    Ep: EncryptedSerdeIO + Send,
+{
     channel::send(channel, Message::Compression).await;
     transfer_data.compressed = true;
 
@@ -211,16 +243,18 @@ async fn compress_folder(
     transfer_data.total_files = 1;
     transfer_data.total_size = metadata.len();
 
-    // NOTE: Save the file so that it is not dropped and not deleted
     Ok(tar_file)
 }
 
-async fn receive_file(
+async fn receive_file<Ep>(
     mut dest: PathBuf,
     transfer_data: &TransferData,
-    peer: &mut EncryptedNetworkPeer,
+    peer: &mut Ep,
     channel: &Option<Channel>,
-) -> Result<PathBuf, error::Receive> {
+) -> Result<PathBuf, error::Receive>
+where
+    Ep: EncryptedSerdeIO + Send,
+{
     let mut file = if dest.is_dir() {
         tempfile::NamedTempFile::new_in(&dest)?
     } else {
@@ -258,12 +292,15 @@ async fn receive_file(
     Ok(dest)
 }
 
-async fn receive_folder(
+async fn receive_folder<Ep>(
     mut dest: PathBuf,
     transfer_data: TransferData,
-    peer: &mut EncryptedNetworkPeer,
+    peer: &mut Ep,
     channel: &Option<Channel>,
-) -> Result<PathBuf, error::Receive> {
+) -> Result<PathBuf, error::Receive>
+where
+    Ep: EncryptedSerdeIO + Send,
+{
     let parent = dest
         .parent()
         .expect("Parent must exist as path is sanitized");

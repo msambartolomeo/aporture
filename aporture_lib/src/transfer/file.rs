@@ -8,7 +8,6 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
 
 use crate::crypto;
 use crate::crypto::hasher::Hasher;
-use crate::net::EncryptedNetworkPeer;
 use crate::parser::EncryptedSerdeIO;
 use crate::protocol::{FileData, Hash, TransferResponseCode};
 use crate::transfer::channel;
@@ -17,12 +16,15 @@ use crate::transfer::channel::{Channel, Message};
 const FILE_RETRIES: usize = 3;
 const BUFFER_SIZE: usize = 16 * 1024;
 
-pub async fn send(
-    peer: &mut EncryptedNetworkPeer,
+pub async fn send<Ep>(
+    peer: &mut Ep,
     path: &Path,
     base: &Path,
     channel: &Option<Channel>,
-) -> Result<(), super::error::Send> {
+) -> Result<(), super::error::Send>
+where
+    Ep: EncryptedSerdeIO + Send,
+{
     let is_file = path.is_file();
     let file_size = if is_file { path.metadata()?.len() } else { 0 };
 
@@ -73,11 +75,14 @@ pub async fn send(
     Err(super::error::Send::HashMismatch)
 }
 
-pub async fn receive(
+pub async fn receive<Ep>(
     dest: &Path,
-    peer: &mut EncryptedNetworkPeer,
+    peer: &mut Ep,
     channel: &Option<Channel>,
-) -> Result<FileData, super::error::Receive> {
+) -> Result<FileData, super::error::Receive>
+where
+    Ep: EncryptedSerdeIO + Send,
+{
     let file_data = peer.read_ser_enc::<FileData>().await?;
 
     let mut path = dest.to_owned();
@@ -126,11 +131,14 @@ pub async fn receive(
     Err(super::error::Receive::HashMismatch)
 }
 
-async fn hash_and_send(
+async fn hash_and_send<Ep>(
     file: File,
-    sender: &mut EncryptedNetworkPeer,
+    sender: &mut Ep,
     channel: &Option<Channel>,
-) -> Result<crypto::hasher::Hash, crate::io::Error> {
+) -> Result<crypto::hasher::Hash, crate::io::Error>
+where
+    Ep: EncryptedSerdeIO + Send,
+{
     let mut reader = BufReader::new(file);
     let mut hasher = Hasher::default();
     let mut buffer = vec![0; BUFFER_SIZE];
@@ -150,12 +158,15 @@ async fn hash_and_send(
     Ok(hasher.finalize())
 }
 
-async fn hash_and_receive(
+async fn hash_and_receive<Ep>(
     file: &mut File,
     file_size: u64,
-    receiver: &mut EncryptedNetworkPeer,
+    receiver: &mut Ep,
     channel: &Option<Channel>,
-) -> Result<crypto::hasher::Hash, crate::io::Error> {
+) -> Result<crypto::hasher::Hash, crate::io::Error>
+where
+    Ep: EncryptedSerdeIO + Send,
+{
     let mut writer = BufWriter::new(file);
     let mut hasher = Hasher::default();
     let mut buffer = vec![0; BUFFER_SIZE];
