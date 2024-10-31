@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use tokio::task::{JoinHandle, JoinSet};
 
+use crate::crypto::cert::{Certificate, CertificateKey};
 use crate::crypto::cipher::Cipher;
 use crate::net::quic::QuicConnection;
 use crate::pairing::PairInfo;
@@ -15,28 +16,31 @@ type AddressError = (crate::io::Error, SocketAddr);
 fn options_factory(
     pair_info: &PairInfo,
 ) -> Result<JoinSet<Result<QuicConnection, AddressError>>, crate::io::Error> {
-    let cipher = pair_info.cipher();
     let binding_sockets = pair_info.binding_sockets();
     let connecting_sockets = pair_info.connecting_sockets();
 
     let mut set = JoinSet::new();
 
     for id in connecting_sockets {
+        let cipher = pair_info.cipher();
+        let peer_cert = pair_info.peer_certificate();
         let socket = id.local_socket.try_clone()?;
         let destination = id.peer_address;
         let address = id.self_address;
 
-        let fut = connect(socket, destination, address, Arc::clone(&cipher));
+        let fut = connect(socket, destination, address, cipher, peer_cert);
 
         set.spawn(fut);
     }
 
     for id in binding_sockets {
+        let cipher = pair_info.cipher();
+        let self_cert = pair_info.self_certificate();
         let socket = id.local_socket.try_clone()?;
         let destination = id.peer_address;
         let address = id.self_address;
 
-        let fut = bind(socket, destination, address, Arc::clone(&cipher));
+        let fut = bind(socket, destination, address, cipher, self_cert);
 
         set.spawn(fut);
     }
@@ -78,6 +82,7 @@ pub async fn bind(
     destination: SocketAddr,
     a: SocketAddr,
     cipher: Arc<Cipher>,
+    certificate: CertificateKey,
 ) -> Result<QuicConnection, AddressError> {
     log::info!(
         "Waiting for peer on {}, port {}; Peer address is {destination}",
@@ -90,7 +95,7 @@ pub async fn bind(
 
     let timeout = tokio::time::timeout(
         Duration::from_secs(10),
-        QuicConnection::server(destination, socket, cipher, handle),
+        QuicConnection::server(destination, socket, cipher, certificate, handle),
     );
 
     let peer = timeout
@@ -106,6 +111,7 @@ pub async fn connect(
     a: SocketAddr,
     source: SocketAddr,
     cipher: Arc<Cipher>,
+    certificate: Certificate,
 ) -> Result<QuicConnection, AddressError> {
     log::info!(
         "Trying to connect to peer on {}, port {}; My address is {source}",
@@ -118,7 +124,7 @@ pub async fn connect(
 
     let timeout = tokio::time::timeout(
         Duration::from_secs(10),
-        QuicConnection::client(a, socket, cipher, handle),
+        QuicConnection::client(a, socket, cipher, certificate, handle),
     );
 
     let peer = timeout

@@ -80,3 +80,5 @@ impl<P: Parser> Parser for Vec<P> {
         None
     }
 }
+
+parse!(Vec<u8>);

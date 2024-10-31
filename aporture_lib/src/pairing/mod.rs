@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::marker::PhantomData;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::Arc;
@@ -7,6 +8,7 @@ use spake2::{Ed25519Group, Identity, Password, Spake2};
 use tokio::net::TcpStream;
 use tokio::task::JoinHandle;
 
+use crate::crypto::cert::{Certificate, CertificateKey};
 use crate::crypto::cipher::Cipher;
 use crate::crypto::hasher::Hasher;
 use crate::crypto::Key;
@@ -248,6 +250,85 @@ impl<K: Kind> Negotiation<K> {
     }
 }
 
+impl AporturePairingProtocol<Negotiation<Sender>> {
+    pub async fn exchange(mut self) -> Result<PairInfo, error::Negotiation> {
+        log::info!("Starting APP Negotiation");
+
+        let remote_addresses = self.send_addresses().await?;
+        let connecting_sockets = self.receive_addresses().await?;
+        let (self_cert, peer_cert) = self.get_certs().await?;
+
+        let (server, cipher) = self.state.server.extract_cipher();
+        let binding_sockets = self
+            .state
+            .addresses
+            .into_iter()
+            .zip(remote_addresses)
+            .collect();
+
+        Ok(PairInfo {
+            key: self.state.key,
+            cipher,
+            connecting_sockets,
+            binding_sockets,
+            server_fallback: Some(server),
+            self_cert,
+            peer_cert,
+            save_contact: self.data.save_contact,
+        })
+    }
+}
+
+impl AporturePairingProtocol<Negotiation<Receiver>> {
+    pub async fn exchange(mut self) -> Result<PairInfo, error::Negotiation> {
+        log::info!("Starting APP Negotiation");
+
+        let connecting_sockets = self.receive_addresses().await?;
+        let remote_addresses = self.send_addresses().await?;
+        let (self_cert, peer_cert) = self.get_certs().await?;
+
+        let (server, cipher) = self.state.server.extract_cipher();
+        let binding_sockets = self
+            .state
+            .addresses
+            .into_iter()
+            .zip(remote_addresses)
+            .collect();
+
+        Ok(PairInfo {
+            key: self.state.key,
+            cipher,
+            connecting_sockets,
+            binding_sockets,
+            server_fallback: Some(server),
+            self_cert,
+            peer_cert,
+            save_contact: self.data.save_contact,
+        })
+    }
+
+    pub fn add_local(&mut self) -> Result<(), std::io::Error> {
+        let ip = local_ip_address::local_ip()
+            .map_err(|_| std::io::Error::from(std::io::ErrorKind::AddrNotAvailable))?;
+
+        let socket = UdpSocket::bind(ANY_ADDR)?;
+
+        let port = socket.local_addr()?.port();
+
+        let external_address = (ip, port).into();
+
+        let info = TransferInfo::Socket(UdpSocketAddr {
+            socket,
+            external_address,
+            handle: None,
+        });
+
+        self.state.addresses.push(info);
+
+        Ok(())
+    }
+}
+
 impl<K: Kind + Send> AporturePairingProtocol<Negotiation<K>> {
     async fn send_addresses(&mut self) -> Result<Vec<SocketAddr>, error::Negotiation> {
         let addresses = self
@@ -291,82 +372,7 @@ impl<K: Kind + Send> AporturePairingProtocol<Negotiation<K>> {
 
         Ok(info)
     }
-}
 
-impl AporturePairingProtocol<Negotiation<Sender>> {
-    pub async fn exchange(mut self) -> Result<PairInfo, error::Negotiation> {
-        log::info!("Starting APP Negotiation");
-
-        let remote_addresses = self.send_addresses().await?;
-        let connecting_sockets = self.receive_addresses().await?;
-
-        let (server, cipher) = self.state.server.extract_cipher();
-        let binding_sockets = self
-            .state
-            .addresses
-            .into_iter()
-            .zip(remote_addresses)
-            .collect();
-
-        Ok(PairInfo {
-            key: self.state.key,
-            cipher,
-            connecting_sockets,
-            binding_sockets,
-            server_fallback: Some(server),
-            save_contact: self.data.save_contact,
-        })
-    }
-}
-
-impl AporturePairingProtocol<Negotiation<Receiver>> {
-    pub async fn exchange(mut self) -> Result<PairInfo, error::Negotiation> {
-        log::info!("Starting APP Negotiation");
-
-        let connecting_sockets = self.receive_addresses().await?;
-        let remote_addresses = self.send_addresses().await?;
-
-        let (server, cipher) = self.state.server.extract_cipher();
-        let binding_sockets = self
-            .state
-            .addresses
-            .into_iter()
-            .zip(remote_addresses)
-            .collect();
-
-        Ok(PairInfo {
-            key: self.state.key,
-            cipher,
-            connecting_sockets,
-            binding_sockets,
-            server_fallback: Some(server),
-            save_contact: self.data.save_contact,
-        })
-    }
-
-    pub fn add_local(&mut self) -> Result<(), std::io::Error> {
-        let ip = local_ip_address::local_ip()
-            .map_err(|_| std::io::Error::from(std::io::ErrorKind::AddrNotAvailable))?;
-
-        let socket = UdpSocket::bind(ANY_ADDR)?;
-
-        let port = socket.local_addr()?.port();
-
-        let external_address = (ip, port).into();
-
-        let info = TransferInfo::Socket(UdpSocketAddr {
-            socket,
-            external_address,
-            handle: None,
-        });
-
-        self.state.addresses.push(info);
-
-        Ok(())
-    }
-}
-
-impl<K: Kind + Send> AporturePairingProtocol<Negotiation<K>> {
     pub async fn add_upnp(&mut self) -> Result<(), upnp::Error> {
         let mut gateway = upnp::Gateway::new().await?;
 
@@ -400,6 +406,32 @@ impl<K: Kind + Send> AporturePairingProtocol<Negotiation<K>> {
         self.state.addresses.push(info);
 
         Ok(())
+    }
+
+    pub async fn get_certs(&mut self) -> Result<(CertificateKey, Certificate), error::Negotiation> {
+        let addresses = self
+            .state
+            .addresses
+            .iter()
+            .map(TransferInfo::get_connection_address)
+            .map(|s| s.ip().to_string())
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        log::info!("Creating certificate valid for {addresses:?}");
+
+        let self_cert = CertificateKey::new(addresses)?;
+
+        let der = self_cert.cert_der();
+
+        self.state.server.write_ser_enc(&der).await?;
+
+        let der = self.state.server.read_ser_enc::<Vec<u8>>().await?;
+
+        let peer_cert = Certificate::from(der);
+
+        Ok((self_cert, peer_cert))
     }
 }
 
@@ -475,6 +507,8 @@ pub struct PairInfo {
     connecting_sockets: Vec<(UdpSocketAddr, SocketAddr)>,
     binding_sockets: Vec<(TransferInfo, SocketAddr)>,
     server_fallback: Option<NetworkPeer>,
+    self_cert: CertificateKey,
+    peer_cert: Certificate,
     pub save_contact: bool,
 }
 
@@ -501,6 +535,16 @@ impl PairInfo {
     #[must_use]
     pub fn pair_addresses(&self) -> &[(UdpSocketAddr, SocketAddr)] {
         &self.connecting_sockets
+    }
+
+    #[must_use]
+    pub fn peer_certificate(&self) -> Certificate {
+        self.peer_cert.clone()
+    }
+
+    #[must_use]
+    pub fn self_certificate(&self) -> CertificateKey {
+        self.self_cert.clone()
     }
 
     pub async fn finalize(self) -> Key {
