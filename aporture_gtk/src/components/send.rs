@@ -34,6 +34,7 @@ pub struct SenderPage {
 pub enum Msg {
     GeneratePassphrase,
     PassphraseChanged,
+    FocusEditPassword,
     SaveContact,
     ContactsReady(Option<Arc<RwLock<Contacts>>>),
     FilePickerOpen,
@@ -73,6 +74,8 @@ impl SimpleComponent for SenderPage {
                 #[watch]
                 set_sensitive: !model.form_disabled,
 
+                add_css_class: "no-edit-button",
+
                 set_can_focus: false,
 
                 connect_changed => Msg::PassphraseChanged,
@@ -84,6 +87,16 @@ impl SimpleComponent for SenderPage {
                     add_css_class: "circular",
 
                     connect_clicked => Msg::GeneratePassphrase,
+
+                },
+
+                add_suffix = &gtk::Button {
+                    set_icon_name: icon_names::EDIT,
+
+                    add_css_class: "flat",
+                    add_css_class: "circular",
+
+                    connect_clicked => Msg::FocusEditPassword,
                 },
             },
 
@@ -171,6 +184,10 @@ impl SimpleComponent for SenderPage {
                 .set_text(&passphrase::generate(PASSPHRASE_WORD_COUNT)),
 
             Msg::PassphraseChanged => self.passphrase_length = self.passphrase_entry.text_length(),
+
+            Msg::FocusEditPassword => {
+                self.passphrase_entry.grab_focus_without_selecting();
+            }
 
             Msg::SaveContact => {
                 if self.contacts.is_none() && self.save_contact.is_active() {
