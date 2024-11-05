@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -208,7 +209,10 @@ impl SimpleComponent for SenderPage {
             Msg::FilePickerOpen => self.file_picker_dialog.emit(OpenDialogMsg::Open),
 
             Msg::FilePickerResponse(path) => {
-                let name = path.file_name().expect("Must be a file").to_string_lossy();
+                let name = path
+                    .file_name()
+                    .unwrap_or(OsStr::new("/"))
+                    .to_string_lossy();
                 self.file_entry.set_subtitle(&name);
 
                 self.file_path = Some(path);
