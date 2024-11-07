@@ -14,6 +14,8 @@ use crate::app;
 use crate::components::dialog::peer::{self, PassphraseMethod, Peer};
 use aporture::fs::contacts::Contacts;
 
+use super::dialog;
+
 #[derive(Debug)]
 pub struct ContactPage {
     contacts_ui: FactoryHashMap<String, contact_row::Contact, RandomState>,
@@ -34,15 +36,17 @@ pub enum Msg {
     ReceiverPickerOpen(String),
     ReceiverPickerResponse(PathBuf),
     DeleteContact(String),
+    DeleteContactUI(String),
     PeerFinished,
     Ignore,
 }
 
 #[relm4::component(pub)]
-impl SimpleComponent for ContactPage {
+impl Component for ContactPage {
     type Init = ();
     type Input = Msg;
     type Output = app::Request;
+    type CommandOutput = ();
 
     view! {
         gtk::ScrolledWindow {
@@ -110,7 +114,7 @@ impl SimpleComponent for ContactPage {
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, msg: Self::Input, _sender: ComponentSender<Self>) {
+    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, root: &Self::Root) {
         match msg {
             Msg::ContactsReady(contacts) => {
                 self.contacts = contacts;
@@ -191,18 +195,25 @@ impl SimpleComponent for ContactPage {
             }
 
             Msg::DeleteContact(contact) => {
+                let message = format!("delete contact \"{}\"", &contact);
                 let contacts = self
                     .contacts
                     .clone()
                     .expect("Cannot delete contacts if not requested");
 
-                let mut contacts = contacts.blocking_write();
+                dialog::Confirmation::new(&message).choose(root, move || {
+                    let mut contacts = contacts.blocking_write();
 
-                contacts.delete(&contact);
-                contacts.save_blocking().expect("Contacts saved");
+                    contacts.delete(&contact);
+                    contacts.save_blocking().expect("Contacts saved");
 
-                drop(contacts);
+                    drop(contacts);
 
+                    sender.input(Msg::DeleteContactUI(contact));
+                });
+            }
+
+            Msg::DeleteContactUI(contact) => {
                 self.contacts_ui.remove(&contact);
             }
 
@@ -275,7 +286,8 @@ mod contact_row {
                 connect_expanded_notify => Msg::Expand,
 
                 add_suffix = &gtk::Button {
-                    set_icon_name: icon_names::USER_TRASH,
+                    // NOTE: BROKEN set_icon_name: icon_names::USER_TRASH,
+                    set_icon_name: "user-trash-symbolic",
 
                     add_css_class: "flat",
                     add_css_class: "circular",
