@@ -1,8 +1,9 @@
+use std::hash::RandomState;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use adw::prelude::*;
-use relm4::factory::FactoryVecDeque;
+use relm4::factory::FactoryHashMap;
 use relm4::prelude::*;
 use relm4_components::open_dialog::{
     OpenDialog, OpenDialogMsg, OpenDialogResponse, OpenDialogSettings,
@@ -15,9 +16,9 @@ use aporture::fs::contacts::Contacts;
 
 #[derive(Debug)]
 pub struct ContactPage {
-    contacts_ui: FactoryVecDeque<contact_row::Contact>,
+    contacts_ui: FactoryHashMap<String, contact_row::Contact, RandomState>,
     contacts: Option<Arc<RwLock<Contacts>>>,
-    current_picking_index: usize,
+    current_contact: String,
     sender_picker_dialog: Controller<OpenDialog>,
     receiver_picker_dialog: Controller<OpenDialog>,
     aporture_dialog: Controller<Peer>,
@@ -27,12 +28,12 @@ pub struct ContactPage {
 pub enum Msg {
     ContactsReady(Option<Arc<RwLock<Contacts>>>),
     SendFile(String, PathBuf),
-    SenderPickerOpen(usize),
+    SenderPickerOpen(String),
     SenderPickerResponse(PathBuf),
     ReceiveFile(String, PathBuf),
-    ReceiverPickerOpen(usize),
+    ReceiverPickerOpen(String),
     ReceiverPickerResponse(PathBuf),
-    DeleteContact(usize, String),
+    DeleteContact(String),
     PeerFinished,
     Ignore,
 }
@@ -89,12 +90,12 @@ impl SimpleComponent for ContactPage {
                 OpenDialogResponse::Cancel => Msg::Ignore,
             });
 
-        let contacts_ui = FactoryVecDeque::builder()
+        let contacts_ui = FactoryHashMap::builder()
             .launch(adw::PreferencesGroup::default())
             .forward(sender.input_sender(), Msg::from);
 
         let model = Self {
-            current_picking_index: 0,
+            current_contact: String::default(),
             contacts_ui,
             contacts: None,
             sender_picker_dialog,
@@ -114,15 +115,13 @@ impl SimpleComponent for ContactPage {
             Msg::ContactsReady(contacts) => {
                 self.contacts = contacts;
                 if let Some(contacts) = &self.contacts {
-                    let mut contacts_ui = self.contacts_ui.guard();
-                    contacts_ui.clear();
+                    self.contacts_ui.clear();
                     contacts.blocking_read().list().for_each(|(name, date)| {
-                        let input = contact_row::Input {
-                            name: name.clone(),
+                        let data = contact_row::Input {
                             date: date.format("%d/%m/%Y %H:%M").to_string(),
                         };
 
-                        contacts_ui.push_back(input);
+                        self.contacts_ui.insert(name.clone(), data);
                     });
                 }
             }
@@ -162,7 +161,7 @@ impl SimpleComponent for ContactPage {
             }
 
             Msg::SenderPickerOpen(index) => {
-                self.current_picking_index = index;
+                self.current_contact = index;
 
                 self.sender_picker_dialog.emit(OpenDialogMsg::Open);
             }
@@ -171,13 +170,13 @@ impl SimpleComponent for ContactPage {
                 use contact_row::Msg as ContactMsg;
 
                 self.contacts_ui.send(
-                    self.current_picking_index,
+                    &self.current_contact,
                     ContactMsg::SendFilePickerClosed(path),
                 );
             }
 
             Msg::ReceiverPickerOpen(index) => {
-                self.current_picking_index = index;
+                self.current_contact = index;
 
                 self.receiver_picker_dialog.emit(OpenDialogMsg::Open);
             }
@@ -186,12 +185,12 @@ impl SimpleComponent for ContactPage {
                 use contact_row::Msg as ContactMsg;
 
                 self.contacts_ui.send(
-                    self.current_picking_index,
+                    &self.current_contact,
                     ContactMsg::ReceiveFilePickerClosed(path),
                 );
             }
 
-            Msg::DeleteContact(index, contact) => {
+            Msg::DeleteContact(contact) => {
                 let contacts = self
                     .contacts
                     .clone()
@@ -204,9 +203,7 @@ impl SimpleComponent for ContactPage {
 
                 drop(contacts);
 
-                let mut contacts_ui = self.contacts_ui.guard();
-
-                contacts_ui.remove(index);
+                self.contacts_ui.remove(&contact);
             }
 
             Msg::PeerFinished => {
@@ -231,7 +228,6 @@ mod contact_row {
         date: String,
         path: Option<PathBuf>,
         destination: PathBuf,
-        index: DynamicIndex,
         expanded: bool,
     }
 
@@ -249,17 +245,16 @@ mod contact_row {
 
     #[derive(Debug)]
     pub struct Input {
-        pub name: String,
         pub date: String,
     }
 
     #[derive(Debug)]
     pub enum Output {
         Send(String, PathBuf),
-        SendFilePicker(usize),
-        ReceiveFilePicker(usize),
+        SendFilePicker(String),
+        ReceiveFilePicker(String),
         Receive(String, PathBuf),
-        Delete(usize, String),
+        Delete(String),
     }
 
     #[relm4::factory(pub)]
@@ -269,6 +264,7 @@ mod contact_row {
         type Output = Output;
         type CommandOutput = ();
         type ParentWidget = adw::PreferencesGroup;
+        type Index = String;
 
         view! {
             #[name = "expander"]
@@ -279,7 +275,7 @@ mod contact_row {
                 connect_expanded_notify => Msg::Expand,
 
                 add_suffix = &gtk::Button {
-                    set_icon_name: icon_names::CROSS_LARGE_CIRCLE_FILLED,
+                    set_icon_name: icon_names::USER_TRASH,
 
                     add_css_class: "flat",
                     add_css_class: "circular",
@@ -340,16 +336,11 @@ mod contact_row {
             }
         }
 
-        fn init_model(
-            value: Self::Init,
-            index: &DynamicIndex,
-            _sender: FactorySender<Self>,
-        ) -> Self {
+        fn init_model(value: Self::Init, index: &String, _sender: FactorySender<Self>) -> Self {
             Self {
                 expanded: false,
-                name: value.name,
+                name: index.clone(),
                 date: value.date,
-                index: index.clone(),
                 path: None,
                 destination: aporture::fs::downloads_directory().expect("Valid download dir"),
             }
@@ -372,11 +363,11 @@ mod contact_row {
                     .expect("Not dropped"),
 
                 Msg::SendFilePickerOpen => sender
-                    .output(Output::SendFilePicker(self.index.current_index()))
+                    .output(Output::SendFilePicker(self.name.clone()))
                     .expect("Not dropped"),
 
                 Msg::ReceiveFilePickerOpen => sender
-                    .output(Output::ReceiveFilePicker(self.index.current_index()))
+                    .output(Output::ReceiveFilePicker(self.name.clone()))
                     .expect("Not dropped"),
 
                 Msg::SendFilePickerClosed(path) => self.path = Some(path),
@@ -386,10 +377,7 @@ mod contact_row {
                 Msg::Expand => self.expanded = !self.expanded,
 
                 Msg::Delete => sender
-                    .output(Output::Delete(
-                        self.index.current_index(),
-                        self.name.clone(),
-                    ))
+                    .output(Output::Delete(self.name.clone()))
                     .expect("Not dropped"),
             }
         }
@@ -400,9 +388,9 @@ mod contact_row {
             match output {
                 Output::Send(name, path) => Self::SendFile(name, path),
                 Output::Receive(name, path) => Self::ReceiveFile(name, path),
-                Output::SendFilePicker(index) => Self::SenderPickerOpen(index),
-                Output::ReceiveFilePicker(index) => Self::ReceiverPickerOpen(index),
-                Output::Delete(index, name) => Self::DeleteContact(index, name),
+                Output::SendFilePicker(name) => Self::SenderPickerOpen(name),
+                Output::ReceiveFilePicker(name) => Self::ReceiverPickerOpen(name),
+                Output::Delete(name) => Self::DeleteContact(name),
             }
         }
     }
