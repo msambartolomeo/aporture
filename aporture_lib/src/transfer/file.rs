@@ -194,7 +194,7 @@ where
     Ok(hasher.finalize())
 }
 
-pub async fn non_existant_path(mut path: PathBuf) -> PathBuf {
+pub async fn non_existent_path(mut path: PathBuf) -> PathBuf {
     let mut suffix = 0;
     let extension = path.extension().map(std::ffi::OsStr::to_os_string);
     let file_name = path.file_stem().expect("Pushed before").to_owned();

@@ -103,8 +103,8 @@ impl Contacts {
         self.add(new_name, key);
     }
 
-    pub fn delete(&mut self, name: &str) {
-        self.content.map.remove(name);
+    pub fn delete(&mut self, name: &str) -> bool {
+        self.content.map.remove(name).is_some()
     }
 
     pub fn list(&self) -> impl Iterator<Item = (&String, DateTime<Local>)> {
