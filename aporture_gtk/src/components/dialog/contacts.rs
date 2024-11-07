@@ -63,9 +63,7 @@ impl Component for Holder {
                         p -> adw::PasswordEntryRow {
                             set_title: "Password",
 
-                            connect_entry_activated[sender] => move |_| {
-                                sender.input(Msg::Return);
-                            },
+                            connect_entry_activated => Msg::Return,
 
                             #[watch]
                             set_sensitive: !model.form_disabled,
@@ -99,9 +97,7 @@ impl Component for Holder {
                         p2 -> adw::PasswordEntryRow {
                             set_title: "Repeat Password",
 
-                            connect_entry_activated[sender] => move |_| {
-                                sender.input(Msg::Return);
-                            },
+                            connect_entry_activated => Msg::Return,
 
                             #[watch]
                             set_sensitive: !model.form_disabled,

@@ -32,6 +32,7 @@ pub enum Msg {
     ReceiveFile(String, PathBuf),
     ReceiverPickerOpen(usize),
     ReceiverPickerResponse(PathBuf),
+    DeleteContact(usize, String),
     PeerFinished,
     Ignore,
 }
@@ -190,6 +191,24 @@ impl SimpleComponent for ContactPage {
                 );
             }
 
+            Msg::DeleteContact(index, contact) => {
+                let contacts = self
+                    .contacts
+                    .clone()
+                    .expect("Cannot delete contacts if not requested");
+
+                let mut contacts = contacts.blocking_write();
+
+                contacts.delete(&contact);
+                contacts.save_blocking().expect("Contacts saved");
+
+                drop(contacts);
+
+                let mut contacts_ui = self.contacts_ui.guard();
+
+                contacts_ui.remove(index);
+            }
+
             Msg::PeerFinished => {
                 log::info!("Finished sender worker");
             }
@@ -213,6 +232,7 @@ mod contact_row {
         path: Option<PathBuf>,
         destination: PathBuf,
         index: DynamicIndex,
+        expanded: bool,
     }
 
     #[derive(Debug)]
@@ -223,6 +243,8 @@ mod contact_row {
         ReceiveFilePickerOpen,
         ReceiveFilePickerClosed(PathBuf),
         ReceiveFile,
+        Delete,
+        Expand,
     }
 
     #[derive(Debug)]
@@ -237,6 +259,7 @@ mod contact_row {
         SendFilePicker(usize),
         ReceiveFilePicker(usize),
         Receive(String, PathBuf),
+        Delete(usize, String),
     }
 
     #[relm4::factory(pub)]
@@ -248,9 +271,24 @@ mod contact_row {
         type ParentWidget = adw::PreferencesGroup;
 
         view! {
+            #[name = "expander"]
             adw::ExpanderRow {
                 set_title: &self.name,
                 set_subtitle: &self.date,
+
+                connect_expanded_notify => Msg::Expand,
+
+                add_suffix = &gtk::Button {
+                    set_icon_name: icon_names::CROSS_LARGE_CIRCLE_FILLED,
+
+                    add_css_class: "flat",
+                    add_css_class: "circular",
+
+                    #[watch]
+                    set_visible: self.expanded,
+
+                    connect_clicked => Msg::Delete,
+                },
 
                 add_row = &adw::ActionRow {
                     set_title: "Send",
@@ -308,6 +346,7 @@ mod contact_row {
             _sender: FactorySender<Self>,
         ) -> Self {
             Self {
+                expanded: false,
                 name: value.name,
                 date: value.date,
                 index: index.clone(),
@@ -331,14 +370,27 @@ mod contact_row {
                 Msg::ReceiveFile => sender
                     .output(Output::Receive(self.name.clone(), self.destination.clone()))
                     .expect("Not dropped"),
+
                 Msg::SendFilePickerOpen => sender
                     .output(Output::SendFilePicker(self.index.current_index()))
                     .expect("Not dropped"),
+
                 Msg::ReceiveFilePickerOpen => sender
                     .output(Output::ReceiveFilePicker(self.index.current_index()))
                     .expect("Not dropped"),
+
                 Msg::SendFilePickerClosed(path) => self.path = Some(path),
+
                 Msg::ReceiveFilePickerClosed(path) => self.destination = path,
+
+                Msg::Expand => self.expanded = !self.expanded,
+
+                Msg::Delete => sender
+                    .output(Output::Delete(
+                        self.index.current_index(),
+                        self.name.clone(),
+                    ))
+                    .expect("Not dropped"),
             }
         }
     }
@@ -350,6 +402,7 @@ mod contact_row {
                 Output::Receive(name, path) => Self::ReceiveFile(name, path),
                 Output::SendFilePicker(index) => Self::SenderPickerOpen(index),
                 Output::ReceiveFilePicker(index) => Self::ReceiverPickerOpen(index),
+                Output::Delete(index, name) => Self::DeleteContact(index, name),
             }
         }
     }

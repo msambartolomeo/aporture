@@ -77,7 +77,15 @@ impl Contacts {
     pub async fn save(&mut self) -> Result<(), crate::io::Error> {
         log::info!("Saving contacts to {}", self.manager);
 
-        self.manager.write_ser_enc(&self.content).await.ok();
+        self.manager.write_ser_enc(&self.content).await?;
+
+        Ok(())
+    }
+
+    pub fn save_blocking(&mut self) -> Result<(), crate::io::Error> {
+        log::info!("Saving contacts to {}", self.manager);
+
+        self.manager.write_ser_enc_blocking(&self.content)?;
 
         Ok(())
     }

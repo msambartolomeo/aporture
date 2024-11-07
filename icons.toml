@@ -1,1 +1,9 @@
-icons = ["send", "inbox", "update", "search-folder", "address-book", "edit"]
+icons = [
+    "send",
+    "inbox",
+    "update",
+    "search-folder",
+    "address-book",
+    "edit",
+    "cross-large-circle-filled",
+]
