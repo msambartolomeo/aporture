@@ -32,8 +32,13 @@ pub enum Commands {
         #[arg(short, long, value_names(["NAME"]))]
         save: Option<String>,
     },
-    /// List registered contacts
-    Contacts,
+
+    /// Query or modify saved contacts
+    Contacts {
+        #[command(subcommand)]
+        command: ContactCommand,
+    },
+
     /// Pair a new contact
     Pair {
         #[command(subcommand)]
@@ -70,4 +75,10 @@ pub enum PairCommand {
         name: String,
         passphrase: String,
     },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ContactCommand {
+    List,
+    Delete { name: String },
 }
