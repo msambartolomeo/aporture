@@ -41,6 +41,8 @@ impl Component for Holder {
 
             set_title: Some("Contacts"),
 
+            grab_focus: (),
+
             set_default_width: 400,
             set_default_height: 500,
 
@@ -60,6 +62,11 @@ impl Component for Holder {
                         #[local_ref]
                         p -> adw::PasswordEntryRow {
                             set_title: "Password",
+
+                            connect_entry_activated[sender] => move |_| {
+                                sender.input(Msg::Return);
+                            },
+
                             #[watch]
                             set_sensitive: !model.form_disabled,
                         },
@@ -91,6 +98,11 @@ impl Component for Holder {
                         #[local_ref]
                         p2 -> adw::PasswordEntryRow {
                             set_title: "Repeat Password",
+
+                            connect_entry_activated[sender] => move |_| {
+                                sender.input(Msg::Return);
+                            },
+
                             #[watch]
                             set_sensitive: !model.form_disabled,
                         },

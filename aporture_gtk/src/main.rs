@@ -32,7 +32,9 @@ fn main() {
 
     relm4_icons::initialize_icons();
 
-    relm4::set_global_css_from_file("styles.css").expect("styles.css does not exist");
+    let css = include_str!("../styles.css");
+
+    relm4::set_global_css(css);
 
     log::info!("Application starting");
 

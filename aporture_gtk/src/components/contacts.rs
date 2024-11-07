@@ -15,21 +15,23 @@ use aporture::fs::contacts::Contacts;
 
 #[derive(Debug)]
 pub struct ContactPage {
-    contacts_ui: FactoryVecDeque<contact_row::Counter>,
+    contacts_ui: FactoryVecDeque<contact_row::Contact>,
     contacts: Option<Arc<RwLock<Contacts>>>,
-    current_contact: String,
+    current_picking_index: usize,
     sender_picker_dialog: Controller<OpenDialog>,
-    // receiver_picker_dialog: Controller<OpenDialog>,
+    receiver_picker_dialog: Controller<OpenDialog>,
     aporture_dialog: Controller<Peer>,
 }
 
 #[derive(Debug)]
 pub enum Msg {
     ContactsReady(Option<Arc<RwLock<Contacts>>>),
-    SendFile(String),
+    SendFile(String, PathBuf),
+    SenderPickerOpen(usize),
     SenderPickerResponse(PathBuf),
-    ReceiveFile(String),
-    // ReceiverPickerResponse(PathBuf),
+    ReceiveFile(String, PathBuf),
+    ReceiverPickerOpen(usize),
+    ReceiverPickerResponse(PathBuf),
     PeerFinished,
     Ignore,
 }
@@ -75,30 +77,27 @@ impl SimpleComponent for ContactPage {
                 OpenDialogResponse::Cancel => Msg::Ignore,
             });
 
-        // let receiver_picker_dialog = OpenDialog::builder()
-        //     .transient_for_native(&root)
-        //     .launch(OpenDialogSettings {
-        //         folder_mode: true,
-        //         ..Default::default()
-        //     })
-        //     .forward(sender.input_sender(), |response| match response {
-        //         OpenDialogResponse::Accept(path) => Msg::ReceiverPickerResponse(path),
-        //         OpenDialogResponse::Cancel => Msg::Ignore,
-        //     });
+        let receiver_picker_dialog = OpenDialog::builder()
+            .transient_for_native(&root)
+            .launch(OpenDialogSettings {
+                folder_mode: true,
+                ..Default::default()
+            })
+            .forward(sender.input_sender(), |response| match response {
+                OpenDialogResponse::Accept(path) => Msg::ReceiverPickerResponse(path),
+                OpenDialogResponse::Cancel => Msg::Ignore,
+            });
 
         let contacts_ui = FactoryVecDeque::builder()
             .launch(adw::PreferencesGroup::default())
-            .forward(sender.input_sender(), |output| match output {
-                contact_row::Output::Send(name) => Msg::SendFile(name),
-                contact_row::Output::Receive(name) => Msg::ReceiveFile(name),
-            });
+            .forward(sender.input_sender(), Msg::from);
 
         let model = Self {
-            current_contact: String::new(),
+            current_picking_index: 0,
             contacts_ui,
             contacts: None,
             sender_picker_dialog,
-            // receiver_picker_dialog,
+            receiver_picker_dialog,
             aporture_dialog,
         };
 
@@ -127,14 +126,9 @@ impl SimpleComponent for ContactPage {
                 }
             }
 
-            Msg::SendFile(name) => {
-                self.current_contact = name;
-                self.sender_picker_dialog.emit(OpenDialogMsg::Open);
-            }
-
-            Msg::SenderPickerResponse(path) => {
+            Msg::SendFile(name, path) => {
                 let passphrase = PassphraseMethod::Contact(
-                    self.current_contact.clone(),
+                    name,
                     self.contacts
                         .clone()
                         .expect("Method only called if contacts exists"),
@@ -149,7 +143,7 @@ impl SimpleComponent for ContactPage {
                 });
             }
 
-            Msg::ReceiveFile(name) => {
+            Msg::ReceiveFile(name, path) => {
                 let passphrase = PassphraseMethod::Contact(
                     name,
                     self.contacts
@@ -161,12 +155,41 @@ impl SimpleComponent for ContactPage {
 
                 self.aporture_dialog.emit(peer::Msg::ReceiveFile {
                     passphrase,
-                    destination: None,
+                    destination: Some(path),
                     save: None,
                 });
             }
 
-            // Msg::ReceiverPickerResponse(path) => {}
+            Msg::SenderPickerOpen(index) => {
+                self.current_picking_index = index;
+
+                self.sender_picker_dialog.emit(OpenDialogMsg::Open);
+            }
+
+            Msg::SenderPickerResponse(path) => {
+                use contact_row::Msg as ContactMsg;
+
+                self.contacts_ui.send(
+                    self.current_picking_index,
+                    ContactMsg::SendFilePickerClosed(path),
+                );
+            }
+
+            Msg::ReceiverPickerOpen(index) => {
+                self.current_picking_index = index;
+
+                self.receiver_picker_dialog.emit(OpenDialogMsg::Open);
+            }
+
+            Msg::ReceiverPickerResponse(path) => {
+                use contact_row::Msg as ContactMsg;
+
+                self.contacts_ui.send(
+                    self.current_picking_index,
+                    ContactMsg::ReceiveFilePickerClosed(path),
+                );
+            }
+
             Msg::PeerFinished => {
                 log::info!("Finished sender worker");
             }
@@ -177,19 +200,28 @@ impl SimpleComponent for ContactPage {
 }
 
 mod contact_row {
+    use std::path::PathBuf;
+
     use adw::prelude::*;
     use relm4::prelude::*;
     use relm4_icons::icon_names;
 
     #[derive(Debug)]
-    pub struct Counter {
+    pub struct Contact {
         name: String,
         date: String,
+        path: Option<PathBuf>,
+        destination: PathBuf,
+        index: DynamicIndex,
     }
 
     #[derive(Debug)]
     pub enum Msg {
+        SendFilePickerOpen,
+        SendFilePickerClosed(PathBuf),
         SendFile,
+        ReceiveFilePickerOpen,
+        ReceiveFilePickerClosed(PathBuf),
         ReceiveFile,
     }
 
@@ -201,12 +233,14 @@ mod contact_row {
 
     #[derive(Debug)]
     pub enum Output {
-        Send(String),
-        Receive(String),
+        Send(String, PathBuf),
+        SendFilePicker(usize),
+        ReceiveFilePicker(usize),
+        Receive(String, PathBuf),
     }
 
     #[relm4::factory(pub)]
-    impl FactoryComponent for Counter {
+    impl FactoryComponent for Contact {
         type Init = Input;
         type Input = Msg;
         type Output = Output;
@@ -214,49 +248,109 @@ mod contact_row {
         type ParentWidget = adw::PreferencesGroup;
 
         view! {
-            adw::ActionRow {
+            adw::ExpanderRow {
                 set_title: &self.name,
                 set_subtitle: &self.date,
 
-                add_suffix = &gtk::Button {
-                    set_icon_name: icon_names::SEND,
+                add_row = &adw::ActionRow {
+                    set_title: "Send",
+                    #[watch]
+                    set_subtitle: self.path.as_ref().map(|p|p.display().to_string()).as_ref().unwrap_or(&"Select file to send".to_owned()),
 
-                    add_css_class: "flat",
-                    add_css_class: "circular",
+                    add_suffix = &gtk::Button {
+                        set_icon_name: icon_names::SEARCH_FOLDER,
 
-                    connect_clicked => Msg::SendFile,
+                        add_css_class: "flat",
+                        add_css_class: "circular",
+
+                        connect_clicked => Msg::SendFilePickerOpen,
+                    },
+
+                    add_suffix = &gtk::Button {
+                        set_icon_name: icon_names::SEND,
+
+                        add_css_class: "flat",
+                        add_css_class: "circular",
+
+                        connect_clicked => Msg::SendFile,
+                    },
                 },
 
-                add_suffix = &gtk::Button {
-                    set_icon_name: icon_names::INBOX,
+                add_row = &adw::ActionRow {
+                    set_title: "Receive",
+                    #[watch]
+                    set_subtitle: &self.destination.display().to_string(),
 
-                    add_css_class: "flat",
-                    add_css_class: "circular",
+                    add_suffix = &gtk::Button {
+                        set_icon_name: icon_names::SEARCH_FOLDER,
 
-                    connect_clicked => Msg::ReceiveFile,
+                        add_css_class: "flat",
+                        add_css_class: "circular",
+
+                        connect_clicked => Msg::ReceiveFilePickerOpen,
+                    },
+
+                    add_suffix = &gtk::Button {
+                        set_icon_name: icon_names::INBOX,
+
+                        add_css_class: "flat",
+                        add_css_class: "circular",
+
+                        connect_clicked => Msg::ReceiveFile,
+                    },
                 },
-            },
+            }
         }
 
         fn init_model(
             value: Self::Init,
-            _index: &DynamicIndex,
+            index: &DynamicIndex,
             _sender: FactorySender<Self>,
         ) -> Self {
             Self {
                 name: value.name,
                 date: value.date,
+                index: index.clone(),
+                path: None,
+                destination: aporture::fs::downloads_directory().expect("Valid download dir"),
             }
         }
 
         fn update(&mut self, msg: Self::Input, sender: FactorySender<Self>) {
             match msg {
-                Msg::SendFile => sender
-                    .output(Output::Send(self.name.clone()))
-                    .expect("Not dropped"),
+                Msg::SendFile => {
+                    if let Some(path) = self.path.clone() {
+                        sender
+                            .output(Output::Send(self.name.clone(), path))
+                            .expect("Not dropped");
+                    } else {
+                        sender.input(Msg::SendFilePickerOpen);
+                    }
+                }
+
                 Msg::ReceiveFile => sender
-                    .output(Output::Receive(self.name.clone()))
+                    .output(Output::Receive(self.name.clone(), self.destination.clone()))
                     .expect("Not dropped"),
+                Msg::SendFilePickerOpen => sender
+                    .output(Output::SendFilePicker(self.index.current_index()))
+                    .expect("Not dropped"),
+                Msg::ReceiveFilePickerOpen => sender
+                    .output(Output::ReceiveFilePicker(self.index.current_index()))
+                    .expect("Not dropped"),
+                Msg::SendFilePickerClosed(path) => self.path = Some(path),
+                Msg::ReceiveFilePickerClosed(path) => self.destination = path,
+            }
+        }
+    }
+
+    impl From<Output> for super::Msg {
+        fn from(output: Output) -> Self {
+            use super::Msg;
+            match output {
+                Output::Send(name, path) => Msg::SendFile(name, path),
+                Output::Receive(name, path) => Msg::ReceiveFile(name, path),
+                Output::SendFilePicker(index) => Msg::SenderPickerOpen(index),
+                Output::ReceiveFilePicker(index) => Msg::ReceiverPickerOpen(index),
             }
         }
     }
