@@ -76,7 +76,7 @@ async fn main() -> Result<()> {
                 match command {
                     ContactCommand::List => commands::list_contacts(&contacts_holder).await?,
                     ContactCommand::Delete { name } => {
-                        commands::delete_contact(&mut contacts_holder, name).await?
+                        commands::delete_contact(&mut contacts_holder, name).await?;
                     }
                 }
             } else {

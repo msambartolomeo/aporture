@@ -255,7 +255,7 @@ mod contact_row {
                 add_row = &adw::ActionRow {
                     set_title: "Send",
                     #[watch]
-                    set_subtitle: self.path.as_ref().map(|p|p.display().to_string()).as_ref().unwrap_or(&"Select file to send".to_owned()),
+                    set_subtitle: &self.path.as_ref().map_or("Select file to send".to_owned(), |p| p.display().to_string()),
 
                     add_suffix = &gtk::Button {
                         set_icon_name: icon_names::SEARCH_FOLDER,
@@ -345,12 +345,11 @@ mod contact_row {
 
     impl From<Output> for super::Msg {
         fn from(output: Output) -> Self {
-            use super::Msg;
             match output {
-                Output::Send(name, path) => Msg::SendFile(name, path),
-                Output::Receive(name, path) => Msg::ReceiveFile(name, path),
-                Output::SendFilePicker(index) => Msg::SenderPickerOpen(index),
-                Output::ReceiveFilePicker(index) => Msg::ReceiverPickerOpen(index),
+                Output::Send(name, path) => Self::SendFile(name, path),
+                Output::Receive(name, path) => Self::ReceiveFile(name, path),
+                Output::SendFilePicker(index) => Self::SenderPickerOpen(index),
+                Output::ReceiveFilePicker(index) => Self::ReceiverPickerOpen(index),
             }
         }
     }

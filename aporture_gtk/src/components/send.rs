@@ -211,7 +211,7 @@ impl SimpleComponent for SenderPage {
             Msg::FilePickerResponse(path) => {
                 let name = path
                     .file_name()
-                    .unwrap_or(OsStr::new("/"))
+                    .unwrap_or_else(|| OsStr::new("/"))
                     .to_string_lossy();
                 self.file_entry.set_subtitle(&name);
 

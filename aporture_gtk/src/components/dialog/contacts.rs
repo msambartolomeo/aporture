@@ -228,11 +228,8 @@ fn escape_closes(sender: &ComponentSender<Holder>) -> gtk::EventControllerKey {
 
     let s = sender.clone();
     escape_closes.connect_key_pressed(move |_, key, _, _| {
-        match key {
-            gtk::gdk::Key::Escape => {
-                s.input(Msg::Hide);
-            }
-            _ => {}
+        if matches!(key, gtk::gdk::Key::Escape) {
+            s.input(Msg::Hide);
         }
 
         gtk::glib::Propagation::Proceed
