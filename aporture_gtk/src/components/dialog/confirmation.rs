@@ -7,7 +7,7 @@ pub struct Confirmation<'a> {
 }
 
 impl<'a> Confirmation<'a> {
-    pub fn new(heading: &'a str) -> Self {
+    pub const fn new(heading: &'a str) -> Self {
         Self { heading }
     }
 
@@ -20,15 +20,15 @@ impl<'a> Confirmation<'a> {
                 add_response: ("yes", "Yes"),
                 add_response: ("no", "No"),
 
-                set_response_appearance[adw::ResponseAppearance::Destructive]: "yes"
+                set_response_appearance[adw::ResponseAppearance::Destructive]: "yes",
 
             }
         }
 
         dialog.choose(parent, Some(&Cancellable::default()), |r| {
             if r == "yes" {
-                if_yes()
+                if_yes();
             }
-        })
+        });
     }
 }
