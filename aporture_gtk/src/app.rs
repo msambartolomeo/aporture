@@ -15,6 +15,7 @@ use crate::components::send::{self, SenderPage};
 #[derive(Debug)]
 pub struct App {
     stack: adw::ViewStack,
+    toaster: adw::ToastOverlay,
     receive_page: Controller<ReceiverPage>,
     sender_page: Controller<SenderPage>,
     contacts_page: Controller<ContactPage>,
@@ -32,11 +33,22 @@ pub enum Msg {
     Contacts(Option<Arc<Mutex<Contacts>>>),
     ContactsRequest,
     PageSwitch,
+    Toast(String),
 }
 
 #[derive(Debug)]
 pub enum Request {
     Contacts,
+    Toast(String),
+}
+
+impl From<Request> for Msg {
+    fn from(value: Request) -> Self {
+        match value {
+            Request::Contacts => Self::ContactsRequest,
+            Request::Toast(message) => Self::Toast(message),
+        }
+    }
 }
 
 #[relm4::component(pub)]
@@ -70,17 +82,20 @@ impl SimpleComponent for App {
                 },
 
                 #[local_ref]
-                stack -> adw::ViewStack {
-                    set_margin_horizontal: 40,
+                toaster -> adw::ToastOverlay {
+                    #[local_ref]
+                    stack -> adw::ViewStack {
+                        set_margin_horizontal: 40,
 
-                    connect_visible_child_name_notify => Msg::PageSwitch,
+                        connect_visible_child_name_notify => Msg::PageSwitch,
 
-                    add_titled_with_icon[Some(SENDER_PAGE_NAME), SENDER_PAGE_NAME, icon_names::SEND] = model.sender_page.widget(),
+                        add_titled_with_icon[Some(SENDER_PAGE_NAME), SENDER_PAGE_NAME, icon_names::SEND] = model.sender_page.widget(),
 
-                    add_titled_with_icon[Some(RECEIVER_PAGE_NAME), RECEIVER_PAGE_NAME, icon_names::INBOX] = model.receive_page.widget(),
+                        add_titled_with_icon[Some(RECEIVER_PAGE_NAME), RECEIVER_PAGE_NAME, icon_names::INBOX] = model.receive_page.widget(),
 
-                    add_titled_with_icon[Some(CONTACTS_PAGE_NAME), CONTACTS_PAGE_NAME, icon_names::ADDRESS_BOOK] = model.contacts_page.widget(),
-                },
+                        add_titled_with_icon[Some(CONTACTS_PAGE_NAME), CONTACTS_PAGE_NAME, icon_names::ADDRESS_BOOK] = model.contacts_page.widget(),
+                    },
+                }
             }
         }
     }
@@ -92,26 +107,22 @@ impl SimpleComponent for App {
     ) -> ComponentParts<Self> {
         let receive_page = ReceiverPage::builder()
             .launch(())
-            .forward(sender.input_sender(), |r| match r {
-                Request::Contacts => Msg::ContactsRequest,
-            });
+            .forward(sender.input_sender(), Msg::from);
 
         let sender_page = SenderPage::builder()
             .launch(())
-            .forward(sender.input_sender(), |r| match r {
-                Request::Contacts => Msg::ContactsRequest,
-            });
+            .forward(sender.input_sender(), Msg::from);
 
         let contacts_page = ContactPage::builder()
             .launch(())
-            .forward(sender.input_sender(), |r| match r {
-                Request::Contacts => Msg::ContactsRequest,
-            });
+            .forward(sender.input_sender(), Msg::from);
 
         let contacts_holder = ContactHolder::builder()
             .transient_for(&root)
             .launch(())
             .forward(sender.input_sender(), Msg::Contacts);
+
+        let toaster = adw::ToastOverlay::default();
 
         let model = Self {
             stack: adw::ViewStack::default(),
@@ -119,11 +130,13 @@ impl SimpleComponent for App {
             sender_page,
             contacts_page,
             contacts_holder,
+            toaster,
             current_page: SENDER_PAGE_NAME.into(),
             contacts: None,
         };
 
         let stack = &model.stack;
+        let toaster = &model.toaster;
 
         let widgets = view_output!();
 
@@ -168,6 +181,26 @@ impl SimpleComponent for App {
                         self.current_page = page;
                     }
                 }
+            }
+
+            Msg::Toast(message) => {
+                relm4::view! {
+                    title = gtk::Box {
+                        set_orientation: gtk::Orientation::Horizontal,
+
+                        gtk::Label {
+                            set_text: &message
+                        }
+                    }
+                }
+
+                let toast = adw::Toast::builder()
+                    .timeout(3)
+                    // .title(&message)
+                    .custom_title(&title)
+                    .build();
+
+                self.toaster.add_toast(toast);
             }
         }
     }

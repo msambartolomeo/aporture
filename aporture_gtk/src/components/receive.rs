@@ -9,7 +9,7 @@ use relm4_components::open_dialog::{
 use relm4_icons::icon_names;
 use tokio::sync::Mutex;
 
-use crate::app;
+use crate::app::{self, Request};
 use crate::components::dialog::peer::{self, ContactResult, Error, PassphraseMethod, Peer};
 use aporture::fs::contacts::Contacts;
 
@@ -201,7 +201,9 @@ impl SimpleComponent for ReceiverPage {
                         .output_sender()
                         .send(app::Request::Contacts)
                         .expect("Controller not dropped"),
-                    Ok(ContactResult::PeerRefused) => todo!("Warning"),
+                    Ok(ContactResult::PeerRefused) => sender
+                        .output(Request::Toast("Peer refused to save contact".to_owned()))
+                        .expect("Controller not dropped"),
                     Ok(ContactResult::NoOp) => {}
                     Err(_) => todo!("use error"),
                 }
@@ -221,6 +223,10 @@ impl SimpleComponent for ReceiverPage {
             }
 
             Msg::ContactsReady(contacts) => {
+                sender
+                    .output(Request::Toast("Contacts ready".to_owned()))
+                    .expect("Controller not dropped");
+
                 if self.contacts.is_none() {
                     if let Some(contacts) = contacts {
                         self.contacts = Some(contacts);
