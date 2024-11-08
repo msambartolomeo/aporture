@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use adw::prelude::*;
 use relm4::prelude::*;
-use tokio::sync::RwLock;
+use tokio::sync::Mutex;
 
 use aporture::fs::contacts::Contacts;
 
@@ -10,7 +10,7 @@ use aporture::fs::contacts::Contacts;
 pub struct Holder {
     visible: bool,
     form_disabled: bool,
-    contacts: Option<Arc<RwLock<Contacts>>>,
+    contacts: Option<Arc<Mutex<Contacts>>>,
     exists_p_entry: adw::PasswordEntryRow,
     create_p_entry_1: adw::PasswordEntryRow,
     create_p_entry_2: adw::PasswordEntryRow,
@@ -27,7 +27,7 @@ pub enum Msg {
 impl Component for Holder {
     type Init = ();
     type Input = Msg;
-    type Output = Option<Arc<RwLock<Contacts>>>;
+    type Output = Option<Arc<Mutex<Contacts>>>;
     // TODO: Handle error with error messages
     type CommandOutput = Option<Contacts>;
 
@@ -146,8 +146,6 @@ impl Component for Holder {
     }
 
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, _: &Self::Root) {
-        self.visible = true;
-
         match msg {
             Msg::Return => {
                 if self.contacts.is_none() {
@@ -179,6 +177,7 @@ impl Component for Holder {
             }
             Msg::Get => {
                 let Some(contacts) = &self.contacts else {
+                    self.visible = true;
                     return;
                 };
 
@@ -208,7 +207,7 @@ impl Component for Holder {
                 self.create_p_entry_2.add_css_class("error");
             }
         } else {
-            self.contacts = message.map(|c| Arc::new(RwLock::new(c)));
+            self.contacts = message.map(|c| Arc::new(Mutex::new(c)));
 
             sender
                 .output(self.contacts.clone())

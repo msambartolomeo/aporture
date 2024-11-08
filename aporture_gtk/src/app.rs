@@ -5,7 +5,7 @@ use aporture::fs::contacts::Contacts;
 use relm4::gtk::glib::GString;
 use relm4::prelude::*;
 use relm4_icons::icon_names;
-use tokio::sync::RwLock;
+use tokio::sync::Mutex;
 
 use crate::components::contacts::{self, ContactPage};
 use crate::components::dialog::contacts::{Holder as ContactHolder, Msg as ContactMsg};
@@ -20,7 +20,7 @@ pub struct App {
     contacts_page: Controller<ContactPage>,
     contacts_holder: Controller<ContactHolder>,
     current_page: GString,
-    contacts: Option<Arc<RwLock<Contacts>>>,
+    contacts: Option<Arc<Mutex<Contacts>>>,
 }
 
 const CONTACTS_PAGE_NAME: &str = "Contacts";
@@ -29,7 +29,7 @@ const RECEIVER_PAGE_NAME: &str = "Receive";
 
 #[derive(Debug)]
 pub enum Msg {
-    Contacts(Option<Arc<RwLock<Contacts>>>),
+    Contacts(Option<Arc<Mutex<Contacts>>>),
     ContactsRequest,
     PageSwitch,
 }
@@ -47,7 +47,7 @@ impl SimpleComponent for App {
 
     view! {
         #[root]
-        adw::Window {
+        adw::ApplicationWindow {
             set_title: Some("Aporture"),
             set_default_width: 550,
             set_default_height: 650,
@@ -133,7 +133,9 @@ impl SimpleComponent for App {
     fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
         match message {
             Msg::Contacts(contacts) => {
-                self.contacts = contacts;
+                if let Some(contacts) = contacts {
+                    self.contacts = Some(contacts);
+                }
 
                 if self.contacts.is_none() {
                     self.stack.set_visible_child_name(&self.current_page);
@@ -155,7 +157,8 @@ impl SimpleComponent for App {
 
             Msg::PageSwitch => {
                 if let Some(page) = self.stack.visible_child_name() {
-                    if page == self.current_page || self.contacts.is_some() {
+                    if &page == &self.current_page || self.contacts.is_some() {
+                        self.current_page = page;
                         return;
                     }
 

@@ -8,7 +8,7 @@ use relm4::prelude::*;
 use relm4_components::open_dialog::{
     OpenDialog, OpenDialogMsg, OpenDialogResponse, OpenDialogSettings,
 };
-use tokio::sync::RwLock;
+use tokio::sync::Mutex;
 
 use crate::app;
 use crate::components::dialog::peer::{self, PassphraseMethod, Peer};
@@ -19,7 +19,7 @@ use super::dialog;
 #[derive(Debug)]
 pub struct ContactPage {
     contacts_ui: FactoryHashMap<String, contact_row::Contact, RandomState>,
-    contacts: Option<Arc<RwLock<Contacts>>>,
+    contacts: Option<Arc<Mutex<Contacts>>>,
     current_contact: String,
     sender_picker_dialog: Controller<OpenDialog>,
     receiver_picker_dialog: Controller<OpenDialog>,
@@ -28,7 +28,7 @@ pub struct ContactPage {
 
 #[derive(Debug)]
 pub enum Msg {
-    ContactsReady(Option<Arc<RwLock<Contacts>>>),
+    ContactsReady(Option<Arc<Mutex<Contacts>>>),
     SendFile(String, PathBuf),
     SenderPickerOpen(String),
     SenderPickerResponse(PathBuf),
@@ -117,10 +117,12 @@ impl Component for ContactPage {
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, root: &Self::Root) {
         match msg {
             Msg::ContactsReady(contacts) => {
-                self.contacts = contacts;
-                if let Some(contacts) = &self.contacts {
+                if let Some(contacts) = contacts {
+                    let contacts = self.contacts.get_or_insert(contacts);
+
                     self.contacts_ui.clear();
-                    contacts.blocking_read().list().for_each(|(name, date)| {
+
+                    contacts.blocking_lock().list().for_each(|(name, date)| {
                         let data = contact_row::Input {
                             date: date.format("%d/%m/%Y %H:%M").to_string(),
                         };
@@ -202,7 +204,7 @@ impl Component for ContactPage {
                     .expect("Cannot delete contacts if not requested");
 
                 dialog::Confirmation::new(&message).choose(root, move || {
-                    let mut contacts = contacts.blocking_write();
+                    let mut contacts = contacts.blocking_lock();
 
                     contacts.delete(&contact);
                     contacts.save_blocking().expect("Contacts saved");

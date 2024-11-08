@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use adw::prelude::*;
 use relm4::prelude::*;
-use tokio::sync::RwLock;
+use tokio::sync::Mutex;
 
 use aporture::fs::contacts::Contacts;
 use aporture::pairing::AporturePairingProtocol;
@@ -23,27 +23,34 @@ pub enum Msg {
     SendFile {
         passphrase: PassphraseMethod,
         path: PathBuf,
-        save: Option<(String, Arc<RwLock<Contacts>>)>,
+        save: Option<(String, Arc<Mutex<Contacts>>)>,
     },
     ReceiveFile {
         passphrase: PassphraseMethod,
         destination: Option<PathBuf>,
-        save: Option<(String, Arc<RwLock<Contacts>>)>,
+        save: Option<(String, Arc<Mutex<Contacts>>)>,
     },
 }
 
 #[derive(Debug)]
 pub enum PassphraseMethod {
     Direct(Vec<u8>),
-    Contact(String, Arc<RwLock<Contacts>>),
+    Contact(String, Arc<Mutex<Contacts>>),
+}
+
+#[derive(Debug)]
+pub enum ContactResult {
+    NoOp,
+    Added,
+    PeerRefused,
 }
 
 #[relm4::component(pub)]
 impl Component for Peer {
     type Init = ();
     type Input = Msg;
-    type Output = Result<(), Error>;
-    type CommandOutput = Result<(), Error>;
+    type Output = Result<ContactResult, Error>;
+    type CommandOutput = Result<ContactResult, Error>;
 
     view! {
         dialog = adw::Window {
@@ -97,7 +104,7 @@ impl Component for Peer {
                     let passphrase = match passphrase {
                         PassphraseMethod::Direct(p) => p,
                         PassphraseMethod::Contact(name, contacts) => contacts
-                            .read()
+                            .lock()
                             .await
                             .get(&name)
                             .ok_or(Error::NoContact)?
@@ -122,18 +129,22 @@ impl Component for Peer {
 
                     let key = pair_info.finalize().await;
 
-                    if let Some((name, contacts)) = save {
+                    let result = if let Some((name, contacts)) = save {
                         if save_confirmation {
-                            let mut contacts = contacts.write().await;
+                            let mut contacts = contacts.lock().await;
                             contacts.add(name, key);
                             contacts.save().await.map_err(|_| Error::NoContact)?;
                             drop(contacts);
-                        } else {
-                            // self.label = "Warning: Not saving contact because peer refused";
-                        }
-                    }
 
-                    Ok(())
+                            ContactResult::Added
+                        } else {
+                            ContactResult::PeerRefused
+                        }
+                    } else {
+                        ContactResult::NoOp
+                    };
+
+                    Ok(result)
                 });
             }
             Msg::ReceiveFile {
@@ -145,7 +156,7 @@ impl Component for Peer {
                     let passphrase = match passphrase {
                         PassphraseMethod::Direct(p) => p,
                         PassphraseMethod::Contact(name, contacts) => contacts
-                            .read()
+                            .lock()
                             .await
                             .get(&name)
                             .ok_or(Error::ContactSaving)?
@@ -156,10 +167,9 @@ impl Component for Peer {
 
                     let mut pair_info = app.pair().await?;
 
-                    let Some(destination) = destination.or_else(aporture::fs::downloads_directory)
-                    else {
-                        todo!()
-                    };
+                    let destination = destination
+                        .or_else(aporture::fs::downloads_directory)
+                        .expect("Valid downloads directory");
 
                     let atp =
                         AportureTransferProtocol::<Receiver>::new(&mut pair_info, &destination);
@@ -170,18 +180,22 @@ impl Component for Peer {
 
                     let key = pair_info.finalize().await;
 
-                    if let Some((name, contacts)) = save {
+                    let result = if let Some((name, contacts)) = save {
                         if save_confirmation {
-                            let mut contacts = contacts.write().await;
+                            let mut contacts = contacts.lock().await;
                             contacts.add(name, key);
                             contacts.save().await.map_err(|_| Error::ContactSaving)?;
                             drop(contacts);
-                        } else {
-                            // self.label = "Warning: Not saving contact because peer refused";
-                        }
-                    }
 
-                    Ok(())
+                            ContactResult::Added
+                        } else {
+                            ContactResult::PeerRefused
+                        }
+                    } else {
+                        ContactResult::NoOp
+                    };
+
+                    Ok(result)
                 });
             }
         }

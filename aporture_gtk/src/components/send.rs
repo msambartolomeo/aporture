@@ -8,10 +8,10 @@ use relm4_components::open_dialog::{
     OpenDialog, OpenDialogMsg, OpenDialogResponse, OpenDialogSettings,
 };
 use relm4_icons::icon_names;
-use tokio::sync::RwLock;
+use tokio::sync::Mutex;
 
 use crate::app;
-use crate::components::dialog::peer::{self, PassphraseMethod, Peer};
+use crate::components::dialog::peer::{self, ContactResult, Error, PassphraseMethod, Peer};
 use aporture::fs::contacts::Contacts;
 use aporture::passphrase;
 
@@ -26,7 +26,7 @@ pub struct SenderPage {
     passphrase_length: u32,
     file_path: Option<PathBuf>,
     file_picker_dialog: Controller<OpenDialog>,
-    contacts: Option<Arc<RwLock<Contacts>>>,
+    contacts: Option<Arc<Mutex<Contacts>>>,
     aporture_dialog: Controller<Peer>,
     form_disabled: bool,
 }
@@ -37,11 +37,11 @@ pub enum Msg {
     PassphraseChanged,
     FocusEditPassword,
     SaveContact,
-    ContactsReady(Option<Arc<RwLock<Contacts>>>),
+    ContactsReady(Option<Arc<Mutex<Contacts>>>),
     FilePickerOpen,
     FilePickerResponse(PathBuf),
     SendFile,
-    SendFileFinished,
+    AportureFinished(Result<ContactResult, Error>),
     Ignore,
 }
 
@@ -153,7 +153,7 @@ impl SimpleComponent for SenderPage {
         let aporture_dialog = Peer::builder()
             .transient_for(&root)
             .launch(())
-            .forward(sender.input_sender(), |_| Msg::SendFileFinished); // TODO: Handle Errors
+            .forward(sender.input_sender(), |r| Msg::AportureFinished(r)); // TODO: Handle Errors
 
         let model = Self {
             passphrase_entry: adw::EntryRow::default(),
@@ -200,10 +200,13 @@ impl SimpleComponent for SenderPage {
             }
 
             Msg::ContactsReady(contacts) => {
-                if contacts.is_none() {
-                    self.save_contact.set_active(false);
+                if self.contacts.is_none() {
+                    if let Some(contacts) = contacts {
+                        self.contacts = Some(contacts);
+                    } else {
+                        self.save_contact.set_active(false);
+                    }
                 }
-                self.contacts = contacts;
             }
 
             Msg::FilePickerOpen => self.file_picker_dialog.emit(OpenDialogMsg::Open),
@@ -244,14 +247,27 @@ impl SimpleComponent for SenderPage {
                     save,
                 });
 
+                // TODO: MOVE TO AFTER RESULT
+
                 sender
                     .output_sender()
                     .send(app::Request::Contacts)
                     .expect("Controller not dropped");
             }
 
-            Msg::SendFileFinished => {
+            Msg::AportureFinished(result) => {
                 log::info!("Finished sender worker");
+
+                // TODO:
+                match result {
+                    Ok(ContactResult::Added) => sender
+                        .output_sender()
+                        .send(app::Request::Contacts)
+                        .expect("Controller not dropped"),
+                    Ok(ContactResult::PeerRefused) => todo!("Warning"),
+                    Ok(ContactResult::NoOp) => {}
+                    Err(_) => todo!("use error"),
+                }
 
                 self.form_disabled = false;
             }

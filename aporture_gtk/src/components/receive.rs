@@ -7,12 +7,10 @@ use relm4_components::open_dialog::{
     OpenDialog, OpenDialogMsg, OpenDialogResponse, OpenDialogSettings,
 };
 use relm4_icons::icon_names;
-use tokio::sync::RwLock;
+use tokio::sync::Mutex;
 
-use crate::{
-    app,
-    components::dialog::peer::{self, PassphraseMethod, Peer},
-};
+use crate::app;
+use crate::components::dialog::peer::{self, ContactResult, Error, PassphraseMethod, Peer};
 use aporture::fs::contacts::Contacts;
 
 #[derive(Debug)]
@@ -24,7 +22,7 @@ pub struct ReceiverPage {
     passphrase_length: u32,
     destination_path: Option<PathBuf>,
     directory_picker_dialog: Controller<OpenDialog>,
-    contacts: Option<Arc<RwLock<Contacts>>>,
+    contacts: Option<Arc<Mutex<Contacts>>>,
     aporture_dialog: Controller<Peer>,
     form_disabled: bool,
 }
@@ -32,10 +30,10 @@ pub struct ReceiverPage {
 #[derive(Debug)]
 pub enum Msg {
     ReceiveFile,
-    ReceiveFileFinished,
+    AportureFinished(Result<ContactResult, Error>),
     PassphraseChanged,
     SaveContact,
-    ContactsReady(Option<Arc<RwLock<Contacts>>>),
+    ContactsReady(Option<Arc<Mutex<Contacts>>>),
     FilePickerOpen,
     FilePickerResponse(PathBuf),
     Ignore,
@@ -131,7 +129,7 @@ impl SimpleComponent for ReceiverPage {
         let aporture_dialog = Peer::builder()
             .transient_for(&root)
             .launch(())
-            .forward(sender.input_sender(), |_| Msg::ReceiveFileFinished); // TODO: Handle Errors
+            .forward(sender.input_sender(), |r| Msg::AportureFinished(r)); // TODO: Handle Errors
 
         let model = Self {
             passphrase_entry: adw::EntryRow::default(),
@@ -147,7 +145,7 @@ impl SimpleComponent for ReceiverPage {
         };
 
         if let Some(ref path) = model.destination_path {
-            model.file_entry.set_subtitle(&path.to_string_lossy());
+            model.file_entry.set_subtitle(&path.display().to_string());
         }
 
         let passphrase_entry = &model.passphrase_entry;
@@ -194,8 +192,19 @@ impl SimpleComponent for ReceiverPage {
                     .expect("Controller not dropped");
             }
 
-            Msg::ReceiveFileFinished => {
+            Msg::AportureFinished(result) => {
                 log::info!("Finished receiver worker");
+
+                // TODO:
+                match result {
+                    Ok(ContactResult::Added) => sender
+                        .output_sender()
+                        .send(app::Request::Contacts)
+                        .expect("Controller not dropped"),
+                    Ok(ContactResult::PeerRefused) => todo!("Warning"),
+                    Ok(ContactResult::NoOp) => {}
+                    Err(_) => todo!("use error"),
+                }
 
                 self.form_disabled = false;
             }
@@ -212,10 +221,13 @@ impl SimpleComponent for ReceiverPage {
             }
 
             Msg::ContactsReady(contacts) => {
-                if contacts.is_none() {
-                    self.save_contact.set_active(false);
+                if self.contacts.is_none() {
+                    if let Some(contacts) = contacts {
+                        self.contacts = Some(contacts);
+                    } else {
+                        self.save_contact.set_active(false);
+                    }
                 }
-                self.contacts = contacts;
             }
 
             Msg::FilePickerOpen => self.directory_picker_dialog.emit(OpenDialogMsg::Open),
