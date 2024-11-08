@@ -129,7 +129,7 @@ impl SimpleComponent for ReceiverPage {
         let aporture_dialog = Peer::builder()
             .transient_for(&root)
             .launch(())
-            .forward(sender.input_sender(), |r| Msg::AportureFinished(r)); // TODO: Handle Errors
+            .forward(sender.input_sender(), Msg::AportureFinished);
 
         let model = Self {
             passphrase_entry: adw::EntryRow::default(),

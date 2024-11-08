@@ -157,7 +157,7 @@ impl SimpleComponent for App {
 
             Msg::PageSwitch => {
                 if let Some(page) = self.stack.visible_child_name() {
-                    if &page == &self.current_page || self.contacts.is_some() {
+                    if page == self.current_page || self.contacts.is_some() {
                         self.current_page = page;
                         return;
                     }
