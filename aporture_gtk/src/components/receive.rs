@@ -11,6 +11,7 @@ use tokio::sync::Mutex;
 
 use crate::app::{self, Request};
 use crate::components::dialog::peer::{self, ContactResult, Error, PassphraseMethod, Peer};
+use crate::components::dialog::toaster::Severity;
 use aporture::fs::contacts::Contacts;
 
 #[derive(Debug)]
@@ -202,7 +203,10 @@ impl SimpleComponent for ReceiverPage {
                         .send(app::Request::Contacts)
                         .expect("Controller not dropped"),
                     Ok(ContactResult::PeerRefused) => sender
-                        .output(Request::Toast("Peer refused to save contact".to_owned()))
+                        .output(Request::Toast(
+                            "Peer refused to save contact".to_owned(),
+                            Severity::Warn,
+                        ))
                         .expect("Controller not dropped"),
                     Ok(ContactResult::NoOp) => {}
                     Err(_) => todo!("use error"),
@@ -223,10 +227,6 @@ impl SimpleComponent for ReceiverPage {
             }
 
             Msg::ContactsReady(contacts) => {
-                sender
-                    .output(Request::Toast("Contacts ready".to_owned()))
-                    .expect("Controller not dropped");
-
                 if self.contacts.is_none() {
                     if let Some(contacts) = contacts {
                         self.contacts = Some(contacts);

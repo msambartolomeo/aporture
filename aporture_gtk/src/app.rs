@@ -9,13 +9,14 @@ use tokio::sync::Mutex;
 
 use crate::components::contacts::{self, ContactPage};
 use crate::components::dialog::contacts::{Holder as ContactHolder, Msg as ContactMsg};
+use crate::components::dialog::toaster::{Severity, Toaster};
 use crate::components::receive::{self, ReceiverPage};
 use crate::components::send::{self, SenderPage};
 
 #[derive(Debug)]
 pub struct App {
     stack: adw::ViewStack,
-    toaster: adw::ToastOverlay,
+    toaster: Toaster,
     receive_page: Controller<ReceiverPage>,
     sender_page: Controller<SenderPage>,
     contacts_page: Controller<ContactPage>,
@@ -33,20 +34,20 @@ pub enum Msg {
     Contacts(Option<Arc<Mutex<Contacts>>>),
     ContactsRequest,
     PageSwitch,
-    Toast(String),
+    Toast(String, Severity),
 }
 
 #[derive(Debug)]
 pub enum Request {
     Contacts,
-    Toast(String),
+    Toast(String, Severity),
 }
 
 impl From<Request> for Msg {
     fn from(value: Request) -> Self {
         match value {
             Request::Contacts => Self::ContactsRequest,
-            Request::Toast(message) => Self::Toast(message),
+            Request::Toast(message, severity) => Self::Toast(message, severity),
         }
     }
 }
@@ -122,7 +123,7 @@ impl SimpleComponent for App {
             .launch(())
             .forward(sender.input_sender(), Msg::Contacts);
 
-        let toaster = adw::ToastOverlay::default();
+        let toaster = Toaster::default();
 
         let model = Self {
             stack: adw::ViewStack::default(),
@@ -136,7 +137,7 @@ impl SimpleComponent for App {
         };
 
         let stack = &model.stack;
-        let toaster = &model.toaster;
+        let toaster = model.toaster.as_ref();
 
         let widgets = view_output!();
 
@@ -183,24 +184,8 @@ impl SimpleComponent for App {
                 }
             }
 
-            Msg::Toast(message) => {
-                relm4::view! {
-                    title = gtk::Box {
-                        set_orientation: gtk::Orientation::Horizontal,
-
-                        gtk::Label {
-                            set_text: &message
-                        }
-                    }
-                }
-
-                let toast = adw::Toast::builder()
-                    .timeout(3)
-                    // .title(&message)
-                    .custom_title(&title)
-                    .build();
-
-                self.toaster.add_toast(toast);
+            Msg::Toast(message, severity) => {
+                self.toaster.add_toast(&message, severity);
             }
         }
     }

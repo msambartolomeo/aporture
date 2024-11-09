@@ -6,4 +6,8 @@ icons = [
     "address-book",
     "edit",
     "user-trash",
+    "warning-outline",
+    "minus-circle-outline",
+    "info-outline",
+    "success-small",
 ]
