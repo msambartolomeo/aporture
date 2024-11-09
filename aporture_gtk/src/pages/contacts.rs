@@ -3,18 +3,16 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use adw::prelude::*;
+use open_dialog::{OpenDialog, OpenDialogMsg, OpenDialogResponse, OpenDialogSettings};
 use relm4::factory::FactoryHashMap;
 use relm4::prelude::*;
-use relm4_components::open_dialog::{
-    OpenDialog, OpenDialogMsg, OpenDialogResponse, OpenDialogSettings,
-};
+use relm4_components::open_dialog;
 use tokio::sync::Mutex;
 
 use crate::app;
-use crate::components::dialog::peer::{self, PassphraseMethod, Peer};
+use crate::components::aporture_dialog::{Msg as AportureMsg, PassphraseMethod, Peer};
+use crate::components::confirmation::Confirmation;
 use aporture::fs::contacts::Contacts;
-
-use super::dialog;
 
 #[derive(Debug)]
 pub struct ContactPage {
@@ -142,7 +140,7 @@ impl Component for ContactPage {
 
                 log::info!("Starting sender worker");
 
-                self.aporture_dialog.emit(peer::Msg::SendFile {
+                self.aporture_dialog.emit(AportureMsg::SendFile {
                     passphrase,
                     path,
                     save: None,
@@ -159,7 +157,7 @@ impl Component for ContactPage {
 
                 log::info!("Starting sender worker");
 
-                self.aporture_dialog.emit(peer::Msg::ReceiveFile {
+                self.aporture_dialog.emit(AportureMsg::ReceiveFile {
                     passphrase,
                     destination: Some(path),
                     save: None,
@@ -203,7 +201,7 @@ impl Component for ContactPage {
                     .clone()
                     .expect("Cannot delete contacts if not requested");
 
-                dialog::Confirmation::new(&message).choose(root, move || {
+                Confirmation::new(&message).choose(root, move || {
                     let mut contacts = contacts.blocking_lock();
 
                     contacts.delete(&contact);

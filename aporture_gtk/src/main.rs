@@ -1,5 +1,6 @@
 mod app;
 mod components;
+mod pages;
 
 use relm4::RelmApp;
 

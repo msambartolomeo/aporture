@@ -1,4 +1,4 @@
-pub mod contacts;
-pub mod dialog;
-pub mod receive;
-pub mod send;
+pub mod aporture_dialog;
+pub mod confirmation;
+pub mod contacts_dialog;
+pub mod toaster;

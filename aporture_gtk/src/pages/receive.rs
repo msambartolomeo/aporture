@@ -2,17 +2,18 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use adw::prelude::*;
+use open_dialog::{OpenDialog, OpenDialogMsg, OpenDialogResponse, OpenDialogSettings};
 use relm4::prelude::*;
-use relm4_components::open_dialog::{
-    OpenDialog, OpenDialogMsg, OpenDialogResponse, OpenDialogSettings,
-};
+use relm4_components::open_dialog;
 use relm4_icons::icon_names;
 use tokio::sync::Mutex;
 
-use crate::app::{self, Request};
-use crate::components::dialog::peer::{self, ContactResult, Error, PassphraseMethod, Peer};
-use crate::components::dialog::toaster::Severity;
 use aporture::fs::contacts::Contacts;
+
+use crate::app;
+use crate::components::aporture_dialog::{ContactResult, PassphraseMethod, Peer};
+use crate::components::aporture_dialog::{Error as AportureError, Msg as AportureMsg};
+use crate::components::toaster::Severity;
 
 #[derive(Debug)]
 pub struct ReceiverPage {
@@ -31,7 +32,7 @@ pub struct ReceiverPage {
 #[derive(Debug)]
 pub enum Msg {
     ReceiveFile,
-    AportureFinished(Result<ContactResult, Error>),
+    AportureFinished(Result<ContactResult, AportureError>),
     PassphraseChanged,
     SaveContact,
     ContactsReady(Option<Arc<Mutex<Contacts>>>),
@@ -181,7 +182,7 @@ impl SimpleComponent for ReceiverPage {
                     )
                 });
 
-                self.aporture_dialog.emit(peer::Msg::ReceiveFile {
+                self.aporture_dialog.emit(AportureMsg::ReceiveFile {
                     passphrase,
                     destination: self.destination_path.clone(),
                     save,
@@ -203,7 +204,7 @@ impl SimpleComponent for ReceiverPage {
                         .send(app::Request::Contacts)
                         .expect("Controller not dropped"),
                     Ok(ContactResult::PeerRefused) => sender
-                        .output(Request::Toast(
+                        .output(app::Request::Toast(
                             "Peer refused to save contact".to_owned(),
                             Severity::Warn,
                         ))

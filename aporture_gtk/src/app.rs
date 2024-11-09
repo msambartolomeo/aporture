@@ -7,11 +7,9 @@ use relm4::prelude::*;
 use relm4_icons::icon_names;
 use tokio::sync::Mutex;
 
-use crate::components::contacts::{self, ContactPage};
-use crate::components::dialog::contacts::{Holder as ContactHolder, Msg as ContactMsg};
-use crate::components::dialog::toaster::{Severity, Toaster};
-use crate::components::receive::{self, ReceiverPage};
-use crate::components::send::{self, SenderPage};
+use crate::components::contacts_dialog::{Holder as ContactHolder, Msg as ContactMsg};
+use crate::components::toaster::{Severity, Toaster};
+use crate::pages::{contacts, receive, send, ContactPage, ReceiverPage, SenderPage};
 
 #[derive(Debug)]
 pub struct App {

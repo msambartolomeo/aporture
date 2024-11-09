@@ -3,17 +3,18 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use adw::prelude::*;
+use open_dialog::{OpenDialog, OpenDialogMsg, OpenDialogResponse, OpenDialogSettings};
 use relm4::prelude::*;
-use relm4_components::open_dialog::{
-    OpenDialog, OpenDialogMsg, OpenDialogResponse, OpenDialogSettings,
-};
+use relm4_components::open_dialog;
 use relm4_icons::icon_names;
 use tokio::sync::Mutex;
 
-use crate::app;
-use crate::components::dialog::peer::{self, ContactResult, Error, PassphraseMethod, Peer};
 use aporture::fs::contacts::Contacts;
 use aporture::passphrase;
+
+use crate::app;
+use crate::components::aporture_dialog::{ContactResult, PassphraseMethod, Peer};
+use crate::components::aporture_dialog::{Error as AportureError, Msg as AportureMsg};
 
 const PASSPHRASE_WORD_COUNT: usize = 3;
 
@@ -41,7 +42,7 @@ pub enum Msg {
     FilePickerOpen,
     FilePickerResponse(PathBuf),
     SendFile,
-    AportureFinished(Result<ContactResult, Error>),
+    AportureFinished(Result<ContactResult, AportureError>),
     Ignore,
 }
 
@@ -241,18 +242,11 @@ impl SimpleComponent for SenderPage {
 
                 log::info!("Starting sender worker");
 
-                self.aporture_dialog.emit(peer::Msg::SendFile {
+                self.aporture_dialog.emit(AportureMsg::SendFile {
                     passphrase,
                     path: self.file_path.clone().expect("Button disabled if None"),
                     save,
                 });
-
-                // TODO: MOVE TO AFTER RESULT
-
-                sender
-                    .output_sender()
-                    .send(app::Request::Contacts)
-                    .expect("Controller not dropped");
             }
 
             Msg::AportureFinished(result) => {
