@@ -33,12 +33,14 @@ pub enum Msg {
     ContactsRequest,
     PageSwitch,
     Toast(String, Severity),
+    ToastS(&'static str, Severity),
 }
 
 #[derive(Debug)]
 pub enum Request {
     Contacts,
     Toast(String, Severity),
+    ToastS(&'static str, Severity),
 }
 
 impl From<Request> for Msg {
@@ -46,6 +48,7 @@ impl From<Request> for Msg {
         match value {
             Request::Contacts => Self::ContactsRequest,
             Request::Toast(message, severity) => Self::Toast(message, severity),
+            Request::ToastS(message, severity) => Self::ToastS(message, severity),
         }
     }
 }
@@ -184,6 +187,10 @@ impl SimpleComponent for App {
 
             Msg::Toast(message, severity) => {
                 self.toaster.add_toast(&message, severity);
+            }
+
+            Msg::ToastS(message, severity) => {
+                self.toaster.add_toast(message, severity);
             }
         }
     }

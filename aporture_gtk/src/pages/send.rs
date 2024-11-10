@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use adw::prelude::*;
+use gtk::gdk::Display;
 use open_dialog::{OpenDialog, OpenDialogMsg, OpenDialogResponse, OpenDialogSettings};
 use relm4::prelude::*;
 use relm4_components::open_dialog;
@@ -15,6 +16,7 @@ use aporture::passphrase;
 use crate::app;
 use crate::components::aporture_dialog::{ContactResult, PassphraseMethod, Peer};
 use crate::components::aporture_dialog::{Error as AportureError, Msg as AportureMsg};
+use crate::components::toaster::Severity;
 
 const PASSPHRASE_WORD_COUNT: usize = 3;
 
@@ -37,6 +39,7 @@ pub enum Msg {
     GeneratePassphrase,
     PassphraseChanged,
     FocusEditPassword,
+    CopyPassword,
     SaveContact,
     ContactsReady(Option<Arc<Mutex<Contacts>>>),
     FilePickerOpen,
@@ -82,6 +85,7 @@ impl SimpleComponent for SenderPage {
 
                 connect_changed => Msg::PassphraseChanged,
 
+                #[name = "random"]
                 add_suffix = &gtk::Button {
                     set_icon_name: icon_names::UPDATE,
 
@@ -92,6 +96,7 @@ impl SimpleComponent for SenderPage {
 
                 },
 
+                #[name = "edit"]
                 add_suffix = &gtk::Button {
                     set_icon_name: icon_names::EDIT,
 
@@ -99,6 +104,16 @@ impl SimpleComponent for SenderPage {
                     add_css_class: "circular",
 
                     connect_clicked => Msg::FocusEditPassword,
+                },
+
+                #[name = "copy"]
+                add_suffix = &gtk::Button {
+                    set_icon_name: icon_names::COPY,
+
+                    add_css_class: "flat",
+                    add_css_class: "circular",
+
+                    connect_clicked => Msg::CopyPassword,
                 },
             },
 
@@ -189,6 +204,30 @@ impl SimpleComponent for SenderPage {
 
             Msg::FocusEditPassword => {
                 self.passphrase_entry.grab_focus_without_selecting();
+            }
+
+            Msg::CopyPassword => {
+                let Some(clipboard) = Display::default().as_ref().map(DisplayExt::clipboard) else {
+                    sender
+                        .output(app::Request::ToastS(
+                            "Could not copy to clipboard",
+                            Severity::Error,
+                        ))
+                        .expect("Controller not dropped");
+
+                    return;
+                };
+
+                let text = self.passphrase_entry.text().to_string();
+
+                clipboard.set_text(&text);
+
+                sender
+                    .output(app::Request::ToastS(
+                        "Coppied passphrase to clipboard",
+                        Severity::Info,
+                    ))
+                    .expect("Controller not dropped");
             }
 
             Msg::SaveContact => {
