@@ -120,6 +120,8 @@ impl SimpleComponent for SenderPage {
             #[local_ref]
             file_path_entry -> adw::ActionRow {
                 set_title: "File",
+                #[watch]
+                set_subtitle: &model.file_path.as_ref().map_or("Select file to send".to_owned(), |p| p.display().to_string()),
 
                 add_suffix = &gtk::Button {
                     set_icon_name: icon_names::SEARCH_FOLDER,
@@ -256,21 +258,25 @@ impl SimpleComponent for SenderPage {
                 log::info!("Selected passphrase is {}", passphrase);
 
                 let passphrase = PassphraseMethod::Direct(passphrase.into_bytes());
-
                 let save = self.save_contact.is_active().then(|| {
-                    (
-                        self.contact_entry.text().to_string(),
-                        self.contacts
-                            .clone()
-                            .expect("Must exist if contact was filled"),
-                    )
+                    let contact = self.contact_entry.text().to_string();
+                    let contacts = self
+                        .contacts
+                        .clone()
+                        .expect("Should be loaded as save contact is true");
+
+                    (contact, contacts)
                 });
+                let path = self
+                    .file_path
+                    .clone()
+                    .expect("Should have file to be able to call send");
 
                 log::info!("Starting sender worker");
 
                 self.aporture_dialog.emit(AportureMsg::SendFile {
                     passphrase,
-                    path: self.file_path.clone().expect("Button disabled if None"),
+                    path,
                     save,
                 });
             }

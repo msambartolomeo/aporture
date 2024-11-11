@@ -22,7 +22,7 @@ pub struct ReceiverPage {
     save_contact: adw::SwitchRow,
     contact_entry: adw::EntryRow,
     passphrase_length: u32,
-    destination_path: Option<PathBuf>,
+    destination: Option<PathBuf>,
     directory_picker_dialog: Controller<OpenDialog>,
     contacts: Option<Arc<Mutex<Contacts>>>,
     aporture_dialog: Controller<Peer>,
@@ -79,6 +79,8 @@ impl SimpleComponent for ReceiverPage {
             #[local_ref]
             file_path_entry -> adw::ActionRow {
                 set_title: "Destination",
+                #[watch]
+                set_subtitle: &model.destination.as_ref().map_or("Select destination to receive into".to_owned(), |p| p.display().to_string()),
 
                 add_suffix = &gtk::Button {
                     set_icon_name: icon_names::SEARCH_FOLDER,
@@ -139,16 +141,12 @@ impl SimpleComponent for ReceiverPage {
             save_contact: adw::SwitchRow::default(),
             contact_entry: adw::EntryRow::default(),
             passphrase_length: 0,
-            destination_path: aporture::fs::downloads_directory(),
+            destination: aporture::fs::downloads_directory(),
             directory_picker_dialog,
             contacts: None,
             aporture_dialog,
             form_disabled: false,
         };
-
-        if let Some(ref path) = model.destination_path {
-            model.file_entry.set_subtitle(&path.display().to_string());
-        }
 
         let passphrase_entry = &model.passphrase_entry;
         let file_path_entry = &model.file_entry;
@@ -170,25 +168,27 @@ impl SimpleComponent for ReceiverPage {
                 log::info!("Selected passphrase is {}", passphrase);
 
                 let passphrase = PassphraseMethod::Direct(passphrase.into_bytes());
+                let save = self.save_contact.is_active().then(|| {
+                    let contact = self.contact_entry.text().to_string();
+                    let contacts = self
+                        .contacts
+                        .clone()
+                        .expect("Should be loaded as save contact is true");
+
+                    (contact, contacts)
+                });
+                let destination = self
+                    .destination
+                    .clone()
+                    .expect("Should have destination to be able to call send");
 
                 log::info!("Starting receiver worker");
 
-                let save = self.save_contact.is_active().then(|| {
-                    (
-                        self.contact_entry.text().to_string(),
-                        self.contacts
-                            .clone()
-                            .expect("Must exist if contact was filled"),
-                    )
-                });
-
                 self.aporture_dialog.emit(AportureMsg::ReceiveFile {
                     passphrase,
-                    destination: self.destination_path.clone(),
+                    destination,
                     save,
                 });
-
-                emit!(app::Request::Contacts => sender);
             }
 
             Msg::AportureFinished(result) => {
@@ -231,7 +231,7 @@ impl SimpleComponent for ReceiverPage {
             Msg::FilePickerResponse(path) => {
                 self.file_entry.set_subtitle(&path.to_string_lossy());
 
-                self.destination_path = Some(path);
+                self.destination = Some(path);
             }
 
             Msg::Ignore => (),

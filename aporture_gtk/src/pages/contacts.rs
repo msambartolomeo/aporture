@@ -27,6 +27,14 @@ pub struct ContactPage {
     aporture_dialog: Controller<Peer>,
 }
 
+impl ContactPage {
+    fn contacts(&self) -> Arc<Mutex<Contacts>> {
+        self.contacts
+            .clone()
+            .expect("Contacts must be present for ContactPage to be shown")
+    }
+}
+
 #[derive(Debug)]
 pub enum Msg {
     ContactsReady(Option<Arc<Mutex<Contacts>>>),
@@ -123,9 +131,21 @@ impl Component for ContactPage {
 
                     self.contacts_ui.clear();
 
+                    let destination = aporture::fs::downloads_directory();
+
+                    if destination.is_none() {
+                        let toast = app::Request::ToastS(
+                            "Could not find default receive directory, please pick one before sending",
+                            Severity::Warn
+                        );
+
+                        emit!(toast => sender);
+                    }
+
                     contacts.blocking_lock().list().for_each(|(name, date)| {
                         let data = contact_row::Input {
                             date: date.format("%d/%m/%Y %H:%M").to_string(),
+                            destination: destination.clone(),
                         };
 
                         self.contacts_ui.insert(name.clone(), data);
@@ -134,12 +154,7 @@ impl Component for ContactPage {
             }
 
             Msg::SendFile(name, path) => {
-                let passphrase = PassphraseMethod::Contact(
-                    name,
-                    self.contacts
-                        .clone()
-                        .expect("Method only called if contacts exists"),
-                );
+                let passphrase = PassphraseMethod::Contact(name, self.contacts());
 
                 log::info!("Starting sender worker");
 
@@ -150,19 +165,14 @@ impl Component for ContactPage {
                 });
             }
 
-            Msg::ReceiveFile(name, path) => {
-                let passphrase = PassphraseMethod::Contact(
-                    name,
-                    self.contacts
-                        .clone()
-                        .expect("Method only called if contacts exists"),
-                );
+            Msg::ReceiveFile(name, destination) => {
+                let passphrase = PassphraseMethod::Contact(name, self.contacts());
 
                 log::info!("Starting sender worker");
 
                 self.aporture_dialog.emit(AportureMsg::ReceiveFile {
                     passphrase,
-                    destination: Some(path),
+                    destination,
                     save: None,
                 });
             }
@@ -198,11 +208,8 @@ impl Component for ContactPage {
             }
 
             Msg::DeleteContact(contact) => {
-                let message = format!("delete contact \"{}\"", &contact);
-                let contacts = self
-                    .contacts
-                    .clone()
-                    .expect("Cannot delete contacts if not requested");
+                let message = format!("delete contact \"{}\"", contact);
+                let contacts = self.contacts();
 
                 Confirmation::new(&message)
                     .confirm("Delete")
@@ -211,11 +218,11 @@ impl Component for ContactPage {
                         let mut contacts = contacts.blocking_lock();
 
                         contacts.delete(&contact);
-                        contacts.save_blocking().expect("Contacts saved");
 
-                        drop(contacts);
-
-                        sender.input(Msg::DeleteContactUI(contact));
+                        match contacts.save_blocking() {
+                            Ok(_) => sender.input(Msg::DeleteContactUI(contact)),
+                            Err(_) => emit!(app::Request::ToastS("Could not delete contact", Severity::Warn) => sender),
+                        }
                     });
             }
 
@@ -257,7 +264,7 @@ mod contact_row {
         name: String,
         date: String,
         path: Option<PathBuf>,
-        destination: PathBuf,
+        destination: Option<PathBuf>,
         expanded: bool,
     }
 
@@ -276,6 +283,7 @@ mod contact_row {
     #[derive(Debug)]
     pub struct Input {
         pub date: String,
+        pub destination: Option<PathBuf>,
     }
 
     #[derive(Debug)]
@@ -344,7 +352,7 @@ mod contact_row {
                 add_row = &adw::ActionRow {
                     set_title: "Receive",
                     #[watch]
-                    set_subtitle: &self.destination.display().to_string(),
+                    set_subtitle: &self.destination.as_ref().map_or("Select destination to receive into".to_owned(), |p| p.display().to_string()),
 
                     add_suffix = &gtk::Button {
                         set_icon_name: icon_names::SEARCH_FOLDER,
@@ -372,8 +380,8 @@ mod contact_row {
                 expanded: false,
                 name: index.clone(),
                 date: value.date,
+                destination: value.destination,
                 path: None,
-                destination: aporture::fs::downloads_directory().expect("Valid download dir"),
             }
         }
 
@@ -388,7 +396,11 @@ mod contact_row {
                 }
 
                 Msg::ReceiveFile => {
-                    emit!(Output::Receive(self.name.clone(), self.destination.clone()) => sender);
+                    if let Some(path) = self.path.clone() {
+                        emit!(Output::Receive(self.name.clone(), path) => sender);
+                    } else {
+                        sender.input(Msg::ReceiveFilePickerOpen);
+                    }
                 }
 
                 Msg::SendFilePickerOpen => {
@@ -396,12 +408,12 @@ mod contact_row {
                 }
 
                 Msg::ReceiveFilePickerOpen => {
-                    emit!( Output::ReceiveFilePicker(self.name.clone()) => sender);
+                    emit!(Output::ReceiveFilePicker(self.name.clone()) => sender);
                 }
 
                 Msg::SendFilePickerClosed(path) => self.path = Some(path),
 
-                Msg::ReceiveFilePickerClosed(path) => self.destination = path,
+                Msg::ReceiveFilePickerClosed(path) => self.destination = Some(path),
 
                 Msg::Expand => self.expanded = !self.expanded,
 

@@ -29,7 +29,7 @@ pub enum Msg {
     },
     ReceiveFile {
         passphrase: PassphraseMethod,
-        destination: Option<PathBuf>,
+        destination: PathBuf,
         save: Option<(String, Arc<Mutex<Contacts>>)>,
     },
 }
@@ -155,7 +155,7 @@ impl Component for Peer {
                 destination,
                 save,
             } => {
-                sender.oneshot_command(async {
+                sender.oneshot_command(async move {
                     let passphrase = match passphrase {
                         PassphraseMethod::Direct(p) => p,
                         PassphraseMethod::Contact(name, contacts) => contacts
@@ -169,10 +169,6 @@ impl Component for Peer {
                     let app = AporturePairingProtocol::<Receiver>::new(passphrase, save.is_some());
 
                     let mut pair_info = app.pair().await?;
-
-                    let destination = destination
-                        .or_else(aporture::fs::downloads_directory)
-                        .expect("Valid downloads directory");
 
                     let atp =
                         AportureTransferProtocol::<Receiver>::new(&mut pair_info, &destination);
