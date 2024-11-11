@@ -7,7 +7,9 @@ use relm4::prelude::*;
 use relm4_icons::icon_names;
 use tokio::sync::Mutex;
 
-use crate::components::contacts_dialog::{Holder as ContactHolder, Msg as ContactMsg};
+use crate::components::contacts_dialog::{
+    Holder as ContactHolder, Msg as ContactMsg, Output as ContactOutput,
+};
 use crate::components::toaster::{Severity, Toaster};
 use crate::pages::{contacts, receive, send, ContactPage, ReceiverPage, SenderPage};
 
@@ -29,7 +31,7 @@ const RECEIVER_PAGE_NAME: &str = "Receive";
 
 #[derive(Debug)]
 pub enum Msg {
-    Contacts(Option<Arc<Mutex<Contacts>>>),
+    Contacts(ContactOutput),
     ContactsRequest,
     PageSwitch,
     Toast(String, Severity),
@@ -124,15 +126,13 @@ impl SimpleComponent for App {
             .launch(())
             .forward(sender.input_sender(), Msg::Contacts);
 
-        let toaster = Toaster::default();
-
         let model = Self {
             stack: adw::ViewStack::default(),
+            toaster: Toaster::default(),
             receive_page,
             sender_page,
             contacts_page,
             contacts_holder,
-            toaster,
             current_page: SENDER_PAGE_NAME.into(),
             contacts: None,
         };
@@ -147,26 +147,28 @@ impl SimpleComponent for App {
 
     fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
         match message {
-            Msg::Contacts(contacts) => {
-                if let Some(contacts) = contacts {
+            Msg::Contacts(output) => match output {
+                ContactOutput::Cancel => {
+                    if self.contacts.is_none() {
+                        self.stack.set_visible_child_name(&self.current_page);
+                    }
+                }
+                ContactOutput::Contacts(contacts) => {
                     self.contacts = Some(contacts);
+
+                    self.sender_page
+                        .emit(send::Msg::ContactsReady(self.contacts.clone()));
+
+                    self.receive_page
+                        .emit(receive::Msg::ContactsReady(self.contacts.clone()));
+
+                    self.contacts_page
+                        .emit(contacts::Msg::ContactsReady(self.contacts.clone()));
                 }
-
-                if self.contacts.is_none() {
-                    self.stack.set_visible_child_name(&self.current_page);
-                } else if let Some(page) = self.stack.visible_child_name() {
-                    self.current_page = page;
+                ContactOutput::Error(message) => {
+                    sender.input(Msg::ToastS(message, Severity::Error))
                 }
-
-                self.sender_page
-                    .emit(send::Msg::ContactsReady(self.contacts.clone()));
-
-                self.receive_page
-                    .emit(receive::Msg::ContactsReady(self.contacts.clone()));
-
-                self.contacts_page
-                    .emit(contacts::Msg::ContactsReady(self.contacts.clone()));
-            }
+            },
 
             Msg::ContactsRequest => self.contacts_holder.emit(ContactMsg::Get),
 
@@ -185,13 +187,9 @@ impl SimpleComponent for App {
                 }
             }
 
-            Msg::Toast(message, severity) => {
-                self.toaster.add_toast(&message, severity);
-            }
+            Msg::Toast(msg, severity) => self.toaster.add_toast(&msg, severity),
 
-            Msg::ToastS(message, severity) => {
-                self.toaster.add_toast(message, severity);
-            }
+            Msg::ToastS(msg, severity) => self.toaster.add_toast(msg, severity),
         }
     }
 }

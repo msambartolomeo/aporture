@@ -9,9 +9,12 @@ use relm4::prelude::*;
 use relm4_components::open_dialog;
 use tokio::sync::Mutex;
 
-use crate::app;
-use crate::components::aporture_dialog::{Msg as AportureMsg, PassphraseMethod, Peer};
+use crate::components::aporture_dialog::{ContactResult, PassphraseMethod, Peer};
+use crate::components::aporture_dialog::{Error as AportureError, Msg as AportureMsg};
 use crate::components::confirmation::Confirmation;
+use crate::components::toaster::Severity;
+use crate::{app, emit};
+
 use aporture::fs::contacts::Contacts;
 
 #[derive(Debug)]
@@ -35,7 +38,7 @@ pub enum Msg {
     ReceiverPickerResponse(PathBuf),
     DeleteContact(String),
     DeleteContactUI(String),
-    PeerFinished,
+    AportureFinished(Result<ContactResult, AportureError>),
     Ignore,
 }
 
@@ -71,7 +74,7 @@ impl Component for ContactPage {
         let aporture_dialog = Peer::builder()
             .transient_for(&root)
             .launch(())
-            .forward(sender.input_sender(), |_| Msg::PeerFinished); // TODO: Handle Errors
+            .forward(sender.input_sender(), Msg::AportureFinished);
 
         let sender_picker_dialog = OpenDialog::builder()
             .transient_for_native(&root)
@@ -220,8 +223,19 @@ impl Component for ContactPage {
                 self.contacts_ui.remove(&contact);
             }
 
-            Msg::PeerFinished => {
-                log::info!("Finished sender worker");
+            Msg::AportureFinished(result) => {
+                log::info!("Finished contact worker");
+
+                match result {
+                    Ok(ContactResult::Added) => emit!(app::Request::Contacts => sender),
+                    Ok(ContactResult::PeerRefused) => {
+                        emit!(app::Request::ToastS("Peer refused to save contact", Severity::Warn) => sender);
+                    }
+                    Ok(ContactResult::NoOp) => {}
+                    Err(e) => {
+                        emit!(app::Request::Toast(e.to_string(), Severity::Error) => sender);
+                    }
+                }
             }
 
             Msg::Ignore => (),

@@ -6,6 +6,7 @@ use tokio::sync::Mutex;
 
 use aporture::fs::contacts::Contacts;
 
+use crate::components::toaster::{Severity, Toaster};
 use crate::emit;
 
 #[derive(Debug)]
@@ -16,6 +17,7 @@ pub struct Holder {
     exists_p_entry: adw::PasswordEntryRow,
     create_p_entry_1: adw::PasswordEntryRow,
     create_p_entry_2: adw::PasswordEntryRow,
+    toaster: Toaster,
 }
 
 #[derive(Debug)]
@@ -23,14 +25,21 @@ pub enum Msg {
     Return,
     Get,
     Hide,
+    Error(&'static str),
+}
+
+#[derive(Debug)]
+pub enum Output {
+    Cancel,
+    Contacts(Arc<Mutex<Contacts>>),
+    Error(&'static str),
 }
 
 #[relm4::component(pub)]
 impl Component for Holder {
     type Init = ();
     type Input = Msg;
-    type Output = Option<Arc<Mutex<Contacts>>>;
-    // TODO: Handle error with error messages
+    type Output = Output;
     type CommandOutput = Option<Contacts>;
 
     view! {
@@ -53,68 +62,71 @@ impl Component for Holder {
 
                 add_top_bar = &adw::HeaderBar { },
 
-                if Contacts::exists() {
-                    adw::PreferencesGroup {
-                        set_margin_horizontal: 20,
-                        set_margin_vertical: 50,
+                #[local_ref]
+                toaster -> adw::ToastOverlay {
+                    if Contacts::exists() {
+                        adw::PreferencesGroup {
+                            set_margin_horizontal: 20,
+                            set_margin_vertical: 50,
 
-                        set_title: "Contacts",
-                        set_description: Some("Enter password to access contacts"),
+                            set_title: "Contacts",
+                            set_description: Some("Enter password to access contacts"),
 
-                        #[local_ref]
-                        p -> adw::PasswordEntryRow {
-                            set_title: "Password",
+                            #[local_ref]
+                            p -> adw::PasswordEntryRow {
+                                set_title: "Password",
 
-                            connect_entry_activated => Msg::Return,
+                                connect_entry_activated => Msg::Return,
 
-                            #[watch]
-                            set_sensitive: !model.form_disabled,
-                        },
+                                #[watch]
+                                set_sensitive: !model.form_disabled,
+                            },
 
-                        gtk::Button {
-                            set_margin_all: 40,
+                            gtk::Button {
+                                set_margin_all: 40,
 
-                            add_css_class: "suggested-action",
+                                add_css_class: "suggested-action",
 
-                            set_label: "Enter",
-                            connect_clicked => Msg::Return,
+                                set_label: "Enter",
+                                connect_clicked => Msg::Return,
+                            }
                         }
-                    }
-                } else {
-                    adw::PreferencesGroup {
-                        set_margin_horizontal: 20,
-                        set_margin_vertical: 50,
+                    } else {
+                        adw::PreferencesGroup {
+                            set_margin_horizontal: 20,
+                            set_margin_vertical: 50,
 
-                        set_title: "Contacts",
-                        set_description: Some("Enter password to encrypt contacts database"),
+                            set_title: "Contacts",
+                            set_description: Some("Enter password to encrypt contacts database"),
 
-                        #[local_ref]
-                        p1 -> adw::PasswordEntryRow {
-                            set_title: "Password",
-                            #[watch]
-                            set_sensitive: !model.form_disabled,
-                        },
+                            #[local_ref]
+                            p1 -> adw::PasswordEntryRow {
+                                set_title: "Password",
+                                #[watch]
+                                set_sensitive: !model.form_disabled,
+                            },
 
-                        #[local_ref]
-                        p2 -> adw::PasswordEntryRow {
-                            set_title: "Repeat Password",
+                            #[local_ref]
+                            p2 -> adw::PasswordEntryRow {
+                                set_title: "Repeat Password",
 
-                            connect_entry_activated => Msg::Return,
+                                connect_entry_activated => Msg::Return,
 
-                            #[watch]
-                            set_sensitive: !model.form_disabled,
-                        },
+                                #[watch]
+                                set_sensitive: !model.form_disabled,
+                            },
 
-                        gtk::Button {
-                            set_margin_all: 40,
+                            gtk::Button {
+                                set_margin_all: 40,
 
-                            add_css_class: "suggested-action",
+                                add_css_class: "suggested-action",
 
-                            set_label: "Enter",
-                            connect_clicked => Msg::Return,
+                                set_label: "Enter",
+                                connect_clicked => Msg::Return,
+                            }
                         }
-                    }
-                },
+                    },
+                }
             },
 
             connect_close_request[sender] => move |_| {
@@ -130,6 +142,7 @@ impl Component for Holder {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let model = Self {
+            toaster: Toaster::default(),
             visible: false,
             form_disabled: false,
             contacts: None,
@@ -141,6 +154,7 @@ impl Component for Holder {
         let p = &model.exists_p_entry;
         let p1 = &model.create_p_entry_1;
         let p2 = &model.create_p_entry_2;
+        let toaster = model.toaster.as_ref();
 
         let widgets = view_output!();
 
@@ -170,25 +184,28 @@ impl Component for Holder {
                                 Contacts::empty(&p1.into_bytes()).await.ok()
                             });
                         } else {
-                            // TODO: Error message
+                            sender.input(Msg::Error("The passwords do not match"));
                             self.create_p_entry_1.add_css_class("error");
                             self.create_p_entry_2.add_css_class("error");
                         }
                     }
                 }
             }
+
             Msg::Get => {
-                let Some(contacts) = &self.contacts else {
+                if let Some(contacts) = &self.contacts {
+                    emit!(Output::Contacts(contacts.clone()) => sender);
+                } else {
                     self.visible = true;
-                    return;
-                };
-                emit!(Some(contacts.clone()) => sender);
+                }
             }
 
             Msg::Hide => {
-                emit!(None => sender);
+                emit!(Output::Cancel => sender);
                 self.visible = false;
             }
+
+            Msg::Error(msg) => self.toaster.add_toast(msg, Severity::Error),
         }
     }
 
@@ -205,10 +222,14 @@ impl Component for Holder {
                 self.create_p_entry_1.add_css_class("error");
                 self.create_p_entry_2.add_css_class("error");
             }
+            sender.input(Msg::Error("Wrong password, try again"));
         } else {
             self.contacts = message.map(|c| Arc::new(Mutex::new(c)));
 
-            emit!(self.contacts.clone() => sender);
+            match self.contacts {
+                Some(ref contacts) => emit!(Output::Contacts(contacts.clone()) => sender),
+                None => emit!(Output::Error("Could not load contacts") => sender),
+            }
 
             self.visible = false;
         }

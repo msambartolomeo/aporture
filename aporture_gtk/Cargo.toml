@@ -17,3 +17,4 @@ aporture = { workspace = true, features = ["full"] }
 tokio = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }
+thiserror = { workspace = true }

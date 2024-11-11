@@ -278,14 +278,13 @@ impl SimpleComponent for SenderPage {
             Msg::AportureFinished(result) => {
                 log::info!("Finished sender worker");
 
-                // TODO:
                 match result {
                     Ok(ContactResult::Added) => emit!(app::Request::Contacts => sender),
                     Ok(ContactResult::PeerRefused) => {
                         emit!(app::Request::ToastS("Peer refused to save contact", Severity::Warn) => sender);
                     }
                     Ok(ContactResult::NoOp) => {}
-                    Err(_) => todo!("use error"),
+                    Err(e) => emit!(app::Request::Toast(e.to_string(), Severity::Error) => sender),
                 }
 
                 self.form_disabled = false;

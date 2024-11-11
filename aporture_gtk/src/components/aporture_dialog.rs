@@ -135,7 +135,7 @@ impl Component for Peer {
                         if save_confirmation {
                             let mut contacts = contacts.lock().await;
                             contacts.add(name, key);
-                            contacts.save().await.map_err(|_| Error::NoContact)?;
+                            contacts.save().await.map_err(|_| Error::ContactSaving)?;
                             drop(contacts);
 
                             ContactResult::Added
@@ -149,6 +149,7 @@ impl Component for Peer {
                     Ok(result)
                 });
             }
+
             Msg::ReceiveFile {
                 passphrase,
                 destination,
@@ -161,7 +162,7 @@ impl Component for Peer {
                             .lock()
                             .await
                             .get(&name)
-                            .ok_or(Error::ContactSaving)?
+                            .ok_or(Error::NoContact)?
                             .to_vec(),
                     };
 
@@ -220,18 +221,31 @@ mod error {
     use aporture::pairing::error::Error as PairingError;
     use aporture::transfer::{ReceiveError, SendError};
 
-    #[derive(Debug)]
+    use thiserror::Error;
+
+    #[derive(Debug, Error)]
     pub enum Error {
+        #[error("The peer sending the file has not arrived yet")]
         NoPeer,
+        #[error("Could not connect to server")]
         NoServer,
+        #[error("The server is malfunctioning, please try again later")]
         InvalidServer,
+        #[error("The server is malfunctioning, please try again later")]
         ServerFailure,
+        #[error("Could not perform pairing with peer")]
         PairingFailure,
+        #[error("The file selected is invalid")]
         FileNotFound,
+        #[error("You do not have access to the file you are trying to send")]
         FilePermission,
+        #[error("There was a problem in the transfered file")]
         HashMismatch,
+        #[error("Could not transfer file")]
         TransferFailure,
+        #[error("Contact not found")]
         NoContact,
+        #[error("Could not save the contact")]
         ContactSaving,
     }
 
@@ -259,7 +273,7 @@ mod error {
 
     impl From<ReceiveError> for Error {
         fn from(e: ReceiveError) -> Self {
-            log::warn!("Error: {e}");
+            log::error!("Error: {e}");
 
             match e {
                 ReceiveError::File(_) | ReceiveError::Destination => Self::FileNotFound,
@@ -271,7 +285,7 @@ mod error {
 
     impl From<SendError> for Error {
         fn from(e: SendError) -> Self {
-            log::warn!("Error: {e}");
+            log::error!("Error: {e}");
 
             match e {
                 SendError::File(_) | SendError::Path => Self::FileNotFound,
