@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use adw::prelude::*;
 use aporture::fs::contacts::Contacts;
-use relm4::gtk::glib::GString;
+use relm4::actions::{RelmAction, RelmActionGroup};
+use relm4::gtk::glib::{clone, GString};
 use relm4::prelude::*;
 use relm4_icons::icon_names;
 use tokio::sync::Mutex;
@@ -10,6 +11,7 @@ use tokio::sync::Mutex;
 use crate::components::contacts_dialog::{
     Holder as ContactHolder, Msg as ContactMsg, Output as ContactOutput,
 };
+use crate::components::preferences::{self, Preferences};
 use crate::components::toaster::{Severity, Toaster};
 use crate::pages::{contacts, receive, send, ContactPage, ReceiverPage, SenderPage};
 
@@ -21,6 +23,7 @@ pub struct App {
     sender_page: Controller<SenderPage>,
     contacts_page: Controller<ContactPage>,
     contacts_holder: Controller<ContactHolder>,
+    preferences: Controller<Preferences>,
     current_page: GString,
     contacts: Option<Arc<Mutex<Contacts>>>,
 }
@@ -36,6 +39,8 @@ pub enum Msg {
     PageSwitch,
     Toast(String, Severity),
     ToastS(&'static str, Severity),
+    About,
+    Preferences,
 }
 
 #[derive(Debug)]
@@ -56,10 +61,18 @@ impl From<Request> for Msg {
 }
 
 #[relm4::component(pub)]
-impl SimpleComponent for App {
+impl Component for App {
     type Init = ();
     type Input = Msg;
     type Output = ();
+    type CommandOutput = ();
+
+    menu! {
+        menu: {
+            "Preferences" => PreferencesAction,
+            "About Aporture" => AboutAction,
+        }
+    }
 
     view! {
         #[root]
@@ -72,7 +85,12 @@ impl SimpleComponent for App {
                 set_top_bar_style: adw::ToolbarStyle::Raised,
                 set_bottom_bar_style: adw::ToolbarStyle::Raised,
 
-                add_top_bar = &adw::HeaderBar {},
+                add_top_bar = &adw::HeaderBar {
+                    pack_end = &gtk::MenuButton {
+                        set_icon_name: icon_names::MENU,
+                        set_menu_model: Some(&menu),
+                    }
+                },
 
                 add_bottom_bar = &adw::HeaderBar {
                     set_show_end_title_buttons: false,
@@ -126,6 +144,13 @@ impl SimpleComponent for App {
             .launch(())
             .forward(sender.input_sender(), Msg::Contacts);
 
+        let preferences = Preferences::builder()
+            .transient_for(&root)
+            .launch(())
+            .forward(sender.input_sender(), |()| {
+                Msg::ToastS("Preferences updated successfully", Severity::Success)
+            });
+
         let model = Self {
             stack: adw::ViewStack::default(),
             toaster: Toaster::default(),
@@ -133,6 +158,7 @@ impl SimpleComponent for App {
             sender_page,
             contacts_page,
             contacts_holder,
+            preferences,
             current_page: SENDER_PAGE_NAME.into(),
             contacts: None,
         };
@@ -142,10 +168,12 @@ impl SimpleComponent for App {
 
         let widgets = view_output!();
 
+        App::register_actions(sender);
+
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
+    fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>, root: &Self::Root) {
         match message {
             Msg::Contacts(output) => match output {
                 ContactOutput::Cancel => {
@@ -190,6 +218,53 @@ impl SimpleComponent for App {
             Msg::Toast(msg, severity) => self.toaster.add_toast(&msg, severity),
 
             Msg::ToastS(msg, severity) => self.toaster.add_toast(msg, severity),
+
+            Msg::About => {
+                let about_dialog = adw::AboutDialog::builder()
+                    .application_icon("dev.msambartolomeo.aporture")
+                    .website("https://github.com/msambartolomeo/aporture")
+                    .developer_name("Mauro Sambartolomeo")
+                    .application_name("Aporture")
+                    .build();
+
+                about_dialog.present(Some(root));
+            }
+
+            Msg::Preferences => {
+                self.preferences.emit(preferences::Msg::Open);
+            }
         }
+    }
+}
+
+relm4::new_action_group!(AppActions, "app");
+relm4::new_stateless_action!(PreferencesAction, AppActions, "preferences");
+relm4::new_stateless_action!(AboutAction, AppActions, "about");
+
+impl App {
+    fn register_actions(sender: ComponentSender<Self>) {
+        let mut actions = RelmActionGroup::<AppActions>::new();
+
+        actions.add_action({
+            RelmAction::<AboutAction>::new_stateless(clone!(
+                #[strong]
+                sender,
+                move |_| {
+                    sender.input(Msg::About);
+                }
+            ))
+        });
+
+        actions.add_action({
+            RelmAction::<PreferencesAction>::new_stateless(clone!(
+                #[strong]
+                sender,
+                move |_| {
+                    sender.input(Msg::Preferences);
+                }
+            ))
+        });
+
+        actions.register_for_main_application();
     }
 }
