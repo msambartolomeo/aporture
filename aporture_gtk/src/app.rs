@@ -166,7 +166,7 @@ impl SimpleComponent for App {
                         .emit(contacts::Msg::ContactsReady(self.contacts.clone()));
                 }
                 ContactOutput::Error(message) => {
-                    sender.input(Msg::ToastS(message, Severity::Error))
+                    sender.input(Msg::ToastS(message, Severity::Error));
                 }
             },
 

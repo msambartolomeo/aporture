@@ -208,7 +208,7 @@ impl Component for ContactPage {
             }
 
             Msg::DeleteContact(contact) => {
-                let message = format!("delete contact \"{}\"", contact);
+                let message = format!("delete contact \"{contact}\"");
                 let contacts = self.contacts();
 
                 Confirmation::new(&message)
@@ -220,7 +220,7 @@ impl Component for ContactPage {
                         contacts.delete(&contact);
 
                         match contacts.save_blocking() {
-                            Ok(_) => sender.input(Msg::DeleteContactUI(contact)),
+                            Ok(()) => sender.input(Msg::DeleteContactUI(contact)),
                             Err(_) => emit!(app::Request::ToastS("Could not delete contact", Severity::Warn) => sender),
                         }
                     });
