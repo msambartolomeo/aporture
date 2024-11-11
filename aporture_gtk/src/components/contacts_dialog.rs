@@ -6,6 +6,8 @@ use tokio::sync::Mutex;
 
 use aporture::fs::contacts::Contacts;
 
+use crate::emit;
+
 #[derive(Debug)]
 pub struct Holder {
     visible: bool,
@@ -180,14 +182,11 @@ impl Component for Holder {
                     self.visible = true;
                     return;
                 };
-
-                sender
-                    .output(Some(contacts.clone()))
-                    .expect("Component must not be dropped");
+                emit!(Some(contacts.clone()) => sender);
             }
 
             Msg::Hide => {
-                sender.output(None).expect("Component must not be dropped");
+                emit!(None => sender);
                 self.visible = false;
             }
         }
@@ -209,9 +208,7 @@ impl Component for Holder {
         } else {
             self.contacts = message.map(|c| Arc::new(Mutex::new(c)));
 
-            sender
-                .output(self.contacts.clone())
-                .expect("Component not dropped");
+            emit!(self.contacts.clone() => sender);
 
             self.visible = false;
         }

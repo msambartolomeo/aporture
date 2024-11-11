@@ -23,7 +23,7 @@ pub enum Severity {
 }
 
 impl Severity {
-    fn icon(&self) -> &str {
+    const fn icon(&self) -> &str {
         match self {
             Self::Info => icon_names::INFO_OUTLINE,
             Self::Success => icon_names::SUCCESS_SMALL,
@@ -32,7 +32,7 @@ impl Severity {
         }
     }
 
-    fn color(&self) -> &str {
+    const fn color(&self) -> &str {
         match self {
             Self::Info => "accent",
             Self::Success => "success",

@@ -201,16 +201,19 @@ impl Component for ContactPage {
                     .clone()
                     .expect("Cannot delete contacts if not requested");
 
-                Confirmation::new(&message).choose(root, move || {
-                    let mut contacts = contacts.blocking_lock();
+                Confirmation::new(&message)
+                    .confirm("Delete")
+                    .deny("Cancel")
+                    .choose(root, move || {
+                        let mut contacts = contacts.blocking_lock();
 
-                    contacts.delete(&contact);
-                    contacts.save_blocking().expect("Contacts saved");
+                        contacts.delete(&contact);
+                        contacts.save_blocking().expect("Contacts saved");
 
-                    drop(contacts);
+                        drop(contacts);
 
-                    sender.input(Msg::DeleteContactUI(contact));
-                });
+                        sender.input(Msg::DeleteContactUI(contact));
+                    });
             }
 
             Msg::DeleteContactUI(contact) => {
@@ -232,6 +235,8 @@ mod contact_row {
     use adw::prelude::*;
     use relm4::prelude::*;
     use relm4_icons::icon_names;
+
+    use crate::emit;
 
     #[derive(Debug)]
     pub struct Contact {
@@ -362,25 +367,23 @@ mod contact_row {
             match msg {
                 Msg::SendFile => {
                     if let Some(path) = self.path.clone() {
-                        sender
-                            .output(Output::Send(self.name.clone(), path))
-                            .expect("Not dropped");
+                        emit!(Output::Send(self.name.clone(), path) => sender);
                     } else {
                         sender.input(Msg::SendFilePickerOpen);
                     }
                 }
 
-                Msg::ReceiveFile => sender
-                    .output(Output::Receive(self.name.clone(), self.destination.clone()))
-                    .expect("Not dropped"),
+                Msg::ReceiveFile => {
+                    emit!(Output::Receive(self.name.clone(), self.destination.clone()) => sender);
+                }
 
-                Msg::SendFilePickerOpen => sender
-                    .output(Output::SendFilePicker(self.name.clone()))
-                    .expect("Not dropped"),
+                Msg::SendFilePickerOpen => {
+                    emit!(Output::SendFilePicker(self.name.clone()) => sender);
+                }
 
-                Msg::ReceiveFilePickerOpen => sender
-                    .output(Output::ReceiveFilePicker(self.name.clone()))
-                    .expect("Not dropped"),
+                Msg::ReceiveFilePickerOpen => {
+                    emit!( Output::ReceiveFilePicker(self.name.clone()) => sender);
+                }
 
                 Msg::SendFilePickerClosed(path) => self.path = Some(path),
 
@@ -388,9 +391,7 @@ mod contact_row {
 
                 Msg::Expand => self.expanded = !self.expanded,
 
-                Msg::Delete => sender
-                    .output(Output::Delete(self.name.clone()))
-                    .expect("Not dropped"),
+                Msg::Delete => emit!(Output::Delete(self.name.clone()) => sender),
             }
         }
     }

@@ -12,6 +12,8 @@ use aporture::pairing::AporturePairingProtocol;
 use aporture::transfer::AportureTransferProtocol;
 use aporture::{Receiver, Sender};
 
+use crate::emit;
+
 #[derive(Debug)]
 pub struct Peer {
     visible: bool,
@@ -207,15 +209,13 @@ impl Component for Peer {
         sender: ComponentSender<Self>,
         _: &Self::Root,
     ) {
-        sender
-            .output(message)
-            .expect("Message returned to the main thread");
-
+        emit!(message => sender);
         self.visible = false;
     }
 }
 
 pub use error::Error;
+
 mod error {
     use aporture::pairing::error::Error as PairingError;
     use aporture::transfer::{ReceiveError, SendError};

@@ -13,10 +13,10 @@ use tokio::sync::Mutex;
 use aporture::fs::contacts::Contacts;
 use aporture::passphrase;
 
-use crate::app;
 use crate::components::aporture_dialog::{ContactResult, PassphraseMethod, Peer};
 use crate::components::aporture_dialog::{Error as AportureError, Msg as AportureMsg};
 use crate::components::toaster::Severity;
+use crate::{app, emit};
 
 const PASSPHRASE_WORD_COUNT: usize = 3;
 
@@ -208,12 +208,7 @@ impl SimpleComponent for SenderPage {
 
             Msg::CopyPassword => {
                 let Some(clipboard) = Display::default().as_ref().map(DisplayExt::clipboard) else {
-                    sender
-                        .output(app::Request::ToastS(
-                            "Could not copy to clipboard",
-                            Severity::Error,
-                        ))
-                        .expect("Controller not dropped");
+                    emit!(app::Request::ToastS("Could not copy to clipboard", Severity::Error) => sender);
 
                     return;
                 };
@@ -222,20 +217,12 @@ impl SimpleComponent for SenderPage {
 
                 clipboard.set_text(&text);
 
-                sender
-                    .output(app::Request::ToastS(
-                        "Coppied passphrase to clipboard",
-                        Severity::Info,
-                    ))
-                    .expect("Controller not dropped");
+                emit!(app::Request::ToastS("Coppied passphrase to clipboard", Severity::Info) => sender);
             }
 
             Msg::SaveContact => {
                 if self.contacts.is_none() && self.save_contact.is_active() {
-                    sender
-                        .output_sender()
-                        .send(app::Request::Contacts)
-                        .expect("Controller not dropped");
+                    emit!(app::Request::Contacts => sender);
                 }
             }
 
@@ -293,11 +280,10 @@ impl SimpleComponent for SenderPage {
 
                 // TODO:
                 match result {
-                    Ok(ContactResult::Added) => sender
-                        .output_sender()
-                        .send(app::Request::Contacts)
-                        .expect("Controller not dropped"),
-                    Ok(ContactResult::PeerRefused) => todo!("Warning"),
+                    Ok(ContactResult::Added) => emit!(app::Request::Contacts => sender),
+                    Ok(ContactResult::PeerRefused) => {
+                        emit!(app::Request::ToastS("Peer refused to save contact", Severity::Warn) => sender);
+                    }
                     Ok(ContactResult::NoOp) => {}
                     Err(_) => todo!("use error"),
                 }

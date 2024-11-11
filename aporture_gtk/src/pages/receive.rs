@@ -10,10 +10,10 @@ use tokio::sync::Mutex;
 
 use aporture::fs::contacts::Contacts;
 
-use crate::app;
 use crate::components::aporture_dialog::{ContactResult, PassphraseMethod, Peer};
 use crate::components::aporture_dialog::{Error as AportureError, Msg as AportureMsg};
 use crate::components::toaster::Severity;
+use crate::{app, emit};
 
 #[derive(Debug)]
 pub struct ReceiverPage {
@@ -188,10 +188,7 @@ impl SimpleComponent for ReceiverPage {
                     save,
                 });
 
-                sender
-                    .output_sender()
-                    .send(app::Request::Contacts)
-                    .expect("Controller not dropped");
+                emit!(app::Request::Contacts => sender);
             }
 
             Msg::AportureFinished(result) => {
@@ -199,16 +196,10 @@ impl SimpleComponent for ReceiverPage {
 
                 // TODO:
                 match result {
-                    Ok(ContactResult::Added) => sender
-                        .output_sender()
-                        .send(app::Request::Contacts)
-                        .expect("Controller not dropped"),
-                    Ok(ContactResult::PeerRefused) => sender
-                        .output(app::Request::Toast(
-                            "Peer refused to save contact".to_owned(),
-                            Severity::Warn,
-                        ))
-                        .expect("Controller not dropped"),
+                    Ok(ContactResult::Added) => emit!(app::Request::Contacts => sender),
+                    Ok(ContactResult::PeerRefused) => {
+                        emit!(app::Request::ToastS("Peer refused to save contact", Severity::Warn) => sender);
+                    }
                     Ok(ContactResult::NoOp) => {}
                     Err(_) => todo!("use error"),
                 }
@@ -220,10 +211,7 @@ impl SimpleComponent for ReceiverPage {
 
             Msg::SaveContact => {
                 if self.contacts.is_none() && self.save_contact.is_active() {
-                    sender
-                        .output_sender()
-                        .send(app::Request::Contacts)
-                        .expect("Controller not dropped");
+                    emit!(app::Request::Contacts => sender);
                 }
             }
 
