@@ -30,6 +30,8 @@ fn init_logger() {
 fn main() {
     init_logger();
 
+    relm4::RELM_THREADS.set(4).expect("Not defined yet");
+
     let app = RelmApp::new("dev.msambartolomeo.aporture");
 
     relm4_icons::initialize_icons();
