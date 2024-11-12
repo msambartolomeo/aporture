@@ -8,10 +8,10 @@ use relm4::prelude::*;
 use relm4_icons::icon_names;
 use tokio::sync::Mutex;
 
-use crate::components::contacts_dialog::{
+use crate::components::modal::contacts::{
     Holder as ContactHolder, Msg as ContactMsg, Output as ContactOutput,
 };
-use crate::components::preferences::{self, Preferences};
+use crate::components::modal::preferences::{self, Preferences};
 use crate::components::toaster::{Severity, Toaster};
 use crate::pages::{contacts, receive, send, ContactPage, ReceiverPage, SenderPage};
 

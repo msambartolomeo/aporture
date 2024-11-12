@@ -5,6 +5,7 @@ use aporture::fs::config::Config;
 use relm4::prelude::*;
 use relm4_icons::icon_names;
 
+use crate::components::modal::utils::escape_action;
 use crate::components::toaster::{Severity, Toaster};
 use crate::emit;
 
@@ -39,7 +40,7 @@ impl Component for Preferences {
             set_visible: model.visible,
             set_modal: true,
 
-            add_controller: escape_closes(&sender),
+            add_controller: escape_action!(Msg::Hide => sender),
 
             set_title: Some("Preferences"),
 
@@ -184,19 +185,4 @@ impl Component for Preferences {
             sender.input(Msg::Error("Invalid ip address"));
         }
     }
-}
-
-fn escape_closes(sender: &ComponentSender<Preferences>) -> gtk::EventControllerKey {
-    let escape_closes = gtk::EventControllerKey::default();
-
-    let s = sender.clone();
-    escape_closes.connect_key_pressed(move |_, key, _, _| {
-        if matches!(key, gtk::gdk::Key::Escape) {
-            s.input(Msg::Hide);
-        }
-
-        gtk::glib::Propagation::Proceed
-    });
-
-    escape_closes
 }

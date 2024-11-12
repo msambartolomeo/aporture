@@ -9,9 +9,9 @@ use relm4::prelude::*;
 use relm4_components::open_dialog;
 use tokio::sync::Mutex;
 
-use crate::components::aporture_dialog::{ContactResult, PassphraseMethod, Peer};
-use crate::components::aporture_dialog::{Error as AportureError, Msg as AportureMsg};
 use crate::components::confirmation::Confirmation;
+use crate::components::modal::aporture::{ContactResult, PassphraseMethod, Peer};
+use crate::components::modal::aporture::{Error as AportureError, Msg as AportureMsg};
 use crate::components::toaster::Severity;
 use crate::{app, emit};
 

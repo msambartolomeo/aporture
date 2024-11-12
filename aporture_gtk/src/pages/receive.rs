@@ -10,8 +10,8 @@ use tokio::sync::Mutex;
 
 use aporture::fs::contacts::Contacts;
 
-use crate::components::aporture_dialog::{ContactResult, PassphraseMethod, Peer};
-use crate::components::aporture_dialog::{Error as AportureError, Msg as AportureMsg};
+use crate::components::modal::aporture::{ContactResult, PassphraseMethod, Peer};
+use crate::components::modal::aporture::{Error as AportureError, Msg as AportureMsg};
 use crate::components::toaster::Severity;
 use crate::{app, emit};
 

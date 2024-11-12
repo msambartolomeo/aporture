@@ -6,9 +6,9 @@ use tokio::sync::Mutex;
 
 use aporture::fs::contacts::Contacts;
 
+use crate::components::modal::utils::escape_action;
 use crate::components::toaster::{Severity, Toaster};
 use crate::emit;
-
 #[derive(Debug)]
 pub struct Holder {
     visible: bool,
@@ -48,7 +48,7 @@ impl Component for Holder {
             set_visible: model.visible,
             set_modal: true,
 
-            add_controller: escape_closes(&sender),
+            add_controller: escape_action!(Msg::Hide => sender),
 
             set_title: Some("Contacts"),
 
@@ -234,19 +234,4 @@ impl Component for Holder {
             self.visible = false;
         }
     }
-}
-
-fn escape_closes(sender: &ComponentSender<Holder>) -> gtk::EventControllerKey {
-    let escape_closes = gtk::EventControllerKey::default();
-
-    let s = sender.clone();
-    escape_closes.connect_key_pressed(move |_, key, _, _| {
-        if matches!(key, gtk::gdk::Key::Escape) {
-            s.input(Msg::Hide);
-        }
-
-        gtk::glib::Propagation::Proceed
-    });
-
-    escape_closes
 }
