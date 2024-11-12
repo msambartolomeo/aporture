@@ -4,7 +4,7 @@ use std::net::{SocketAddr, UdpSocket};
 use std::sync::Arc;
 
 use quinn::crypto::rustls::QuicClientConfig;
-use quinn::{ClientConfig, ServerConfig, TokioRuntime};
+use quinn::{ClientConfig, ServerConfig, TokioRuntime, TransportConfig};
 use quinn::{Connection, Endpoint, EndpointConfig, RecvStream, SendStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::task::JoinHandle;
@@ -44,7 +44,7 @@ impl QuicConnection {
         certificate: Certificate,
         keepalive_handle: JoinHandle<()>,
     ) -> Result<Self, crate::io::Error> {
-        let config = ClientConfig::new(Arc::new(
+        let mut config = ClientConfig::new(Arc::new(
             QuicClientConfig::try_from(
                 quinn::rustls::ClientConfig::builder()
                     .with_root_certificates(certificate.0)
@@ -52,6 +52,7 @@ impl QuicConnection {
             )
             .expect("Valid quinn client configuration"),
         ));
+        config.transport_config(Self::transport_config());
 
         let mut endpoint = Endpoint::new(
             EndpointConfig::default(),
@@ -83,8 +84,9 @@ impl QuicConnection {
         certificate: CertificateKey,
         keepalive_handle: JoinHandle<()>,
     ) -> Result<Self, crate::io::Error> {
-        let config = ServerConfig::with_single_cert(vec![certificate.cert], certificate.key)
+        let mut config = ServerConfig::with_single_cert(vec![certificate.cert], certificate.key)
             .expect("Valid quinn server configuration");
+        config.transport_config(Self::transport_config());
 
         let endpoint = Endpoint::new(
             EndpointConfig::default(),
@@ -107,6 +109,12 @@ impl QuicConnection {
             keepalive_handle,
             kind: Kind::Server,
         })
+    }
+
+    fn transport_config() -> Arc<TransportConfig> {
+        let mut transport_config = TransportConfig::default();
+        transport_config.max_idle_timeout(None);
+        Arc::new(transport_config)
     }
 
     pub async fn finish(self) {
