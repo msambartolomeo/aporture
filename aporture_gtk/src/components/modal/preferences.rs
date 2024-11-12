@@ -140,7 +140,9 @@ impl Component for Preferences {
                         config.server_address = server_address.ip();
                         config.server_port = server_address.port();
 
-                        // SAFETY: Called in async context
+                        // SAFETY:
+                        // Called in async context
+                        // config was created with `Config::get()`
                         unsafe { config.persist_server_address_change() }.await.ok()
                     });
                 } else {

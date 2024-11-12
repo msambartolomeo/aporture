@@ -19,6 +19,7 @@ const DEFAULT_SERVER_PORT: u16 = 8765;
 
 static mut CONFIG: OnceCell<Config> = OnceCell::const_new();
 
+#[allow(clippy::unsafe_derive_deserialize)]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct Config {
@@ -109,9 +110,10 @@ impl Config {
 
     ///
     /// # Safety
-    /// This function is safe to call in an async context
-    /// as mutable access does not happen between await points.
-    /// It is unsafe in threaded context as it can be interrupted.
+    /// This function is safe to call if the following invariants hold
+    ///
+    /// 1. It is called in async context as mutable access does not happen between await points.
+    /// 2. The `Config` object must have been constructed from `Config::get()` function
     ///
     pub async unsafe fn persist_server_address_change(self) -> Result<Self, crate::io::Error> {
         // SAFETY: Refer to function safety
