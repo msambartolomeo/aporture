@@ -7,6 +7,7 @@ use adw::prelude::*;
 use gtk::glib::clone;
 use relm4::prelude::*;
 use relm4::JoinHandle;
+use relm4_icons::icon_names;
 use tokio::sync::Mutex;
 
 use aporture::fs::contacts::Contacts;
@@ -22,6 +23,8 @@ pub struct Peer {
     state: State,
     pulser: Option<JoinHandle<()>>,
     progress_bar: gtk::ProgressBar,
+    icon: &'static str,
+    title: String,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -104,6 +107,18 @@ impl Component for Peer {
                     set_align: gtk::Align::Center,
                     set_orientation: gtk::Orientation::Vertical,
                     set_width_request: 200,
+                    set_spacing: 25,
+
+                    gtk::Image::from_icon_name(model.icon) {
+                        add_css_class: "big-icon",
+                    },
+
+                    gtk::Label {
+                        set_justify: gtk::Justification::Center,
+
+                        #[watch]
+                        set_text: &model.title,
+                    },
 
                     #[local_ref]
                     pb -> gtk::ProgressBar {
@@ -132,6 +147,8 @@ impl Component for Peer {
             state: State::Initial,
             pulser: None,
             progress_bar: gtk::ProgressBar::default(),
+            icon: icon_names::SEND,
+            title: "".to_owned(),
         };
 
         let pb = &model.progress_bar;
@@ -142,15 +159,27 @@ impl Component for Peer {
     }
 
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, _: &Self::Root) {
-        self.visible = true;
-        // TODO: Show errors in screen
-
         match msg {
             Msg::SendFile {
                 passphrase,
                 path,
                 save,
             } => {
+                self.icon = icon_names::SEND;
+                self.title = match passphrase {
+                    PassphraseMethod::Direct(ref passphrase) => {
+                        let passphrase = String::from_utf8(passphrase.clone())
+                            .expect("Should have been created via ui");
+
+                        format!("Sending file with passphrase:\n{passphrase}")
+                    }
+                    PassphraseMethod::Contact(ref contact, ..) => {
+                        format!("Sending file to contact\n{contact}")
+                    }
+                };
+
+                self.visible = true;
+
                 sender.oneshot_command(clone!(
                     #[strong]
                     sender,
@@ -209,6 +238,20 @@ impl Component for Peer {
                 destination,
                 save,
             } => {
+                self.icon = icon_names::INBOX;
+                self.title = match passphrase {
+                    PassphraseMethod::Direct(ref passphrase) => {
+                        let passphrase = String::from_utf8(passphrase.clone())
+                            .expect("Should have been created via ui");
+
+                        format!("Receiving file with passphrase:\n{passphrase}")
+                    }
+                    PassphraseMethod::Contact(ref contact, ..) => {
+                        format!("Receiving file from contact\n{contact}")
+                    }
+                };
+                self.visible = true;
+
                 sender.oneshot_command(clone!(
                     #[strong]
                     sender,

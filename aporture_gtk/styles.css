@@ -1,3 +1,7 @@
 .no-edit-button .edit-icon {
     opacity: 0;
 }
+
+.big-icon {
+    -gtk-icon-size: 100%;
+}
