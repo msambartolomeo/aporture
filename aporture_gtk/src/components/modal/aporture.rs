@@ -4,7 +4,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use adw::prelude::*;
+use gtk::glib::clone;
 use relm4::prelude::*;
+use relm4::JoinHandle;
 use tokio::sync::Mutex;
 
 use aporture::fs::contacts::Contacts;
@@ -17,7 +19,30 @@ use crate::emit;
 #[derive(Debug)]
 pub struct Peer {
     visible: bool,
-    // label: &'static str,
+    state: State,
+    pulser: Option<JoinHandle<()>>,
+    progress_bar: gtk::ProgressBar,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum State {
+    Initial,
+    Paired,
+    Compress,
+    Sending,
+}
+
+impl State {
+    fn msg(&self) -> &'static str {
+        match self {
+            State::Initial => "Waiting for peer...",
+            State::Paired => "Pairing complete",
+            State::Compress => {
+                "The folder to send had too many files!\nPlease be patient, it will be compressed before the transfer..."
+            }
+            State::Sending => "Transfering file",
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -32,6 +57,8 @@ pub enum Msg {
         destination: PathBuf,
         save: Option<(String, Arc<Mutex<Contacts>>)>,
     },
+    UpdateState(State),
+    Pulse,
 }
 
 #[derive(Debug)]
@@ -61,6 +88,8 @@ impl Component for Peer {
             set_modal: true,
             set_title: Some("Transferring file"),
 
+            grab_focus: (),
+
             set_default_width: 250,
             set_default_height: 300,
 
@@ -71,11 +100,24 @@ impl Component for Peer {
                     set_show_end_title_buttons: false,
                 },
 
-                gtk::Spinner {
-                    set_size_request: (150, 150),
-                    set_tooltip_text: Some("Transferring file..."),
-                    set_spinning: true,
+                gtk::Box {
+                    set_align: gtk::Align::Center,
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_width_request: 200,
+
+                    #[local_ref]
+                    pb -> gtk::ProgressBar {
+                        #[watch]
+                        set_text: Some(model.state.msg()),
+                        set_show_text: true,
+
+                        set_pulse_step: 0.1,
+                    },
                 },
+            },
+
+            connect_close_request => |_| {
+                gtk::glib::Propagation::Stop
             }
         }
     }
@@ -85,7 +127,14 @@ impl Component for Peer {
         root: Self::Root,
         _sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let model = Self { visible: false };
+        let model = Self {
+            visible: false,
+            state: State::Initial,
+            pulser: None,
+            progress_bar: gtk::ProgressBar::default(),
+        };
+
+        let pb = &model.progress_bar;
 
         let widgets = view_output!();
 
@@ -102,52 +151,57 @@ impl Component for Peer {
                 path,
                 save,
             } => {
-                sender.oneshot_command(async move {
-                    let passphrase = match passphrase {
-                        PassphraseMethod::Direct(p) => p,
-                        PassphraseMethod::Contact(name, contacts) => contacts
-                            .lock()
-                            .await
-                            .get(&name)
-                            .ok_or(Error::NoContact)?
-                            .to_vec(),
-                    };
+                sender.oneshot_command(clone!(
+                    #[strong]
+                    sender,
+                    async move {
+                        let passphrase = match passphrase {
+                            PassphraseMethod::Direct(p) => p,
+                            PassphraseMethod::Contact(name, contacts) => contacts
+                                .lock()
+                                .await
+                                .get(&name)
+                                .ok_or(Error::NoContact)?
+                                .to_vec(),
+                        };
 
-                    // self.label = "Waiting for your peer...";
+                        sender.input(Msg::UpdateState(State::Initial));
 
-                    let app = AporturePairingProtocol::<Sender>::new(passphrase, save.is_some());
+                        let app =
+                            AporturePairingProtocol::<Sender>::new(passphrase, save.is_some());
 
-                    let mut pair_info = app.pair().await?;
+                        let mut pair_info = app.pair().await?;
 
-                    log::info!("Pairing successful!");
+                        sender.input(Msg::UpdateState(State::Paired));
 
-                    // self.label = "Pairing successful!!\nTransferring file to peer";
+                        log::info!("Pairing successful!");
 
-                    let atp = AportureTransferProtocol::<Sender>::new(&mut pair_info, &path);
+                        let atp = AportureTransferProtocol::<Sender>::new(&mut pair_info, &path);
 
-                    atp.transfer().await?;
+                        atp.transfer().await?;
 
-                    let save_confirmation = pair_info.save_contact;
+                        let save_confirmation = pair_info.save_contact;
 
-                    let key = pair_info.finalize().await;
+                        let key = pair_info.finalize().await;
 
-                    let result = if let Some((name, contacts)) = save {
-                        if save_confirmation {
-                            let mut contacts = contacts.lock().await;
-                            contacts.add(name, key);
-                            contacts.save().await.map_err(|_| Error::ContactSaving)?;
-                            drop(contacts);
+                        let result = if let Some((name, contacts)) = save {
+                            if save_confirmation {
+                                let mut contacts = contacts.lock().await;
+                                contacts.add(name, key);
+                                contacts.save().await.map_err(|_| Error::ContactSaving)?;
+                                drop(contacts);
 
-                            ContactResult::Added
+                                ContactResult::Added
+                            } else {
+                                ContactResult::PeerRefused
+                            }
                         } else {
-                            ContactResult::PeerRefused
-                        }
-                    } else {
-                        ContactResult::NoOp
-                    };
+                            ContactResult::NoOp
+                        };
 
-                    Ok(result)
-                });
+                        Ok(result)
+                    }
+                ));
             }
 
             Msg::ReceiveFile {
@@ -155,48 +209,78 @@ impl Component for Peer {
                 destination,
                 save,
             } => {
-                sender.oneshot_command(async move {
-                    let passphrase = match passphrase {
-                        PassphraseMethod::Direct(p) => p,
-                        PassphraseMethod::Contact(name, contacts) => contacts
-                            .lock()
-                            .await
-                            .get(&name)
-                            .ok_or(Error::NoContact)?
-                            .to_vec(),
-                    };
+                sender.oneshot_command(clone!(
+                    #[strong]
+                    sender,
+                    async move {
+                        let passphrase = match passphrase {
+                            PassphraseMethod::Direct(p) => p,
+                            PassphraseMethod::Contact(name, contacts) => contacts
+                                .lock()
+                                .await
+                                .get(&name)
+                                .ok_or(Error::NoContact)?
+                                .to_vec(),
+                        };
 
-                    let app = AporturePairingProtocol::<Receiver>::new(passphrase, save.is_some());
+                        sender.input(Msg::UpdateState(State::Initial));
 
-                    let mut pair_info = app.pair().await?;
+                        let app =
+                            AporturePairingProtocol::<Receiver>::new(passphrase, save.is_some());
 
-                    let atp =
-                        AportureTransferProtocol::<Receiver>::new(&mut pair_info, &destination);
+                        // TODO: CHANGE
+                        let mut pair_info = app.pair().await?;
 
-                    atp.transfer().await?;
+                        sender.input(Msg::UpdateState(State::Paired));
 
-                    let save_confirmation = pair_info.save_contact;
+                        let atp =
+                            AportureTransferProtocol::<Receiver>::new(&mut pair_info, &destination);
 
-                    let key = pair_info.finalize().await;
+                        atp.transfer().await?;
 
-                    let result = if let Some((name, contacts)) = save {
-                        if save_confirmation {
-                            let mut contacts = contacts.lock().await;
-                            contacts.add(name, key);
-                            contacts.save().await.map_err(|_| Error::ContactSaving)?;
-                            drop(contacts);
+                        let save_confirmation = pair_info.save_contact;
 
-                            ContactResult::Added
+                        let key = pair_info.finalize().await;
+
+                        let result = if let Some((name, contacts)) = save {
+                            if save_confirmation {
+                                let mut contacts = contacts.lock().await;
+                                contacts.add(name, key);
+                                contacts.save().await.map_err(|_| Error::ContactSaving)?;
+                                drop(contacts);
+
+                                ContactResult::Added
+                            } else {
+                                ContactResult::PeerRefused
+                            }
                         } else {
-                            ContactResult::PeerRefused
-                        }
-                    } else {
-                        ContactResult::NoOp
-                    };
+                            ContactResult::NoOp
+                        };
 
-                    Ok(result)
-                });
+                        Ok(result)
+                    }
+                ));
             }
+
+            Msg::UpdateState(state) => {
+                self.state = state;
+
+                if matches!(state, State::Initial) {
+                    let handle = relm4::spawn(async move {
+                        loop {
+                            sender.input(Msg::Pulse);
+                            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                        }
+                    });
+
+                    self.pulser = Some(handle);
+                }
+                if matches!(state, State::Sending) {
+                    self.pulser.take().as_ref().map(JoinHandle::abort);
+                }
+            }
+
+            Msg::Pulse => self.progress_bar.pulse(),
         }
     }
 
@@ -207,6 +291,7 @@ impl Component for Peer {
         _: &Self::Root,
     ) {
         emit!(message => sender);
+        self.pulser.take().as_ref().map(JoinHandle::abort);
         self.visible = false;
     }
 }
