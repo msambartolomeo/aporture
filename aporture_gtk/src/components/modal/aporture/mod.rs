@@ -241,9 +241,9 @@ impl Component for Peer {
             Msg::Progress(n) => {
                 self.current += n;
 
+                #[allow(clippy::cast_precision_loss)]
                 let fraction = self.current as f64 / self.total as f64;
 
-                #[allow(clippy::cast_precision_loss)]
                 self.progress_bar.set_fraction(fraction);
                 self.progress_text = format!("{:.2}%", fraction * 100.0);
             }
