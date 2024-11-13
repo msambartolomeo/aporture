@@ -13,7 +13,7 @@ use tokio::sync::Mutex;
 use aporture::fs::contacts::Contacts;
 use aporture::passphrase;
 
-use crate::components::modal::aporture::{ContactAction, PassphraseMethod, Peer};
+use crate::components::modal::aporture::{ContactAction, Params, PassphraseMethod, Peer};
 use crate::components::modal::aporture::{Error as AportureError, Msg as AportureMsg};
 use crate::components::toaster::Severity;
 use crate::{app, emit};
@@ -274,11 +274,8 @@ impl SimpleComponent for SenderPage {
 
                 log::info!("Starting sender worker");
 
-                self.aporture_dialog.emit(AportureMsg::SendFile {
-                    passphrase,
-                    path,
-                    save,
-                });
+                self.aporture_dialog
+                    .emit(AportureMsg::SendFile(Params::new(passphrase, path, save)));
             }
 
             Msg::AportureFinished(result) => {

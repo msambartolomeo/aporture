@@ -10,7 +10,7 @@ use relm4_components::open_dialog;
 use tokio::sync::Mutex;
 
 use crate::components::confirmation::Confirmation;
-use crate::components::modal::aporture::{ContactAction, PassphraseMethod, Peer};
+use crate::components::modal::aporture::{ContactAction, Params, PassphraseMethod, Peer};
 use crate::components::modal::aporture::{Error as AportureError, Msg as AportureMsg};
 use crate::components::toaster::Severity;
 use crate::{app, emit};
@@ -158,11 +158,8 @@ impl Component for ContactPage {
 
                 log::info!("Starting sender worker");
 
-                self.aporture_dialog.emit(AportureMsg::SendFile {
-                    passphrase,
-                    path,
-                    save: None,
-                });
+                self.aporture_dialog
+                    .emit(AportureMsg::SendFile(Params::new(passphrase, path, None)));
             }
 
             Msg::ReceiveFile(name, destination) => {
@@ -170,11 +167,12 @@ impl Component for ContactPage {
 
                 log::info!("Starting sender worker");
 
-                self.aporture_dialog.emit(AportureMsg::ReceiveFile {
-                    passphrase,
-                    destination,
-                    save: None,
-                });
+                self.aporture_dialog
+                    .emit(AportureMsg::ReceiveFile(Params::new(
+                        passphrase,
+                        destination,
+                        None,
+                    )));
             }
 
             Msg::SenderPickerOpen(index) => {
