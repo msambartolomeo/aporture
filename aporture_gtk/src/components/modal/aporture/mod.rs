@@ -115,7 +115,9 @@ impl Component for Peer {
                     set_width_request: 200,
                     set_spacing: 25,
 
-                    gtk::Image::from_icon_name(model.icon) {
+                    gtk::Image {
+                        #[watch]
+                        set_icon_name: Some(model.icon),
                         add_css_class: "big-icon",
                     },
 
@@ -207,6 +209,7 @@ impl Component for Peer {
             Msg::UpdateState(state) => {
                 self.progress_text = match state {
                     State::Initial => {
+                        self.progress_bar.set_fraction(0.0);
                         self.pulser = Some(handle_pulse(sender));
                         String::from("Waiting for peer...")
                     }
@@ -217,14 +220,17 @@ impl Component for Peer {
                         self.current = 0;
                         self.pulser.take().as_ref().map(JoinHandle::abort);
 
+                        sender.input(Msg::Progress(0));
+
                         String::from("0%")
                     }
                     State::Uncompress => {
+                        self.progress_bar.set_fraction(0.0);
                         self.pulser = Some(handle_pulse(sender));
                         String::from("Uncompressing files...")
                     }
                     State::Final => {
-                        self.pulser = Some(handle_pulse(sender));
+                        self.pulser.take().as_ref().map(JoinHandle::abort);
                         String::from("Finished Transfer")
                     }
                 };
@@ -235,9 +241,11 @@ impl Component for Peer {
             Msg::Progress(n) => {
                 self.current += n;
 
+                let fraction = self.current as f64 / self.total as f64;
+
                 #[allow(clippy::cast_precision_loss)]
-                self.progress_bar
-                    .set_fraction(self.current as f64 / self.total as f64);
+                self.progress_bar.set_fraction(fraction);
+                self.progress_text = format!("{:.2}%", fraction * 100.0);
             }
         }
     }
