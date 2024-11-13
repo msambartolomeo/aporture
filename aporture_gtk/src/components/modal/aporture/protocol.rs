@@ -1,8 +1,11 @@
+#![allow(clippy::similar_names)]
+
 use aporture::pairing::AporturePairingProtocol;
 use aporture::transfer::AportureTransferProtocol;
 use aporture::{Receiver, Sender};
 use relm4::ComponentSender;
 
+use super::channel;
 use super::{ContactAction, Error, Msg, Params, PassphraseMethod, Peer, State};
 
 pub async fn send(sender: ComponentSender<Peer>, params: Params) -> Result<ContactAction, Error> {
@@ -24,9 +27,17 @@ pub async fn send(sender: ComponentSender<Peer>, params: Params) -> Result<Conta
 
     sender.input(Msg::UpdateState(State::Paired));
 
-    let atp = AportureTransferProtocol::<Sender>::new(&mut pair_info, &params.path);
+    let mut atp = AportureTransferProtocol::<Sender>::new(&mut pair_info, &params.path);
+
+    let (snd, rcv) = tokio::sync::mpsc::channel(64);
+
+    atp.add_progress_notifier(snd);
+
+    let handle = channel::handle_progress(rcv, sender.clone());
 
     atp.transfer().await?;
+
+    let _ = handle.await;
 
     let save_confirmation = pair_info.save_contact;
 
@@ -70,9 +81,17 @@ pub async fn receive(
 
     sender.input(Msg::UpdateState(State::Paired));
 
-    let atp = AportureTransferProtocol::<Receiver>::new(&mut pair_info, &params.path);
+    let mut atp = AportureTransferProtocol::<Receiver>::new(&mut pair_info, &params.path);
+
+    let (snd, rcv) = tokio::sync::mpsc::channel(64);
+
+    atp.add_progress_notifier(snd);
+
+    let handle = channel::handle_progress(rcv, sender.clone());
 
     atp.transfer().await?;
+
+    let _ = handle.await;
 
     let save_confirmation = pair_info.save_contact;
 

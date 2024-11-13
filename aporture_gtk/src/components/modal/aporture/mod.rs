@@ -1,9 +1,8 @@
-#![allow(clippy::similar_names)]
-
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use adw::prelude::*;
+use channel::handle_pulse;
 use relm4::prelude::*;
 use relm4::JoinHandle;
 use relm4_icons::icon_names;
@@ -14,15 +13,19 @@ use aporture::fs::contacts::Contacts;
 use crate::emit;
 
 pub use error::Error;
+
+mod channel;
 mod error;
 mod protocol;
 
 #[derive(Debug)]
 pub struct Peer {
     visible: bool,
-    state: State,
     pulser: Option<JoinHandle<()>>,
     progress_bar: gtk::ProgressBar,
+    progress_text: String,
+    total: usize,
+    current: usize,
     icon: &'static str,
     title: String,
 }
@@ -32,20 +35,9 @@ pub enum State {
     Initial,
     Paired,
     Compress,
-    Sending,
-}
-
-impl State {
-    const fn msg(self) -> &'static str {
-        match self {
-            Self::Initial => "Waiting for peer...",
-            Self::Paired => "Pairing complete",
-            Self::Compress => {
-                "The folder to send had too many files!\nPlease be patient, it will be compressed before the transfer..."
-            }
-            Self::Sending => "Transfering file",
-        }
-    }
+    Sending(usize),
+    Uncompress,
+    Final,
 }
 
 #[derive(Debug)]
@@ -81,6 +73,7 @@ pub enum Msg {
     ReceiveFile(Params),
     UpdateState(State),
     Pulse,
+    Progress(usize),
 }
 
 #[derive(Debug)]
@@ -136,7 +129,7 @@ impl Component for Peer {
                     #[local_ref]
                     pb -> gtk::ProgressBar {
                         #[watch]
-                        set_text: Some(model.state.msg()),
+                        set_text: Some(&model.progress_text),
                         set_show_text: true,
 
                         set_pulse_step: 0.1,
@@ -157,11 +150,13 @@ impl Component for Peer {
     ) -> ComponentParts<Self> {
         let model = Self {
             visible: false,
-            state: State::Initial,
             pulser: None,
             progress_bar: gtk::ProgressBar::default(),
             icon: icon_names::SEND,
             title: String::default(),
+            progress_text: String::new(),
+            total: 0,
+            current: 0,
         };
 
         let pb = &model.progress_bar;
@@ -210,24 +205,40 @@ impl Component for Peer {
             }
 
             Msg::UpdateState(state) => {
-                self.state = state;
+                self.progress_text = match state {
+                    State::Initial => {
+                        self.pulser = Some(handle_pulse(sender));
+                        String::from("Waiting for peer...")
+                    }
+                    State::Paired => String::from("Pairing complete!"),
+                    State::Compress => String::from("Compressing files before transfer..."),
+                    State::Sending(total) => {
+                        self.total = total;
+                        self.current = 0;
+                        self.pulser.take().as_ref().map(JoinHandle::abort);
 
-                if matches!(state, State::Initial) {
-                    let handle = relm4::spawn(async move {
-                        loop {
-                            sender.input(Msg::Pulse);
-                            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                        }
-                    });
-
-                    self.pulser = Some(handle);
-                }
-                if matches!(state, State::Sending) {
-                    self.pulser.take().as_ref().map(JoinHandle::abort);
-                }
+                        String::from("0%")
+                    }
+                    State::Uncompress => {
+                        self.pulser = Some(handle_pulse(sender));
+                        String::from("Uncompressing files...")
+                    }
+                    State::Final => {
+                        self.pulser = Some(handle_pulse(sender));
+                        String::from("Finished Transfer")
+                    }
+                };
             }
 
             Msg::Pulse => self.progress_bar.pulse(),
+
+            Msg::Progress(n) => {
+                self.current += n;
+
+                #[allow(clippy::cast_precision_loss)]
+                self.progress_bar
+                    .set_fraction(self.current as f64 / self.total as f64);
+            }
         }
     }
 
