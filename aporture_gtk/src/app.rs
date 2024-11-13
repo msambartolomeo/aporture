@@ -168,7 +168,7 @@ impl Component for App {
 
         let widgets = view_output!();
 
-        App::register_actions(sender);
+        Self::register_actions(&sender);
 
         ComponentParts { model, widgets }
     }
@@ -242,7 +242,7 @@ relm4::new_stateless_action!(PreferencesAction, AppActions, "preferences");
 relm4::new_stateless_action!(AboutAction, AppActions, "about");
 
 impl App {
-    fn register_actions(sender: ComponentSender<Self>) {
+    fn register_actions(sender: &ComponentSender<Self>) {
         let mut actions = RelmActionGroup::<AppActions>::new();
 
         actions.add_action({

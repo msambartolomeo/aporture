@@ -10,7 +10,7 @@ use relm4_components::open_dialog;
 use tokio::sync::Mutex;
 
 use crate::components::confirmation::Confirmation;
-use crate::components::modal::aporture::{ContactResult, PassphraseMethod, Peer};
+use crate::components::modal::aporture::{ContactAction, PassphraseMethod, Peer};
 use crate::components::modal::aporture::{Error as AportureError, Msg as AportureMsg};
 use crate::components::toaster::Severity;
 use crate::{app, emit};
@@ -46,7 +46,7 @@ pub enum Msg {
     ReceiverPickerResponse(PathBuf),
     DeleteContact(String),
     DeleteContactUI(String),
-    AportureFinished(Result<ContactResult, AportureError>),
+    AportureFinished(Result<ContactAction, AportureError>),
     Ignore,
 }
 
@@ -234,11 +234,11 @@ impl Component for ContactPage {
                 log::info!("Finished contact worker");
 
                 match result {
-                    Ok(ContactResult::Added) => emit!(app::Request::Contacts => sender),
-                    Ok(ContactResult::PeerRefused) => {
+                    Ok(ContactAction::Added) => emit!(app::Request::Contacts => sender),
+                    Ok(ContactAction::PeerRefused) => {
                         emit!(app::Request::ToastS("Peer refused to save contact", Severity::Warn) => sender);
                     }
-                    Ok(ContactResult::NoOp) => {}
+                    Ok(ContactAction::NoOp) => {}
                     Err(e) => {
                         emit!(app::Request::Toast(e.to_string(), Severity::Error) => sender);
                     }

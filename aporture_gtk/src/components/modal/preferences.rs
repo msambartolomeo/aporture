@@ -134,8 +134,7 @@ impl Component for Preferences {
             Msg::Return => {
                 let mut config = self.config.expect("Config should have already been loaded");
 
-                if let Some(server_address) = self.server_address.text().parse::<SocketAddr>().ok()
-                {
+                if let Ok(server_address) = self.server_address.text().parse::<SocketAddr>() {
                     sender.oneshot_command(async move {
                         config.server_address = server_address.ip();
                         config.server_port = server_address.port();

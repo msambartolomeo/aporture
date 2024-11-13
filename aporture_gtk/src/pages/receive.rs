@@ -10,7 +10,7 @@ use tokio::sync::Mutex;
 
 use aporture::fs::contacts::Contacts;
 
-use crate::components::modal::aporture::{ContactResult, PassphraseMethod, Peer};
+use crate::components::modal::aporture::{ContactAction, PassphraseMethod, Peer};
 use crate::components::modal::aporture::{Error as AportureError, Msg as AportureMsg};
 use crate::components::toaster::Severity;
 use crate::{app, emit};
@@ -32,7 +32,7 @@ pub struct ReceiverPage {
 #[derive(Debug)]
 pub enum Msg {
     ReceiveFile,
-    AportureFinished(Result<ContactResult, AportureError>),
+    AportureFinished(Result<ContactAction, AportureError>),
     PassphraseChanged,
     SaveContact,
     ContactsReady(Option<Arc<Mutex<Contacts>>>),
@@ -195,11 +195,11 @@ impl SimpleComponent for ReceiverPage {
                 log::info!("Finished receiver worker");
 
                 match result {
-                    Ok(ContactResult::Added) => emit!(app::Request::Contacts => sender),
-                    Ok(ContactResult::PeerRefused) => {
+                    Ok(ContactAction::Added) => emit!(app::Request::Contacts => sender),
+                    Ok(ContactAction::PeerRefused) => {
                         emit!(app::Request::ToastS("Peer refused to save contact", Severity::Warn) => sender);
                     }
-                    Ok(ContactResult::NoOp) => {}
+                    Ok(ContactAction::NoOp) => {}
                     Err(e) => {
                         emit!(app::Request::Toast(e.to_string(), Severity::Error) => sender);
                     }

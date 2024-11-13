@@ -4,7 +4,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use adw::prelude::*;
-use gtk::glib::clone;
 use relm4::prelude::*;
 use relm4::JoinHandle;
 use relm4_icons::icon_names;
@@ -36,14 +35,14 @@ pub enum State {
 }
 
 impl State {
-    fn msg(&self) -> &'static str {
+    const fn msg(self) -> &'static str {
         match self {
-            State::Initial => "Waiting for peer...",
-            State::Paired => "Pairing complete",
-            State::Compress => {
+            Self::Initial => "Waiting for peer...",
+            Self::Paired => "Pairing complete",
+            Self::Compress => {
                 "The folder to send had too many files!\nPlease be patient, it will be compressed before the transfer..."
             }
-            State::Sending => "Transfering file",
+            Self::Sending => "Transfering file",
         }
     }
 }
@@ -71,7 +70,7 @@ pub enum PassphraseMethod {
 }
 
 #[derive(Debug)]
-pub enum ContactResult {
+pub enum ContactAction {
     NoOp,
     Added,
     PeerRefused,
@@ -81,8 +80,8 @@ pub enum ContactResult {
 impl Component for Peer {
     type Init = ();
     type Input = Msg;
-    type Output = Result<ContactResult, Error>;
-    type CommandOutput = Result<ContactResult, Error>;
+    type Output = Result<ContactAction, Error>;
+    type CommandOutput = Result<ContactAction, Error>;
 
     view! {
         dialog = adw::Window {
@@ -148,7 +147,7 @@ impl Component for Peer {
             pulser: None,
             progress_bar: gtk::ProgressBar::default(),
             icon: icon_names::SEND,
-            title: "".to_owned(),
+            title: String::default(),
         };
 
         let pb = &model.progress_bar;
@@ -177,60 +176,9 @@ impl Component for Peer {
                         format!("Sending file to contact\n{contact}")
                     }
                 };
-
                 self.visible = true;
 
-                sender.oneshot_command(clone!(
-                    #[strong]
-                    sender,
-                    async move {
-                        let passphrase = match passphrase {
-                            PassphraseMethod::Direct(p) => p,
-                            PassphraseMethod::Contact(name, contacts) => contacts
-                                .lock()
-                                .await
-                                .get(&name)
-                                .ok_or(Error::NoContact)?
-                                .to_vec(),
-                        };
-
-                        sender.input(Msg::UpdateState(State::Initial));
-
-                        let app =
-                            AporturePairingProtocol::<Sender>::new(passphrase, save.is_some());
-
-                        let mut pair_info = app.pair().await?;
-
-                        sender.input(Msg::UpdateState(State::Paired));
-
-                        log::info!("Pairing successful!");
-
-                        let atp = AportureTransferProtocol::<Sender>::new(&mut pair_info, &path);
-
-                        atp.transfer().await?;
-
-                        let save_confirmation = pair_info.save_contact;
-
-                        let key = pair_info.finalize().await;
-
-                        let result = if let Some((name, contacts)) = save {
-                            if save_confirmation {
-                                let mut contacts = contacts.lock().await;
-                                contacts.add(name, key);
-                                contacts.save().await.map_err(|_| Error::ContactSaving)?;
-                                drop(contacts);
-
-                                ContactResult::Added
-                            } else {
-                                ContactResult::PeerRefused
-                            }
-                        } else {
-                            ContactResult::NoOp
-                        };
-
-                        Ok(result)
-                    }
-                ));
+                sender.oneshot_command(send(sender.clone(), passphrase, path, save));
             }
 
             Msg::ReceiveFile {
@@ -252,57 +200,7 @@ impl Component for Peer {
                 };
                 self.visible = true;
 
-                sender.oneshot_command(clone!(
-                    #[strong]
-                    sender,
-                    async move {
-                        let passphrase = match passphrase {
-                            PassphraseMethod::Direct(p) => p,
-                            PassphraseMethod::Contact(name, contacts) => contacts
-                                .lock()
-                                .await
-                                .get(&name)
-                                .ok_or(Error::NoContact)?
-                                .to_vec(),
-                        };
-
-                        sender.input(Msg::UpdateState(State::Initial));
-
-                        let app =
-                            AporturePairingProtocol::<Receiver>::new(passphrase, save.is_some());
-
-                        // TODO: CHANGE
-                        let mut pair_info = app.pair().await?;
-
-                        sender.input(Msg::UpdateState(State::Paired));
-
-                        let atp =
-                            AportureTransferProtocol::<Receiver>::new(&mut pair_info, &destination);
-
-                        atp.transfer().await?;
-
-                        let save_confirmation = pair_info.save_contact;
-
-                        let key = pair_info.finalize().await;
-
-                        let result = if let Some((name, contacts)) = save {
-                            if save_confirmation {
-                                let mut contacts = contacts.lock().await;
-                                contacts.add(name, key);
-                                contacts.save().await.map_err(|_| Error::ContactSaving)?;
-                                drop(contacts);
-
-                                ContactResult::Added
-                            } else {
-                                ContactResult::PeerRefused
-                            }
-                        } else {
-                            ContactResult::NoOp
-                        };
-
-                        Ok(result)
-                    }
-                ));
+                sender.oneshot_command(receive(sender.clone(), passphrase, destination, save));
             }
 
             Msg::UpdateState(state) => {
@@ -336,6 +234,104 @@ impl Component for Peer {
         emit!(message => sender);
         self.pulser.take().as_ref().map(JoinHandle::abort);
         self.visible = false;
+    }
+}
+
+async fn send(
+    sender: ComponentSender<Peer>,
+    passphrase: PassphraseMethod,
+    path: PathBuf,
+    save: Option<(String, Arc<Mutex<Contacts>>)>,
+) -> Result<ContactAction, Error> {
+    let passphrase = match passphrase {
+        PassphraseMethod::Direct(p) => p,
+        PassphraseMethod::Contact(name, contacts) => contacts
+            .lock()
+            .await
+            .get(&name)
+            .ok_or(Error::NoContact)?
+            .to_vec(),
+    };
+
+    sender.input(Msg::UpdateState(State::Initial));
+
+    let app = AporturePairingProtocol::<Sender>::new(passphrase, save.is_some());
+
+    let mut pair_info = app.pair().await?;
+
+    sender.input(Msg::UpdateState(State::Paired));
+
+    log::info!("Pairing successful!");
+
+    let atp = AportureTransferProtocol::<Sender>::new(&mut pair_info, &path);
+
+    atp.transfer().await?;
+
+    let save_confirmation = pair_info.save_contact;
+
+    let key = pair_info.finalize().await;
+
+    if let Some((name, contacts)) = save {
+        if save_confirmation {
+            let mut contacts = contacts.lock().await;
+            contacts.add(name, key);
+            contacts.save().await.map_err(|_| Error::ContactSaving)?;
+            drop(contacts);
+
+            Ok(ContactAction::Added)
+        } else {
+            Ok(ContactAction::PeerRefused)
+        }
+    } else {
+        Ok(ContactAction::NoOp)
+    }
+}
+
+async fn receive(
+    sender: ComponentSender<Peer>,
+    passphrase: PassphraseMethod,
+    destination: PathBuf,
+    save: Option<(String, Arc<Mutex<Contacts>>)>,
+) -> Result<ContactAction, Error> {
+    let passphrase = match passphrase {
+        PassphraseMethod::Direct(p) => p,
+        PassphraseMethod::Contact(name, contacts) => contacts
+            .lock()
+            .await
+            .get(&name)
+            .ok_or(Error::NoContact)?
+            .to_vec(),
+    };
+
+    sender.input(Msg::UpdateState(State::Initial));
+
+    let app = AporturePairingProtocol::<Receiver>::new(passphrase, save.is_some());
+
+    let mut pair_info = app.pair().await?;
+
+    sender.input(Msg::UpdateState(State::Paired));
+
+    let atp = AportureTransferProtocol::<Receiver>::new(&mut pair_info, &destination);
+
+    atp.transfer().await?;
+
+    let save_confirmation = pair_info.save_contact;
+
+    let key = pair_info.finalize().await;
+
+    if let Some((name, contacts)) = save {
+        if save_confirmation {
+            let mut contacts = contacts.lock().await;
+            contacts.add(name, key);
+            contacts.save().await.map_err(|_| Error::ContactSaving)?;
+            drop(contacts);
+
+            Ok(ContactAction::Added)
+        } else {
+            Ok(ContactAction::PeerRefused)
+        }
+    } else {
+        Ok(ContactAction::NoOp)
     }
 }
 
