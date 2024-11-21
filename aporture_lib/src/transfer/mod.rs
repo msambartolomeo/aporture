@@ -102,7 +102,7 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
             }
         }
 
-        // NOTE: keep the file alve until it is finished sending
+        // NOTE: keep the file alive until it is finished sending
         drop(tar_file_holder);
 
         channel::send(&self.channel, Message::Finished).await;
@@ -273,7 +273,7 @@ where
         dest.push(&transfer_data.root_name);
     }
 
-    let mut dest = file::non_existant_path(dest).await;
+    let mut dest = file::non_existent_path(dest).await;
 
     if transfer_data.compressed {
         channel::send(channel, Message::Uncompressing).await;
@@ -336,7 +336,7 @@ where
         dest.push(transfer_data.root_name);
     }
 
-    let dest = file::non_existant_path(dest).await;
+    let dest = file::non_existent_path(dest).await;
 
     let tmp = dir.into_path();
     tokio::fs::rename(tmp, &dest).await?;

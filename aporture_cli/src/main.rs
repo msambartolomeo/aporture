@@ -3,7 +3,7 @@ use clap::Parser;
 use colored::Colorize;
 
 use aporture::fs::contacts::Contacts;
-use args::{Cli, Commands, PairCommand};
+use args::{Cli, Commands, ContactCommand, PairCommand};
 use passphrase::Method;
 
 mod args;
@@ -71,9 +71,14 @@ async fn main() -> Result<()> {
 
             commands::receive(passphrase, save, method.contact, &mut contacts_holder, path).await?;
         }
-        Commands::Contacts => {
+        Commands::Contacts { command } => {
             if Contacts::exists() {
-                commands::list_contacts(&contacts_holder).await?;
+                match command {
+                    ContactCommand::List => commands::list_contacts(&contacts_holder).await?,
+                    ContactCommand::Delete { name } => {
+                        commands::delete_contact(&mut contacts_holder, name).await?;
+                    }
+                }
             } else {
                 println!("No contacts found");
             }

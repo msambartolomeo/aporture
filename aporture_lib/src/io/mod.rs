@@ -40,7 +40,7 @@ impl<'a> From<message::Error<'a>> for Error {
             #[cfg(feature = "full")]
             message::ErrorKind::Decryption(error) => Self::Cipher(error),
             message::ErrorKind::CipherExpected
-            | message::ErrorKind::InsuficientBuffer
+            | message::ErrorKind::InsufficientBuffer
             | message::ErrorKind::InvalidMessage => Self::UnexpectedMessage,
         }
     }

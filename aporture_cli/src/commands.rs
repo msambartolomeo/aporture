@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use anyhow::{bail, Result};
 use colored::Colorize;
+use tokio::io::AsyncReadExt;
 
 use crate::contacts::Holder;
 use crate::progress;
@@ -125,6 +126,28 @@ pub async fn list_contacts(contacts: &Holder) -> Result<()> {
     let mut table = builder.build();
     table.with(tabled::settings::Style::markdown());
     println!("\n{table}\n");
+
+    Ok(())
+}
+
+pub async fn delete_contact(contacts: &mut Holder, name: String) -> Result<()> {
+    let contacts = contacts.get_mut_or_init().await?;
+
+    println!("Delete contact {}? y/N", name.red());
+
+    let confirmation = tokio::io::stdin().read_u8().await? as char;
+
+    if confirmation.to_ascii_lowercase() == 'y' {
+        let deleted = contacts.delete(&name);
+        if deleted {
+            println!("Contact deleted");
+            contacts.save().await?;
+        } else {
+            println!("Contact not found");
+        }
+    } else {
+        println!("Canceled");
+    }
 
     Ok(())
 }

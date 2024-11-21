@@ -23,7 +23,7 @@ pub struct Certificate(pub Arc<RootCertStore>);
 
 impl Default for CertificateKey {
     fn default() -> Self {
-        Self::new(vec!["localhost".into()]).expect("Valid certificacte generation")
+        Self::new(vec!["localhost".into()]).expect("Valid certificate generation")
     }
 }
 

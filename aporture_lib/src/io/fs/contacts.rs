@@ -77,7 +77,15 @@ impl Contacts {
     pub async fn save(&mut self) -> Result<(), crate::io::Error> {
         log::info!("Saving contacts to {}", self.manager);
 
-        self.manager.write_ser_enc(&self.content).await.ok();
+        self.manager.write_ser_enc(&self.content).await?;
+
+        Ok(())
+    }
+
+    pub fn save_blocking(&mut self) -> Result<(), crate::io::Error> {
+        log::info!("Saving contacts to {}", self.manager);
+
+        self.manager.write_ser_enc_blocking(&self.content)?;
 
         Ok(())
     }
@@ -103,8 +111,8 @@ impl Contacts {
         self.add(new_name, key);
     }
 
-    pub fn delete(&mut self, name: &str) {
-        self.content.map.remove(name);
+    pub fn delete(&mut self, name: &str) -> bool {
+        self.content.map.remove(name).is_some()
     }
 
     pub fn list(&self) -> impl Iterator<Item = (&String, DateTime<Local>)> {

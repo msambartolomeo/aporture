@@ -27,7 +27,7 @@ pub fn init_progress_bar(mut channel: Receiver<ChannelMessage>) -> JoinHandle<()
                     }
                 }
                 ChannelMessage::Uncompressing => {
-                    println!("Waiting for transfered file to be uncompressed...");
+                    println!("Waiting for transferred file to be uncompressed...");
                 }
                 ChannelMessage::Finished => {
                     if let Some(p) = progress.take() {

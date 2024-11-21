@@ -3,14 +3,14 @@ use crate::crypto::cipher::Cipher;
 use bytes::{Buf, BufMut};
 use thiserror::Error;
 
-const LENGHT_SIZE: usize = 2;
+const LENGTH_SIZE: usize = 2;
 const FLAG_SIZE: usize = 1;
 const NONCE_SIZE: usize = 12;
 const TAG_SIZE: usize = 16;
 
 #[derive(Debug)]
 pub struct Message<'a> {
-    length: [u8; LENGHT_SIZE],
+    length: [u8; LENGTH_SIZE],
     encrypted: EncryptedContent,
     content: &'a mut [u8],
 }
@@ -134,8 +134,8 @@ pub enum ErrorKind {
     #[error("Error decrypting message")]
     Decryption(#[from] crate::crypto::Error),
     #[error("The provided buffer was not sufficient to read all the data")]
-    InsuficientBuffer,
-    #[error("The message recieved is invalid")]
+    InsufficientBuffer,
+    #[error("The message received is invalid")]
     InvalidMessage,
 }
 
@@ -207,7 +207,7 @@ impl<'a> MessageBuffer<'a> {
 
     fn total_remaining(&self, state: State) -> usize {
         match state {
-            State::Length => LENGHT_SIZE + FLAG_SIZE,
+            State::Length => LENGTH_SIZE + FLAG_SIZE,
             State::Encrypt => FLAG_SIZE,
             State::Nonce if self.message.is_encrypted() => NONCE_SIZE + self.message.length() + TAG_SIZE,
             State::Content if self.message.is_encrypted() => self.message.length(),
@@ -255,14 +255,14 @@ impl<'a> Buf for MessageBuffer<'a> {
         assert!(cnt <= self.remaining());
 
         loop {
-            let chunk_lenght = self.chunk().len();
+            let chunk_length = self.chunk().len();
 
-            if cnt < chunk_lenght {
+            if cnt < chunk_length {
                 self.cursor += cnt;
                 break;
             }
 
-            cnt -= chunk_lenght;
+            cnt -= chunk_length;
             self.cursor = 0;
 
             self.state = match self.state {
@@ -307,14 +307,14 @@ unsafe impl<'a> BufMut for MessageBuffer<'a> {
         assert!(cnt <= self.remaining_mut());
 
         loop {
-            let chunk_lenght = self.chunk_mut().len();
+            let chunk_length = self.chunk_mut().len();
 
-            if cnt < chunk_lenght {
+            if cnt < chunk_length {
                 self.cursor += cnt;
                 break;
             }
 
-            cnt -= chunk_lenght;
+            cnt -= chunk_length;
             self.cursor = 0;
 
             self.state = match self.state {
@@ -323,7 +323,7 @@ unsafe impl<'a> BufMut for MessageBuffer<'a> {
                     let content_length = self.message.length();
                     let available_length = self.message.content.len();
                     if available_length < content_length {
-                        self.error = Some(ErrorKind::InsuficientBuffer);
+                        self.error = Some(ErrorKind::InsufficientBuffer);
                         break;
                     }
 
@@ -434,7 +434,7 @@ mod test {
             ptr = &mut ptr[n..];
         }
 
-        assert_eq!(LENGHT_SIZE + FLAG_SIZE + hello.len(), len);
+        assert_eq!(LENGTH_SIZE + FLAG_SIZE + hello.len(), len);
         assert_eq!(u16::try_from(hello.len())?.to_be_bytes(), output[..2]);
         assert_eq!(0, output[2]);
         assert_eq!(hello, &output[3..len]);
@@ -531,14 +531,14 @@ mod test {
             ptr = &mut ptr[n..];
         }
 
-        let (length, rest) = output.split_at_mut(LENGHT_SIZE);
+        let (length, rest) = output.split_at_mut(LENGTH_SIZE);
         let (encrypt, rest) = rest.split_at_mut(FLAG_SIZE);
         let (nonce, rest) = rest.split_at_mut(NONCE_SIZE);
         let (content, rest) = rest.split_at_mut(content_length);
         let (tag, _) = rest.split_at_mut(TAG_SIZE);
 
         assert_eq!(
-            LENGHT_SIZE + FLAG_SIZE + NONCE_SIZE + hello.len() + TAG_SIZE,
+            LENGTH_SIZE + FLAG_SIZE + NONCE_SIZE + hello.len() + TAG_SIZE,
             len
         );
         assert_eq!(u16::try_from(hello.len())?.to_be_bytes(), length);
