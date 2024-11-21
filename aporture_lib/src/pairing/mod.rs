@@ -94,11 +94,11 @@ impl AporturePairingProtocol<Start<Sender>> {
     pub async fn pair(self) -> Result<PairInfo, Error> {
         let mut address_collector = self.connect().await?.exchange_key().await?;
 
-        if let Err(e) = address_collector.add_upnp().await {
+        if let Err(e) = address_collector.enable_upnp().await {
             log::warn!("Could not enable upnp - {e}");
         }
 
-        if let Err(e) = address_collector.add_hole_punching().await {
+        if let Err(e) = address_collector.enable_hole_punching().await {
             log::warn!("Could not enable hole punching - {e}");
         }
 
@@ -112,16 +112,16 @@ impl AporturePairingProtocol<Start<Receiver>> {
     pub async fn pair(self) -> Result<PairInfo, Error> {
         let mut address_collector = self.connect().await?.exchange_key().await?;
 
-        if let Err(e) = address_collector.add_upnp().await {
+        if let Err(e) = address_collector.enable_upnp().await {
             log::warn!("Could not enable upnp - {e}");
         }
 
-        if let Err(e) = address_collector.add_hole_punching().await {
+        if let Err(e) = address_collector.enable_hole_punching().await {
             log::warn!("Could not enable hole punching - {e}");
         }
 
         if address_collector.data.same_public_ip {
-            let result = address_collector.add_local();
+            let result = address_collector.enable_local();
 
             if result.is_err() {
                 log::warn!("Could not get a private ip from system");
@@ -307,7 +307,7 @@ impl AporturePairingProtocol<Negotiation<Receiver>> {
         })
     }
 
-    pub fn add_local(&mut self) -> Result<(), std::io::Error> {
+    pub fn enable_local(&mut self) -> Result<(), std::io::Error> {
         let ip = local_ip_address::local_ip()
             .map_err(|_| std::io::Error::from(std::io::ErrorKind::AddrNotAvailable))?;
 
@@ -330,6 +330,41 @@ impl AporturePairingProtocol<Negotiation<Receiver>> {
 }
 
 impl<K: Kind + Send> AporturePairingProtocol<Negotiation<K>> {
+    pub async fn enable_upnp(&mut self) -> Result<(), upnp::Error> {
+        let mut gateway = upnp::Gateway::new().await?;
+
+        let socket = UdpSocket::bind(ANY_ADDR)?;
+        let local_port = socket.local_addr()?.port();
+
+        let external_address = gateway.open_port(local_port).await?;
+
+        let socket = UdpSocketAddr {
+            socket,
+            external_address,
+            handle: None,
+        };
+
+        let info = TransferInfo::UPnP {
+            socket,
+            local_port,
+            gateway,
+        };
+
+        self.state.addresses.push(info);
+
+        Ok(())
+    }
+
+    pub async fn enable_hole_punching(&mut self) -> Result<(), crate::io::Error> {
+        let socket = get_external_socket().await?;
+
+        let info = TransferInfo::Socket(socket);
+
+        self.state.addresses.push(info);
+
+        Ok(())
+    }
+
     async fn send_addresses(&mut self) -> Result<Vec<SocketAddr>, error::Negotiation> {
         let addresses = self
             .state
@@ -373,42 +408,7 @@ impl<K: Kind + Send> AporturePairingProtocol<Negotiation<K>> {
         Ok(info)
     }
 
-    pub async fn add_upnp(&mut self) -> Result<(), upnp::Error> {
-        let mut gateway = upnp::Gateway::new().await?;
-
-        let socket = UdpSocket::bind(ANY_ADDR)?;
-        let local_port = socket.local_addr()?.port();
-
-        let external_address = gateway.open_port(local_port).await?;
-
-        let socket = UdpSocketAddr {
-            socket,
-            external_address,
-            handle: None,
-        };
-
-        let info = TransferInfo::UPnP {
-            socket,
-            local_port,
-            gateway,
-        };
-
-        self.state.addresses.push(info);
-
-        Ok(())
-    }
-
-    pub async fn add_hole_punching(&mut self) -> Result<(), crate::io::Error> {
-        let socket = get_external_socket().await?;
-
-        let info = TransferInfo::Socket(socket);
-
-        self.state.addresses.push(info);
-
-        Ok(())
-    }
-
-    pub async fn get_certs(&mut self) -> Result<(CertificateKey, Certificate), error::Negotiation> {
+    async fn get_certs(&mut self) -> Result<(CertificateKey, Certificate), error::Negotiation> {
         let addresses = self
             .state
             .addresses
