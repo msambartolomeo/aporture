@@ -59,13 +59,15 @@ impl QuicConnection {
             None,
             socket,
             Arc::new(TokioRuntime),
-        )?;
+        )
+        .inspect_err(|_| keepalive_handle.abort())?;
         endpoint.set_default_client_config(config);
 
         let connection = endpoint
             .connect(server_address, &server_address.ip().to_string())
             .expect("Valid quinn endpoint configuration")
-            .await?;
+            .await
+            .inspect_err(|_| keepalive_handle.abort())?;
 
         Ok(Self {
             connection_address: server_address,
@@ -93,13 +95,15 @@ impl QuicConnection {
             Some(config),
             socket,
             Arc::new(TokioRuntime),
-        )?;
+        )
+        .inspect_err(|_| keepalive_handle.abort())?;
 
         let connection = endpoint
             .accept()
             .await
             .expect("Valid quinn endpoint configuration")
-            .await?;
+            .await
+            .inspect_err(|_| keepalive_handle.abort())?;
 
         Ok(Self {
             connection_address,
