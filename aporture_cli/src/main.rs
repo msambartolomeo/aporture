@@ -2,8 +2,8 @@ use anyhow::Result;
 use clap::Parser;
 use colored::Colorize;
 
-use aporture::fs::contacts::Contacts;
-use args::{Cli, Commands, ContactCommand, PairCommand};
+use aporture::fs::{config::Config, contacts::Contacts};
+use args::{Cli, Commands, ConfigCommand, ContactCommand, PairCommand};
 use passphrase::Method;
 
 mod args;
@@ -94,6 +94,27 @@ async fn main() -> Result<()> {
                 let passphrase = passphrase::get(Method::Direct(passphrase))?;
 
                 commands::pair_complete(passphrase, name, &mut contacts_holder).await?;
+            }
+        },
+        Commands::Config { command } => match command {
+            ConfigCommand::Get => {
+                let config = Config::get().await;
+
+                println!(
+                    "Current server addres: {}:{}",
+                    config.server_address, config.server_port
+                );
+            }
+            ConfigCommand::Set { server_address } => {
+                let mut config = *Config::get().await;
+
+                config.server_address = server_address.ip();
+                config.server_port = server_address.port();
+
+                // SAFETY:
+                // Called in async context
+                // config was created with `Config::get()`
+                unsafe { config.persist_server_address_change() }.await?;
             }
         },
     };
