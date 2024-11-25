@@ -45,7 +45,7 @@ pub enum Commands {
         command: PairCommand,
     },
 
-    // Modify server configuration
+    /// Modify server configuration
     Config {
         #[command(subcommand)]
         command: ConfigCommand,
