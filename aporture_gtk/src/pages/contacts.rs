@@ -394,7 +394,7 @@ mod contact_row {
                 }
 
                 Msg::ReceiveFile => {
-                    if let Some(path) = self.path.clone() {
+                    if let Some(path) = self.destination.clone() {
                         emit!(Output::Receive(self.name.clone(), path) => sender);
                     } else {
                         sender.input(Msg::ReceiveFilePickerOpen);

@@ -101,7 +101,7 @@ async fn main() -> Result<()> {
                 let config = Config::get().await;
 
                 println!(
-                    "Current server addres: {}:{}",
+                    "Current server address: {}:{}",
                     config.server_address, config.server_port
                 );
             }
