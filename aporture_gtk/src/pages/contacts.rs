@@ -23,6 +23,7 @@ pub struct ContactPage {
     contacts: Option<Arc<Mutex<Contacts>>>,
     current_contact: String,
     sender_picker_dialog: Controller<OpenDialog>,
+    sender_dir_picker_dialog: Controller<OpenDialog>,
     receiver_picker_dialog: Controller<OpenDialog>,
     aporture_dialog: Controller<Peer>,
 }
@@ -40,6 +41,7 @@ pub enum Msg {
     ContactsReady(Option<Arc<Mutex<Contacts>>>),
     SendFile(String, PathBuf),
     SenderPickerOpen(String),
+    SenderDirPickerOpen(String),
     SenderPickerResponse(PathBuf),
     ReceiveFile(String, PathBuf),
     ReceiverPickerOpen(String),
@@ -92,6 +94,17 @@ impl Component for ContactPage {
                 OpenDialogResponse::Cancel => Msg::Ignore,
             });
 
+        let sender_dir_picker_dialog = OpenDialog::builder()
+            .transient_for_native(&root)
+            .launch(OpenDialogSettings {
+                folder_mode: true,
+                ..Default::default()
+            })
+            .forward(sender.input_sender(), |response| match response {
+                OpenDialogResponse::Accept(path) => Msg::SenderPickerResponse(path),
+                OpenDialogResponse::Cancel => Msg::Ignore,
+            });
+
         let receiver_picker_dialog = OpenDialog::builder()
             .transient_for_native(&root)
             .launch(OpenDialogSettings {
@@ -112,6 +125,7 @@ impl Component for ContactPage {
             contacts_ui,
             contacts: None,
             sender_picker_dialog,
+            sender_dir_picker_dialog,
             receiver_picker_dialog,
             aporture_dialog,
         };
@@ -179,6 +193,12 @@ impl Component for ContactPage {
                 self.current_contact = index;
 
                 self.sender_picker_dialog.emit(OpenDialogMsg::Open);
+            }
+
+            Msg::SenderDirPickerOpen(index) => {
+                self.current_contact = index;
+
+                self.sender_dir_picker_dialog.emit(OpenDialogMsg::Open);
             }
 
             Msg::SenderPickerResponse(path) => {
@@ -269,6 +289,7 @@ mod contact_row {
     #[derive(Debug)]
     pub enum Msg {
         SendFilePickerOpen,
+        SendDirectoryPickerOpen,
         SendFilePickerClosed(PathBuf),
         SendFile,
         ReceiveFilePickerOpen,
@@ -288,6 +309,7 @@ mod contact_row {
     pub enum Output {
         Send(String, PathBuf),
         SendFilePicker(String),
+        SendDirectoryPicker(String),
         ReceiveFilePicker(String),
         Receive(String, PathBuf),
         Delete(String),
@@ -314,6 +336,8 @@ mod contact_row {
                     // NOTE: BROKEN set_icon_name: icon_names::USER_TRASH,
                     set_icon_name: "user-trash-symbolic",
 
+                    set_tooltip_text: Some("Delete contact"),
+
                     add_css_class: "flat",
                     add_css_class: "circular",
 
@@ -329,7 +353,9 @@ mod contact_row {
                     set_subtitle: &self.path.as_ref().map_or("Select file to send".to_owned(), |p| p.display().to_string()),
 
                     add_suffix = &gtk::Button {
-                        set_icon_name: icon_names::SEARCH_FOLDER,
+                        set_icon_name: icon_names::EDIT_FIND,
+
+                        set_tooltip_text: Some("Select file"),
 
                         add_css_class: "flat",
                         add_css_class: "circular",
@@ -338,7 +364,20 @@ mod contact_row {
                     },
 
                     add_suffix = &gtk::Button {
+                        set_icon_name: icon_names::SEARCH_FOLDER,
+
+                        set_tooltip_text: Some("Select folder"),
+
+                        add_css_class: "flat",
+                        add_css_class: "circular",
+
+                        connect_clicked => Msg::SendDirectoryPickerOpen,
+                    },
+
+                    add_suffix = &gtk::Button {
                         set_icon_name: icon_names::SEND,
+
+                        set_tooltip_text: Some("Send file"),
 
                         add_css_class: "flat",
                         add_css_class: "circular",
@@ -355,6 +394,8 @@ mod contact_row {
                     add_suffix = &gtk::Button {
                         set_icon_name: icon_names::SEARCH_FOLDER,
 
+                        set_tooltip_text: Some("Select destination"),
+
                         add_css_class: "flat",
                         add_css_class: "circular",
 
@@ -363,6 +404,8 @@ mod contact_row {
 
                     add_suffix = &gtk::Button {
                         set_icon_name: icon_names::INBOX,
+
+                        set_tooltip_text: Some("Receive file"),
 
                         add_css_class: "flat",
                         add_css_class: "circular",
@@ -405,6 +448,10 @@ mod contact_row {
                     emit!(Output::SendFilePicker(self.name.clone()) => sender);
                 }
 
+                Msg::SendDirectoryPickerOpen => {
+                    emit!(Output::SendDirectoryPicker(self.name.clone()) => sender);
+                }
+
                 Msg::ReceiveFilePickerOpen => {
                     emit!(Output::ReceiveFilePicker(self.name.clone()) => sender);
                 }
@@ -426,6 +473,7 @@ mod contact_row {
                 Output::Send(name, path) => Self::SendFile(name, path),
                 Output::Receive(name, path) => Self::ReceiveFile(name, path),
                 Output::SendFilePicker(name) => Self::SenderPickerOpen(name),
+                Output::SendDirectoryPicker(name) => Self::SenderDirPickerOpen(name),
                 Output::ReceiveFilePicker(name) => Self::ReceiverPickerOpen(name),
                 Output::Delete(name) => Self::DeleteContact(name),
             }

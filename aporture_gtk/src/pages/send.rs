@@ -29,6 +29,7 @@ pub struct SenderPage {
     passphrase_length: u32,
     file_path: Option<PathBuf>,
     file_picker_dialog: Controller<OpenDialog>,
+    directory_picker_dialog: Controller<OpenDialog>,
     contacts: Option<Arc<Mutex<Contacts>>>,
     aporture_dialog: Controller<Peer>,
     form_disabled: bool,
@@ -47,6 +48,7 @@ pub enum Msg {
     SendFile,
     AportureFinished(Result<ContactAction, AportureError>),
     Ignore,
+    DirectoryPickerOpen,
 }
 
 #[relm4::component(pub)]
@@ -89,6 +91,8 @@ impl SimpleComponent for SenderPage {
                 add_suffix = &gtk::Button {
                     set_icon_name: icon_names::UPDATE,
 
+                    set_tooltip_text: Some("Generate passphrase"),
+
                     add_css_class: "flat",
                     add_css_class: "circular",
 
@@ -100,6 +104,8 @@ impl SimpleComponent for SenderPage {
                 add_suffix = &gtk::Button {
                     set_icon_name: icon_names::EDIT,
 
+                    set_tooltip_text: Some("Edit manually"),
+
                     add_css_class: "flat",
                     add_css_class: "circular",
 
@@ -109,6 +115,8 @@ impl SimpleComponent for SenderPage {
                 #[name = "copy"]
                 add_suffix = &gtk::Button {
                     set_icon_name: icon_names::COPY,
+
+                    set_tooltip_text: Some("Copy"),
 
                     add_css_class: "flat",
                     add_css_class: "circular",
@@ -124,7 +132,20 @@ impl SimpleComponent for SenderPage {
                 set_subtitle: &model.file_path.as_ref().map_or("Select file to send".to_owned(), |p| p.display().to_string()),
 
                 add_suffix = &gtk::Button {
+                    set_icon_name: icon_names::EDIT_FIND,
+
+                    set_tooltip_text: Some("Select file"),
+
+                    add_css_class: "flat",
+                    add_css_class: "circular",
+
+                    connect_clicked => Msg::DirectoryPickerOpen,
+                },
+
+                add_suffix = &gtk::Button {
                     set_icon_name: icon_names::SEARCH_FOLDER,
+
+                    set_tooltip_text: Some("Select folder"),
 
                     add_css_class: "flat",
                     add_css_class: "circular",
@@ -168,6 +189,17 @@ impl SimpleComponent for SenderPage {
                 OpenDialogResponse::Cancel => Msg::Ignore,
             });
 
+        let directory_picker_dialog = OpenDialog::builder()
+            .transient_for_native(&root)
+            .launch(OpenDialogSettings {
+                folder_mode: true,
+                ..Default::default()
+            })
+            .forward(sender.input_sender(), |response| match response {
+                OpenDialogResponse::Accept(path) => Msg::FilePickerResponse(path),
+                OpenDialogResponse::Cancel => Msg::Ignore,
+            });
+
         let aporture_dialog = Peer::builder()
             .transient_for(&root)
             .launch(())
@@ -181,6 +213,7 @@ impl SimpleComponent for SenderPage {
             passphrase_length: 1,
             file_path: None,
             file_picker_dialog,
+            directory_picker_dialog,
             contacts: None,
             aporture_dialog,
             form_disabled: false,
@@ -239,6 +272,8 @@ impl SimpleComponent for SenderPage {
             }
 
             Msg::FilePickerOpen => self.file_picker_dialog.emit(OpenDialogMsg::Open),
+
+            Msg::DirectoryPickerOpen => self.directory_picker_dialog.emit(OpenDialogMsg::Open),
 
             Msg::FilePickerResponse(path) => {
                 let name = path

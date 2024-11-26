@@ -85,6 +85,8 @@ impl SimpleComponent for ReceiverPage {
                 add_suffix = &gtk::Button {
                     set_icon_name: icon_names::SEARCH_FOLDER,
 
+                    set_tooltip_text: Some("Select destination"),
+
                     add_css_class: "flat",
                     add_css_class: "circular",
 
