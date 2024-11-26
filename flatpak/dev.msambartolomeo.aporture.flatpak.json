@@ -14,6 +14,7 @@
         "--socket=wayland",
         "--device=dri",
         "--filesystem=home",
+        "--filesystem=xdg-config/aporture:create",
         "--env=RUST_LOG=aporture=debug",
         "--env=G_MESSAGES_DEBUG=none",
         "--env=RUST_BACKTRACE=1"
@@ -30,7 +31,8 @@
             "buildsystem": "simple",
             "build-options": {
                 "env": {
-                    "CARGO_HOME": "/run/build/aporture/cargo"
+                    "CARGO_HOME": "/run/build/aporture/cargo",
+                    "SERVER_ADDRESS": "${APORTURE_SERVER_ADDRESS:-127.0.0.1:8765}"
                 }
             },
             "build-commands": [
