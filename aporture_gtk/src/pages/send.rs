@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use adw::prelude::*;
 use gtk::gdk::Display;
-use open_dialog::{OpenDialog, OpenDialogMsg, OpenDialogResponse, OpenDialogSettings};
+use open_dialog::{OpenDialog, OpenDialogResponse, OpenDialogSettings};
 use relm4::prelude::*;
 use relm4_components::open_dialog;
 use relm4_icons::icon_names;
@@ -13,6 +13,7 @@ use tokio::sync::Mutex;
 use aporture::fs::contacts::Contacts;
 use aporture::passphrase;
 
+use crate::components::file_chooser;
 use crate::components::modal::aporture::{ContactAction, Params, PassphraseMethod, Peer};
 use crate::components::modal::aporture::{Error as AportureError, Msg as AportureMsg};
 use crate::components::toaster::Severity;
@@ -48,14 +49,14 @@ pub enum Msg {
     SendFile,
     AportureFinished(Result<ContactAction, AportureError>),
     Ignore,
-    DirectoryPickerOpen,
 }
 
 #[relm4::component(pub)]
-impl SimpleComponent for SenderPage {
+impl Component for SenderPage {
     type Init = ();
     type Input = Msg;
     type Output = app::Request;
+    type CommandOutput = ();
 
     view! {
         adw::PreferencesGroup {
@@ -132,20 +133,9 @@ impl SimpleComponent for SenderPage {
                 set_subtitle: &model.file_path.as_ref().map_or("Select file to send".to_owned(), |p| p.display().to_string()),
 
                 add_suffix = &gtk::Button {
-                    set_icon_name: icon_names::EDIT_FIND,
-
-                    set_tooltip_text: Some("Select file"),
-
-                    add_css_class: "flat",
-                    add_css_class: "circular",
-
-                    connect_clicked => Msg::DirectoryPickerOpen,
-                },
-
-                add_suffix = &gtk::Button {
                     set_icon_name: icon_names::SEARCH_FOLDER,
 
-                    set_tooltip_text: Some("Select folder"),
+                    set_tooltip_text: Some("Select files to send"),
 
                     add_css_class: "flat",
                     add_css_class: "circular",
@@ -229,7 +219,7 @@ impl SimpleComponent for SenderPage {
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
+    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, root: &Self::Root) {
         match msg {
             Msg::GeneratePassphrase => self
                 .passphrase_entry
@@ -271,9 +261,11 @@ impl SimpleComponent for SenderPage {
                 }
             }
 
-            Msg::FilePickerOpen => self.file_picker_dialog.emit(OpenDialogMsg::Open),
-
-            Msg::DirectoryPickerOpen => self.directory_picker_dialog.emit(OpenDialogMsg::Open),
+            Msg::FilePickerOpen => file_chooser::choose(
+                root,
+                self.file_picker_dialog.sender().clone(),
+                self.directory_picker_dialog.sender().clone(),
+            ),
 
             Msg::FilePickerResponse(path) => {
                 let name = path

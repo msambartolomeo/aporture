@@ -40,7 +40,6 @@ impl<'a> Confirmation<'a> {
                 add_response: ("no", deny),
 
                 set_response_appearance[adw::ResponseAppearance::Destructive]: "yes",
-
             }
         }
 
