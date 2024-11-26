@@ -1,0 +1,6 @@
+/repo
+/builddir
+/.flatpak-builder
+
+aporture.flatpak
+sources-generator.py
