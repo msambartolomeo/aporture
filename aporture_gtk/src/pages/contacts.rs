@@ -196,7 +196,7 @@ impl Component for ContactPage {
                     root,
                     self.sender_picker_dialog.sender().clone(),
                     self.sender_dir_picker_dialog.sender().clone(),
-                )
+                );
             }
 
             Msg::SenderPickerResponse(path) => {
