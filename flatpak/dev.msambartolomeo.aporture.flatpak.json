@@ -10,6 +10,7 @@
     "command": "aporture_gtk",
     "finish-args": [
         "--share=ipc",
+        "--share=network",
         "--socket=fallback-x11",
         "--socket=wayland",
         "--device=dri",
@@ -32,10 +33,11 @@
             "build-options": {
                 "env": {
                     "CARGO_HOME": "/run/build/aporture/cargo",
-                    "SERVER_ADDRESS": "${APORTURE_SERVER_ADDRESS:-127.0.0.1:8765}"
+                    "SERVER_ADDRESS": "${SERVER_ADDRESS}"
                 }
             },
             "build-commands": [
+                "echo SERVER_ADDRESS is set to: $SERVER_ADDRESS",
                 "cargo --offline fetch --manifest-path Cargo.toml --verbose",
                 "cargo --offline build --release --verbose",
                 "install -Dm755 ./target/release/aporture_gtk -t /app/bin/"
