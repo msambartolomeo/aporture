@@ -27,7 +27,7 @@ pub struct AportureTransferProtocol<'a, S: State> {
     _phantom: PhantomData<S>,
 }
 
-impl<'a, S: State> AportureTransferProtocol<'a, S> {
+impl<S: State> AportureTransferProtocol<'_, S> {
     pub fn add_progress_notifier(&mut self, channel: Channel) {
         self.channel = Some(channel);
     }
@@ -78,7 +78,8 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
         let mut transfer_data = get_transfer_data(&path)?;
 
         let tar_file_holder = if transfer_data.total_files > 150 {
-            let file = compress_folder(&mut transfer_data, &path, &mut peer, &self.channel).await?;
+            let file = compress_folder(&mut transfer_data, &path, &mut peer, self.channel.as_ref())
+                .await?;
             file.path().clone_into(&mut path);
             Some(file)
         } else {
@@ -90,24 +91,24 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
 
         #[allow(clippy::cast_possible_truncation)]
         let progress_len = transfer_data.total_size as usize;
-        channel::send(&self.channel, Message::ProgressSize(progress_len)).await;
+        channel::send(self.channel.as_ref(), Message::ProgressSize(progress_len)).await;
 
         if path.is_file() {
             log::info!("Sending file...");
 
-            file::send(&mut peer, &path, &path, &self.channel).await?;
+            file::send(&mut peer, &path, &path, self.channel.as_ref()).await?;
         } else {
             for entry in WalkDir::new(&path).follow_links(true).into_iter().skip(1) {
-                file::send(&mut peer, entry?.path(), &path, &self.channel).await?;
+                file::send(&mut peer, entry?.path(), &path, self.channel.as_ref()).await?;
             }
         }
 
         // NOTE: keep the file alive until it is finished sending
         drop(tar_file_holder);
 
-        channel::send(&self.channel, Message::Finished).await;
+        channel::send(self.channel.as_ref(), Message::Finished).await;
         if transfer_data.compressed {
-            channel::send(&self.channel, Message::Uncompressing).await;
+            channel::send(self.channel.as_ref(), Message::Uncompressing).await;
         }
 
         let response = peer.read_ser_enc::<TransferResponseCode>().await?;
@@ -170,7 +171,7 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
 
         // NOTE: If the data should be compressed, the sender will send the compressed information again
         if transfer_data.compressed {
-            channel::send(&self.channel, Message::Compression).await;
+            channel::send(self.channel.as_ref(), Message::Compression).await;
 
             log::info!("Receiving tar.gz information");
             transfer_data = peer.read_ser_enc::<TransferData>().await?;
@@ -179,12 +180,12 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
 
         #[allow(clippy::cast_possible_truncation)]
         let progress_len = transfer_data.total_size as usize;
-        channel::send(&self.channel, Message::ProgressSize(progress_len)).await;
+        channel::send(self.channel.as_ref(), Message::ProgressSize(progress_len)).await;
 
         let dest = if transfer_data.total_files == 1 {
-            receive_file(dest, &transfer_data, &mut peer, &self.channel).await?
+            receive_file(dest, &transfer_data, &mut peer, self.channel.as_ref()).await?
         } else {
-            receive_folder(dest, transfer_data, &mut peer, &self.channel).await?
+            receive_folder(dest, transfer_data, &mut peer, self.channel.as_ref()).await?
         };
 
         peer.write_ser_enc(&PairingResponseCode::Ok).await?;
@@ -220,7 +221,7 @@ async fn compress_folder<Ep>(
     transfer_data: &mut TransferData,
     path: &Path,
     peer: &mut Ep,
-    channel: &Option<Channel>,
+    channel: Option<&Channel>,
 ) -> Result<NamedTempFile, error::Send>
 where
     Ep: EncryptedSerdeIO + Send,
@@ -250,7 +251,7 @@ async fn receive_file<Ep>(
     mut dest: PathBuf,
     transfer_data: &TransferData,
     peer: &mut Ep,
-    channel: &Option<Channel>,
+    channel: Option<&Channel>,
 ) -> Result<PathBuf, error::Receive>
 where
     Ep: EncryptedSerdeIO + Send,
@@ -296,7 +297,7 @@ async fn receive_folder<Ep>(
     mut dest: PathBuf,
     transfer_data: TransferData,
     peer: &mut Ep,
-    channel: &Option<Channel>,
+    channel: Option<&Channel>,
 ) -> Result<PathBuf, error::Receive>
 where
     Ep: EncryptedSerdeIO + Send,

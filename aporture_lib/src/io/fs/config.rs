@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use generic_array::GenericArray;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
-use tokio::sync::OnceCell;
+use tokio::sync::{OnceCell, RwLock, RwLockReadGuard};
 
 use crate::crypto::hasher::Salt;
 use crate::parse;
@@ -17,7 +17,7 @@ const CONFIG_FILE_NAME: &str = "config.app";
 const DEFAULT_SERVER_ADDRESS: Option<&str> = option_env!("SERVER_ADDRESS");
 const DEFAULT_SERVER_PORT: u16 = 8765;
 
-static mut CONFIG: OnceCell<Config> = OnceCell::const_new();
+static CONFIG: OnceCell<RwLock<Config>> = OnceCell::const_new();
 
 #[allow(clippy::unsafe_derive_deserialize)]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -48,28 +48,28 @@ impl Default for Config {
 }
 
 impl Config {
-    pub async fn get() -> &'static Self {
-        // SAFETY: Safe by SAFETY guarantees from exclusive access functions
-        if let Some(config) = unsafe { CONFIG.get() } {
-            config
+    pub async fn get() -> RwLockReadGuard<'static, Self> {
+        if let Some(config) = CONFIG.get() {
+            config.read().await
         } else {
-            // SAFETY: Safe because exclusive access takes self, so they must have called this function first
-            unsafe {
-                CONFIG
-                    .get_or_init(|| async {
-                        if let Ok(config) = Self::from_file().await {
-                            config
-                        } else {
-                            log::info!("Using default config");
-                            log::warn!("Could not find config file, creating");
-                            Self::create_file()
-                                .await
-                                .inspect_err(|_| log::warn!("Error creating config file"))
-                                .unwrap_or_default()
-                        }
-                    })
-                    .await
-            }
+            CONFIG
+                .get_or_init(|| async {
+                    let config = if let Ok(config) = Self::from_file().await {
+                        config
+                    } else {
+                        log::info!("Using default config");
+                        log::warn!("Could not find config file, creating");
+                        Self::create_file()
+                            .await
+                            .inspect_err(|_| log::warn!("Error creating config file"))
+                            .unwrap_or_default()
+                    };
+
+                    RwLock::new(config)
+                })
+                .await
+                .read()
+                .await
         }
     }
 
@@ -108,27 +108,19 @@ impl Config {
         Ok(config)
     }
 
-    ///
-    /// # Safety
-    /// This function is safe to call if the following invariants hold
-    ///
-    /// 1. It is called in async context as mutable access does not happen between await points.
-    /// 2. The `Config` object must have been constructed from `Config::get()` function
-    ///
-    pub async unsafe fn persist_server_address_change(self) -> Result<Self, crate::io::Error> {
-        // SAFETY: Refer to function safety
-        let mut config = unsafe { CONFIG.take() }
-            .expect("Should have been constructed to get a self to pass to this function");
+    pub async fn update_address(address: IpAddr, port: u16) -> Result<Self, crate::io::Error> {
+        if !CONFIG.initialized() {
+            let _ = Self::get().await;
+        }
 
-        config.server_address = self.server_address;
-        config.server_port = self.server_port;
+        let mut config = CONFIG.get().expect("Should be created above").write().await;
 
-        // SAFETY: Refer to function safety
-        unsafe { CONFIG.set(config) }.expect("Should be empty as take has been called");
+        config.server_address = address;
+        config.server_port = port;
 
         config.save().await?;
 
-        Ok(config)
+        Ok(*config)
     }
 
     async fn save(&self) -> Result<(), crate::io::Error> {

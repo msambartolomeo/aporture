@@ -9,8 +9,8 @@ pub enum Message {
     Finished,
 }
 
-pub async fn send(channel: &Option<Channel>, message: Message) {
-    if let Some(ref channel) = channel {
+pub async fn send(channel: Option<&Channel>, message: Message) {
+    if let Some(channel) = channel {
         let _ = channel.send(message).await;
     }
 }

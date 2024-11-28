@@ -9,6 +9,7 @@ pub struct NetworkPeer {
 }
 
 impl NetworkPeer {
+    #[must_use]
     pub const fn new(stream: TcpStream) -> Self {
         Self { stream }
     }

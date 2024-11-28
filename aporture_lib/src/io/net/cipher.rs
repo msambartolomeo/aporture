@@ -13,18 +13,21 @@ pub struct EncryptedNetworkPeer {
 }
 
 impl NetworkPeer {
+    #[must_use]
     pub const fn add_cipher(self, cipher: Arc<Cipher>) -> EncryptedNetworkPeer {
         EncryptedNetworkPeer { cipher, peer: self }
     }
 }
 
 impl EncryptedNetworkPeer {
+    #[must_use]
     pub const fn new(stream: TcpStream, cipher: Arc<Cipher>) -> Self {
         let peer = NetworkPeer::new(stream);
 
         Self { cipher, peer }
     }
 
+    #[must_use]
     pub fn extract_cipher(self) -> (NetworkPeer, Arc<Cipher>) {
         (self.peer, self.cipher)
     }

@@ -145,6 +145,7 @@ impl<K: Kind + Send> AporturePairingProtocol<Start<K>> {
         );
 
         let server = TcpStream::connect((config.server_address, config.server_port)).await?;
+        drop(config);
 
         log::info!("Connected to server");
 
@@ -437,6 +438,8 @@ impl<K: Kind + Send> AporturePairingProtocol<Negotiation<K>> {
 
 async fn get_external_socket() -> Result<UdpSocketAddr, crate::io::Error> {
     let config = Config::get().await;
+    let server_address = config.server_address();
+    drop(config);
 
     let socket = tokio::net::UdpSocket::bind(ANY_ADDR).await?;
 
@@ -445,14 +448,14 @@ async fn get_external_socket() -> Result<UdpSocketAddr, crate::io::Error> {
     let mut address = None;
 
     for _ in 0..15 {
-        socket.send_to(&request, config.server_address()).await?;
+        socket.send_to(&request, server_address).await?;
 
         let mut buf = vec![0; 32];
 
         if let Ok(Ok((len, from))) =
             tokio::time::timeout(Duration::from_secs(2), socket.recv_from(&mut buf)).await
         {
-            if from != config.server_address() {
+            if from != server_address {
                 continue;
             }
 
@@ -473,7 +476,7 @@ async fn get_external_socket() -> Result<UdpSocketAddr, crate::io::Error> {
         let request = HolePunchingRequest::None.serialize_to();
 
         let handle = tokio::spawn(async move {
-            let _ = s.send_to(&request, config.server_address());
+            let _ = s.send_to(&request, server_address);
             tokio::time::sleep(Duration::from_secs(10)).await;
         });
 

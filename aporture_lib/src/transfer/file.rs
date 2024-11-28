@@ -20,7 +20,7 @@ pub async fn send<Ep>(
     peer: &mut Ep,
     path: &Path,
     base: &Path,
-    channel: &Option<Channel>,
+    channel: Option<&Channel>,
 ) -> Result<(), super::error::Send>
 where
     Ep: EncryptedSerdeIO + Send,
@@ -28,7 +28,6 @@ where
     let is_file = path.is_file();
     let file_size = if is_file { path.metadata()?.len() } else { 0 };
 
-    // TODO: Test if this works cross platform (test also file_name.to_string_lossy())
     let file_name = path
         .strip_prefix(base)
         .expect("Path must be a subpath from base")
@@ -78,7 +77,7 @@ where
 pub async fn receive<Ep>(
     dest: &Path,
     peer: &mut Ep,
-    channel: &Option<Channel>,
+    channel: Option<&Channel>,
 ) -> Result<FileData, super::error::Receive>
 where
     Ep: EncryptedSerdeIO + Send,
@@ -134,7 +133,7 @@ where
 async fn hash_and_send<Ep>(
     file: File,
     sender: &mut Ep,
-    channel: &Option<Channel>,
+    channel: Option<&Channel>,
 ) -> Result<crypto::hasher::Hash, crate::io::Error>
 where
     Ep: EncryptedSerdeIO + Send,
@@ -162,7 +161,7 @@ async fn hash_and_receive<Ep>(
     file: &mut File,
     file_size: u64,
     receiver: &mut Ep,
-    channel: &Option<Channel>,
+    channel: Option<&Channel>,
 ) -> Result<crypto::hasher::Hash, crate::io::Error>
 where
     Ep: EncryptedSerdeIO + Send,

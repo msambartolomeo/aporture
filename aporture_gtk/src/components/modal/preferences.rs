@@ -14,7 +14,6 @@ pub struct Preferences {
     visible: bool,
     form_disabled: bool,
     server_address: adw::EntryRow,
-    config: Option<Config>,
     toaster: Toaster,
 }
 
@@ -109,7 +108,6 @@ impl Component for Preferences {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let model = Self {
-            config: None,
             toaster: Toaster::default(),
             visible: false,
             form_disabled: false,
@@ -132,17 +130,11 @@ impl Component for Preferences {
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, _: &Self::Root) {
         match msg {
             Msg::Return => {
-                let mut config = self.config.expect("Config should have already been loaded");
-
                 if let Ok(server_address) = self.server_address.text().parse::<SocketAddr>() {
                     sender.oneshot_command(async move {
-                        config.server_address = server_address.ip();
-                        config.server_port = server_address.port();
-
-                        // SAFETY:
-                        // Called in async context
-                        // config was created with `Config::get()`
-                        unsafe { config.persist_server_address_change() }.await.ok()
+                        let address = server_address.ip();
+                        let port = server_address.port();
+                        Config::update_address(address, port).await.ok()
                     });
                 } else {
                     sender.input(Msg::Error("Not a valid ip address"));
@@ -173,8 +165,7 @@ impl Component for Preferences {
         _: &Self::Root,
     ) {
         if let Some(config) = message {
-            if self.config.is_none() {
-                self.config = Some(config);
+            if self.server_address.text_length() == 0 {
                 self.server_address
                     .set_text(&format!("{}:{}", config.server_address, config.server_port));
             } else {
@@ -183,7 +174,7 @@ impl Component for Preferences {
             }
         } else {
             self.server_address.add_css_class("error");
-            sender.input(Msg::Error("Invalid ip address"));
+            sender.input(Msg::Error("Could not save config"));
         }
     }
 }

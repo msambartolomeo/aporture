@@ -106,15 +106,10 @@ async fn main() -> Result<()> {
                 );
             }
             ConfigCommand::Set { server_address } => {
-                let mut config = *Config::get().await;
+                let address = server_address.ip();
+                let port = server_address.port();
 
-                config.server_address = server_address.ip();
-                config.server_port = server_address.port();
-
-                // SAFETY:
-                // Called in async context
-                // config was created with `Config::get()`
-                unsafe { config.persist_server_address_change() }.await?;
+                Config::update_address(address, port).await?;
             }
         },
     };

@@ -143,7 +143,7 @@ pub enum ErrorKind {
 #[error("{0}")]
 pub struct Error<'a>(pub ErrorKind, pub MessageBuffer<'a>);
 
-impl<'a> Error<'a> {
+impl Error<'_> {
     #[must_use]
     pub const fn ignore(self) -> ErrorKind {
         self.0
@@ -224,7 +224,7 @@ impl<'a> From<Message<'a>> for MessageBuffer<'a> {
     }
 }
 
-impl<'a> Buf for MessageBuffer<'a> {
+impl Buf for MessageBuffer<'_> {
     fn remaining(&self) -> usize {
         let total_remaining = self.total_remaining(self.state);
 
@@ -292,7 +292,7 @@ impl<'a> Buf for MessageBuffer<'a> {
     }
 }
 
-unsafe impl<'a> BufMut for MessageBuffer<'a> {
+unsafe impl BufMut for MessageBuffer<'_> {
     fn remaining_mut(&self) -> usize {
         if self.error.is_some() {
             return 0;
