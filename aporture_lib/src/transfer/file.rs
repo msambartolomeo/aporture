@@ -5,6 +5,8 @@ use std::path::PathBuf;
 use tokio::fs::File;
 use tokio::fs::OpenOptions;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
+use typed_path::Utf8UnixPathBuf;
+use typed_path::{Utf8NativePath, Utf8NativePathBuf};
 
 use crate::crypto;
 use crate::crypto::hasher::Hasher;
@@ -19,7 +21,7 @@ const BUFFER_SIZE: usize = 16 * 1024;
 pub async fn send<Ep>(
     peer: &mut Ep,
     path: &Path,
-    base: &Path,
+    base: &Utf8NativePath,
     channel: Option<&Channel>,
 ) -> Result<(), super::error::Send>
 where
@@ -28,13 +30,19 @@ where
     let is_file = path.is_file();
     let file_size = if is_file { path.metadata()?.len() } else { 0 };
 
+    let path = Utf8NativePathBuf::from(
+        path.as_os_str()
+            .to_str()
+            .expect("Should be valid utf8 as path was sanitized"),
+    );
+
     let file_name = path
         .strip_prefix(base)
         .expect("Path must be a subpath from base")
-        .to_owned()
-        .into_os_string();
+        .with_unix_encoding()
+        .to_string();
 
-    log::info!("Sending file {}", path.display());
+    log::info!("Sending file {}", path);
 
     let file_data = FileData {
         file_size,
@@ -50,7 +58,7 @@ where
     }
 
     for _ in 0..FILE_RETRIES {
-        let file = OpenOptions::new().read(true).open(path).await?;
+        let file = OpenOptions::new().read(true).open(&path).await?;
 
         let hash = hash_and_send(file, peer, channel).await?;
 
@@ -61,15 +69,12 @@ where
         match response {
             TransferResponseCode::Ok => return Ok(()),
             TransferResponseCode::HashMismatch => {
-                log::warn!(
-                    "Hash mismatch in file transfer for {}, retrying...",
-                    path.display()
-                );
+                log::warn!("Hash mismatch in file transfer for {}, retrying...", path);
             }
         }
     }
 
-    log::error!("Max retries reached for {}", path.display());
+    log::error!("Max retries reached for {}", path);
 
     Err(super::error::Send::HashMismatch)
 }
@@ -83,14 +88,21 @@ where
     Ep: EncryptedSerdeIO + Send,
 {
     let file_data = peer.read_ser_enc::<FileData>().await?;
-
-    let mut path = dest.to_owned();
+    let received_path = Utf8UnixPathBuf::from(&file_data.file_name).normalize();
+    let mut path = Utf8NativePathBuf::from(
+        dest.as_os_str()
+            .to_str()
+            .expect("Should be valid utf8 as path was sanitized"),
+    );
 
     let mut file = if dest.is_dir() {
-        path.push(&file_data.file_name);
+        #[cfg(target_os = "windows")]
+        path.push(received_path.with_windows_encoding());
+        #[cfg(not(target_os = "windows"))]
+        path.push(&received_path);
 
         if !file_data.is_file {
-            tokio::fs::create_dir(path).await?;
+            tokio::fs::create_dir(&path).await?;
 
             return Ok(file_data);
         }
@@ -105,7 +117,7 @@ where
     };
 
     for _ in 0..FILE_RETRIES {
-        log::info!("Receiving file {}", file_data.file_name.to_string_lossy());
+        log::info!("Receiving file {}", &received_path);
 
         let hash = hash_and_receive(&mut file, file_data.file_size, peer, channel).await?;
 
@@ -219,28 +231,32 @@ pub async fn non_existent_path(mut path: PathBuf) -> PathBuf {
     path
 }
 
-pub async fn sanitize_path(path: &Path) -> Result<PathBuf, std::io::Error> {
-    if let Ok(sanitized) = tokio::fs::canonicalize(&path).await {
-        let metadata = tokio::fs::metadata(&sanitized).await?;
-
-        if !metadata.is_dir() && !metadata.is_file() {
+pub fn sanitize_path(path: &Path) -> Result<PathBuf, std::io::Error> {
+    let sanitized = if let Ok(sanitized) = std::fs::canonicalize(path) {
+        if !sanitized.is_dir() && !sanitized.is_file() {
             return Err(std::io::Error::from(std::io::ErrorKind::Unsupported));
         }
 
-        return Ok(sanitized);
-    }
+        sanitized
+    } else {
+        let file_name = path
+            .file_name()
+            .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::NotFound))?;
 
-    let file_name = path
-        .file_name()
-        .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::NotFound))?;
+        let parent = match path.parent() {
+            Some(p) if p == PathBuf::default() => std::fs::canonicalize(PathBuf::from("."))?,
+            Some(p) => std::fs::canonicalize(p)?,
+            None => std::fs::canonicalize(path)?,
+        };
 
-    let parent = match path.parent() {
-        Some(p) if p == PathBuf::default() => tokio::fs::canonicalize(PathBuf::from(".")).await?,
-        Some(p) => tokio::fs::canonicalize(p).await?,
-        None => tokio::fs::canonicalize(path).await?,
+        parent.join(file_name)
     };
 
-    let sanitized = parent.join(file_name);
+    // NOTE: Test utf8 support
+    let _ = sanitized
+        .as_os_str()
+        .to_str()
+        .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::Unsupported))?;
 
     Ok(sanitized)
 }

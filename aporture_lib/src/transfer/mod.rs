@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
 use tempfile::NamedTempFile;
+use typed_path::Utf8NativePathBuf;
 use walkdir::WalkDir;
 
 use self::channel::{Channel, Message};
@@ -70,9 +71,7 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
     where
         Ep: Encryptable + Peer + Send,
     {
-        let mut path = file::sanitize_path(self.path)
-            .await
-            .map_err(|_| error::Send::Path)?;
+        let mut path = file::sanitize_path(self.path).map_err(|_| error::Send::Path)?;
 
         log::info!("Sending file {}", path.display());
         let mut transfer_data = get_transfer_data(&path)?;
@@ -93,13 +92,19 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
         let progress_len = transfer_data.total_size as usize;
         channel::send(self.channel.as_ref(), Message::ProgressSize(progress_len)).await;
 
+        let base = Utf8NativePathBuf::from(
+            path.as_mut_os_str()
+                .to_str()
+                .expect("Should be valid utf8 as path was sanitized"),
+        );
+
         if path.is_file() {
             log::info!("Sending file...");
 
-            file::send(&mut peer, &path, &path, self.channel.as_ref()).await?;
+            file::send(&mut peer, &path, &base, self.channel.as_ref()).await?;
         } else {
             for entry in WalkDir::new(&path).follow_links(true).into_iter().skip(1) {
-                file::send(&mut peer, entry?.path(), &path, self.channel.as_ref()).await?;
+                file::send(&mut peer, entry?.path(), &base, self.channel.as_ref()).await?;
             }
         }
 
@@ -159,9 +164,7 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
     where
         Ep: Encryptable + Peer + Send,
     {
-        let dest = file::sanitize_path(self.path)
-            .await
-            .map_err(|_| error::Receive::Destination)?;
+        let dest = file::sanitize_path(self.path).map_err(|_| error::Receive::Destination)?;
 
         log::info!("File will try to be saved to {}", dest.display());
 
@@ -211,7 +214,9 @@ fn get_transfer_data(path: &Path) -> Result<TransferData, error::Send> {
     )?;
 
     path.file_name()
-        .expect("File Name Must be present as it was sanitized")
+        .expect("Should have a File Name as path it was sanitized")
+        .to_str()
+        .expect("Should be valid utf8 as it was santized")
         .clone_into(&mut transfer_data.root_name);
 
     Ok(transfer_data)
@@ -271,7 +276,9 @@ where
     channel::send(channel, Message::Finished).await;
 
     if dest.is_dir() {
-        dest.push(&transfer_data.root_name);
+        let path = Utf8NativePathBuf::from(&transfer_data.root_name);
+
+        dest.push(path.normalize());
     }
 
     let mut dest = file::non_existent_path(dest).await;
@@ -334,7 +341,9 @@ where
     channel::send(channel, Message::Finished).await;
 
     if dest.is_dir() {
-        dest.push(transfer_data.root_name);
+        let path = Utf8NativePathBuf::from(&transfer_data.root_name);
+
+        dest.push(path.normalize());
     }
 
     let dest = file::non_existent_path(dest).await;

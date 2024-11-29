@@ -1,4 +1,3 @@
-use std::ffi::OsString;
 use std::net::SocketAddr;
 
 use generic_array::typenum as n;
@@ -81,7 +80,7 @@ pub struct TransferData {
 
     pub total_size: u64,
 
-    pub root_name: OsString,
+    pub root_name: String,
 
     #[serde_as(as = "DisplayFromStr")]
     pub compressed: bool,
@@ -93,7 +92,7 @@ parse!(TransferData);
 pub struct FileData {
     pub file_size: u64,
 
-    pub file_name: OsString,
+    pub file_name: String,
 
     #[serde_as(as = "DisplayFromStr")]
     pub is_file: bool,
@@ -184,7 +183,7 @@ mod test {
         TransferData {
             total_files: 1,
             total_size: 2,
-            root_name: OsString::from("/hello"),
+            root_name: "/hello".to_owned(),
             compressed: false,
         }
     );
@@ -194,7 +193,7 @@ mod test {
         FileData {
             file_size: 1,
             is_file: false,
-            file_name: OsString::new(),
+            file_name: "pepe".to_owned(),
         }
     );
 

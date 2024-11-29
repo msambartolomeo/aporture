@@ -1,5 +1,5 @@
 /target
-
 /.vscode
-
 /images
+/package
+*.zip
