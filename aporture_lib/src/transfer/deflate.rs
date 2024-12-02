@@ -19,7 +19,7 @@ where
     Ep: EncryptedSerdeIO + Send,
 {
     channel::send(channel, Message::Compression).await;
-    transfer_data.compressed = true;
+    // transfer_data.compressed = true;
 
     log::info!("Sending original data information {transfer_data:?}");
     peer.write_ser_enc(&*transfer_data).await?;

@@ -16,6 +16,7 @@ mod connection;
 mod deflate;
 mod error;
 mod file;
+mod path;
 
 pub use channel::Message as ChannelMessage;
 pub use error::{Receive as ReceiveError, Send as SendError};
@@ -70,7 +71,7 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
     where
         Ep: Encryptable + Peer + Send,
     {
-        let mut path = file::sanitize_path(self.path).map_err(|_| error::Send::Path)?;
+        let path = path::sanitize(self.path).map_err(|_| error::Send::Path)?;
 
         log::info!("Sending file {}", path.display());
         let transfer_data = get_transfer_data(&path)?;
@@ -82,26 +83,19 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
         let progress_len = transfer_data.total_size as usize;
         channel::send(self.channel.as_ref(), Message::ProgressSize(progress_len)).await;
 
-        let base = Utf8NativePathBuf::from(
-            path.as_mut_os_str()
-                .to_str()
-                .expect("Should be valid utf8 as path was sanitized"),
-        );
+        let base = path::native(&path);
+        let is_dir = transfer_data.total_files > 1;
 
-        if path.is_file() {
-            log::info!("Sending file...");
+        log::info!("Sending files...");
 
-            file::send(&mut peer, 0, &path, &base, self.channel.as_ref()).await?;
-        } else {
-            for (id, entry) in WalkDir::new(&path)
-                .follow_links(true)
-                .sort_by_file_name()
-                .into_iter()
-                .enumerate()
-                .skip(1)
-            {
-                file::send(&mut peer, id, entry?.path(), &base, self.channel.as_ref()).await?;
-            }
+        for (id, entry) in WalkDir::new(&path)
+            .follow_links(true)
+            .sort_by_file_name()
+            .into_iter()
+            .enumerate()
+            .filter(|(id, _)| !is_dir || *id != 0)
+        {
+            file::send(&mut peer, id, entry?.path(), &base, self.channel.as_ref()).await?;
         }
 
         loop {
@@ -115,25 +109,16 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
                     #[allow(clippy::cast_possible_truncation)]
                     let id = res.id as usize;
 
-                    if path.is_file() {
-                        if id != 0 {
-                            return Err(error::Send::HashMismatch);
-                        }
+                    let Some(entry) = WalkDir::new(&path)
+                        .follow_links(true)
+                        .sort_by_file_name()
+                        .into_iter()
+                        .nth(id)
+                    else {
+                        return Err(error::Send::HashMismatch);
+                    };
 
-                        file::send(&mut peer, id, &path, &base, self.channel.as_ref()).await?;
-                    } else {
-                        let Some(entry) = WalkDir::new(&path)
-                            .follow_links(true)
-                            .sort_by_file_name()
-                            .into_iter()
-                            .nth(id)
-                        else {
-                            return Err(error::Send::HashMismatch);
-                        };
-
-                        file::send(&mut peer, id, entry?.path(), &base, self.channel.as_ref())
-                            .await?;
-                    }
+                    file::send(&mut peer, id, entry?.path(), &base, self.channel.as_ref()).await?;
                 }
                 TransferResponseCode::TransferFail => return Err(error::Send::HashMismatch),
             }
@@ -184,7 +169,7 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
     where
         Ep: Encryptable + Peer + Send,
     {
-        let dest = file::sanitize_path(self.path).map_err(|_| error::Receive::Destination)?;
+        let dest = path::sanitize(self.path).map_err(|_| error::Receive::Destination)?;
 
         log::info!("File will try to be saved to {}", dest.display());
 
@@ -274,7 +259,7 @@ where
         dest.push(path.normalize());
     }
 
-    let dest = file::non_existent_path(dest).await;
+    let dest = path::non_existant(dest).await;
 
     log::info!("Persisting file to path {}", dest.display());
 
@@ -352,7 +337,7 @@ where
         dest.push(path.normalize());
     }
 
-    let dest = file::non_existent_path(dest).await;
+    let dest = path::non_existant(dest).await;
 
     let tmp = dir.into_path();
     tokio::fs::rename(tmp, &dest).await?;
