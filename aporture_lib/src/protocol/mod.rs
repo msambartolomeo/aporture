@@ -81,9 +81,6 @@ pub struct TransferData {
     pub total_size: u64,
 
     pub root_name: String,
-
-    #[serde_as(as = "DisplayFromStr")]
-    pub compressed: bool,
 }
 parse!(TransferData);
 
@@ -91,9 +88,8 @@ parse!(TransferData);
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileData {
     pub file_size: u64,
-
+    pub id: u64,
     pub file_name: String,
-
     #[serde_as(as = "DisplayFromStr")]
     pub is_file: bool,
 }
@@ -104,6 +100,7 @@ parse!(FileData);
 pub enum TransferResponseCode {
     Ok = 0,
     HashMismatch = 1,
+    TransferFail = 2,
 }
 parse!(TransferResponseCode, size: n::U3);
 
@@ -140,6 +137,8 @@ mod test {
                     let input: $type = $example;
 
                     let serialized = input.serialize_to();
+
+                    dbg!(serde_bencode::ser::to_string(&input)?);
 
                     if let Some(len) = $type::serialized_size() {
                         assert!(len >= serialized.len());
@@ -184,7 +183,6 @@ mod test {
             total_files: 1,
             total_size: 2,
             root_name: "/hello".to_owned(),
-            compressed: false,
         }
     );
 
@@ -192,6 +190,7 @@ mod test {
         FileData,
         FileData {
             file_size: 1,
+            id: 0,
             is_file: false,
             file_name: "pepe".to_owned(),
         }

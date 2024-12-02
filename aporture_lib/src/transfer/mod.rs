@@ -1,7 +1,6 @@
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
-use tempfile::NamedTempFile;
 use typed_path::Utf8NativePathBuf;
 use walkdir::WalkDir;
 
@@ -9,7 +8,7 @@ use self::channel::{Channel, Message};
 use crate::net::peer::{Encryptable, Peer};
 use crate::pairing::PairInfo;
 use crate::parser::EncryptedSerdeIO;
-use crate::protocol::{PairingResponseCode, TransferData, TransferResponseCode};
+use crate::protocol::{FileData, TransferData, TransferResponseCode};
 use crate::{Receiver, Sender, State};
 
 mod channel;
@@ -74,16 +73,7 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
         let mut path = file::sanitize_path(self.path).map_err(|_| error::Send::Path)?;
 
         log::info!("Sending file {}", path.display());
-        let mut transfer_data = get_transfer_data(&path)?;
-
-        let tar_file_holder = if transfer_data.total_files > 150 {
-            let file = compress_folder(&mut transfer_data, &path, &mut peer, self.channel.as_ref())
-                .await?;
-            file.path().clone_into(&mut path);
-            Some(file)
-        } else {
-            None
-        };
+        let transfer_data = get_transfer_data(&path)?;
 
         log::info!("Sending transfer data information {transfer_data:?}");
         peer.write_ser_enc(&transfer_data).await?;
@@ -101,27 +91,57 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
         if path.is_file() {
             log::info!("Sending file...");
 
-            file::send(&mut peer, &path, &base, self.channel.as_ref()).await?;
+            file::send(&mut peer, 0, &path, &base, self.channel.as_ref()).await?;
         } else {
-            for entry in WalkDir::new(&path).follow_links(true).into_iter().skip(1) {
-                file::send(&mut peer, entry?.path(), &base, self.channel.as_ref()).await?;
+            for (id, entry) in WalkDir::new(&path)
+                .follow_links(true)
+                .sort_by_file_name()
+                .into_iter()
+                .enumerate()
+                .skip(1)
+            {
+                file::send(&mut peer, id, entry?.path(), &base, self.channel.as_ref()).await?;
             }
         }
 
-        // NOTE: keep the file alive until it is finished sending
-        drop(tar_file_holder);
+        loop {
+            let res = peer.read_ser_enc::<TransferResponseCode>().await?;
+
+            match res {
+                TransferResponseCode::Ok => break,
+                TransferResponseCode::HashMismatch => {
+                    let res = peer.read_ser_enc::<FileData>().await?;
+
+                    #[allow(clippy::cast_possible_truncation)]
+                    let id = res.id as usize;
+
+                    if path.is_file() {
+                        if id != 0 {
+                            return Err(error::Send::HashMismatch);
+                        }
+
+                        file::send(&mut peer, id, &path, &base, self.channel.as_ref()).await?;
+                    } else {
+                        let Some(entry) = WalkDir::new(&path)
+                            .follow_links(true)
+                            .sort_by_file_name()
+                            .into_iter()
+                            .nth(id)
+                        else {
+                            return Err(error::Send::HashMismatch);
+                        };
+
+                        file::send(&mut peer, id, entry?.path(), &base, self.channel.as_ref())
+                            .await?;
+                    }
+                }
+                TransferResponseCode::TransferFail => return Err(error::Send::HashMismatch),
+            }
+        }
 
         channel::send(self.channel.as_ref(), Message::Finished).await;
-        if transfer_data.compressed {
-            channel::send(self.channel.as_ref(), Message::Uncompressing).await;
-        }
 
-        let response = peer.read_ser_enc::<TransferResponseCode>().await?;
-
-        match response {
-            TransferResponseCode::Ok => Ok(()),
-            TransferResponseCode::HashMismatch => Err(error::Send::HashMismatch),
-        }
+        Ok(())
     }
 }
 
@@ -169,17 +189,8 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
         log::info!("File will try to be saved to {}", dest.display());
 
         log::info!("Receiving Transfer information");
-        let mut transfer_data = peer.read_ser_enc::<TransferData>().await?;
+        let transfer_data = peer.read_ser_enc::<TransferData>().await?;
         log::info!("Transfer data received: {transfer_data:?}");
-
-        // NOTE: If the data should be compressed, the sender will send the compressed information again
-        if transfer_data.compressed {
-            channel::send(self.channel.as_ref(), Message::Compression).await;
-
-            log::info!("Receiving tar.gz information");
-            transfer_data = peer.read_ser_enc::<TransferData>().await?;
-            log::info!("tar.gz received: {transfer_data:?}");
-        }
 
         #[allow(clippy::cast_possible_truncation)]
         let progress_len = transfer_data.total_size as usize;
@@ -190,8 +201,6 @@ impl<'a> AportureTransferProtocol<'a, Receiver> {
         } else {
             receive_folder(dest, transfer_data, &mut peer, self.channel.as_ref()).await?
         };
-
-        peer.write_ser_enc(&PairingResponseCode::Ok).await?;
 
         Ok(dest)
     }
@@ -222,36 +231,6 @@ fn get_transfer_data(path: &Path) -> Result<TransferData, error::Send> {
     Ok(transfer_data)
 }
 
-async fn compress_folder<Ep>(
-    transfer_data: &mut TransferData,
-    path: &Path,
-    peer: &mut Ep,
-    channel: Option<&Channel>,
-) -> Result<NamedTempFile, error::Send>
-where
-    Ep: EncryptedSerdeIO + Send,
-{
-    channel::send(channel, Message::Compression).await;
-    transfer_data.compressed = true;
-
-    log::info!("Sending original data information {transfer_data:?}");
-    peer.write_ser_enc(&*transfer_data).await?;
-
-    log::info!("Folder will be compressed as it is too big");
-
-    let p = path.to_owned();
-    let tar_file = tokio::task::spawn_blocking(move || deflate::compress(&p))
-        .await
-        .expect("Task was aborted")?;
-
-    let metadata = tar_file.as_file().metadata()?;
-
-    transfer_data.total_files = 1;
-    transfer_data.total_size = metadata.len();
-
-    Ok(tar_file)
-}
-
 async fn receive_file<Ep>(
     mut dest: PathBuf,
     transfer_data: &TransferData,
@@ -261,7 +240,7 @@ async fn receive_file<Ep>(
 where
     Ep: EncryptedSerdeIO + Send,
 {
-    let mut file = if dest.is_dir() {
+    let file = if dest.is_dir() {
         tempfile::NamedTempFile::new_in(&dest)?
     } else {
         let parent_path = dest
@@ -271,7 +250,21 @@ where
         tempfile::NamedTempFile::new_in(parent_path)?
     };
 
-    file::receive(file.path(), peer, channel).await?;
+    let (data, retry) = file::receive(file.path(), peer, channel).await?;
+    if retry {
+        peer.write_ser_enc(&TransferResponseCode::HashMismatch)
+            .await?;
+        peer.write_ser_enc(&data).await?;
+
+        let (_, mismatch) = file::receive(file.path(), peer, channel).await?;
+
+        if mismatch {
+            peer.write_ser_enc(&TransferResponseCode::TransferFail)
+                .await?;
+
+            return Err(error::Receive::HashMismatch);
+        }
+    }
 
     channel::send(channel, Message::Finished).await;
 
@@ -281,21 +274,14 @@ where
         dest.push(path.normalize());
     }
 
-    let mut dest = file::non_existent_path(dest).await;
+    let dest = file::non_existent_path(dest).await;
 
-    if transfer_data.compressed {
-        channel::send(channel, Message::Uncompressing).await;
-        log::info!("Uncompressing file into path {}", dest.display());
+    log::info!("Persisting file to path {}", dest.display());
 
-        dest = tokio::task::spawn_blocking(move || deflate::uncompress(file.as_file_mut(), dest))
-            .await
-            .expect("Task was aborted")?;
-    } else {
-        log::info!("Persisting file to path {}", dest.display());
+    file.persist(&dest)
+        .map_err(|_| error::Receive::Destination)?;
 
-        file.persist(&dest)
-            .map_err(|_| error::Receive::Destination)?;
-    }
+    peer.write_ser_enc(&TransferResponseCode::Ok).await?;
 
     Ok(dest)
 }
@@ -330,11 +316,31 @@ where
 
     let mut files = 0;
 
+    let mut retries = Vec::new();
+
     while files < transfer_data.total_files {
-        let file_data = file::receive(dir.path(), peer, channel).await?;
+        let (file_data, retry) = file::receive(dir.path(), peer, channel).await?;
 
         if file_data.is_file {
             files += 1;
+        }
+
+        if retry {
+            retries.push(file_data);
+        }
+    }
+
+    for data in retries {
+        peer.write_ser_enc(&TransferResponseCode::HashMismatch)
+            .await?;
+        peer.write_ser_enc(&data).await?;
+
+        let (_, mismatch) = file::receive(dir.path(), peer, channel).await?;
+
+        if mismatch {
+            peer.write_ser_enc(&TransferResponseCode::TransferFail)
+                .await?;
+            return Err(error::Receive::HashMismatch);
         }
     }
 
@@ -350,6 +356,8 @@ where
 
     let tmp = dir.into_path();
     tokio::fs::rename(tmp, &dest).await?;
+
+    peer.write_ser_enc(&TransferResponseCode::Ok).await?;
 
     Ok(dest)
 }

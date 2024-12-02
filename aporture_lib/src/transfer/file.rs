@@ -11,15 +11,15 @@ use typed_path::{Utf8NativePath, Utf8NativePathBuf};
 use crate::crypto;
 use crate::crypto::hasher::Hasher;
 use crate::parser::EncryptedSerdeIO;
-use crate::protocol::{FileData, Hash, TransferResponseCode};
+use crate::protocol::{FileData, Hash};
 use crate::transfer::channel;
 use crate::transfer::channel::{Channel, Message};
 
-const FILE_RETRIES: usize = 3;
 const BUFFER_SIZE: usize = 16 * 1024;
 
 pub async fn send<Ep>(
     peer: &mut Ep,
+    id: usize,
     path: &Path,
     base: &Utf8NativePath,
     channel: Option<&Channel>,
@@ -45,6 +45,7 @@ where
     log::info!("Sending file {}", path);
 
     let file_data = FileData {
+        id: id as u64,
         file_size,
         file_name,
         is_file,
@@ -57,33 +58,35 @@ where
         return Ok(());
     }
 
-    for _ in 0..FILE_RETRIES {
-        let file = OpenOptions::new().read(true).open(&path).await?;
+    // for _ in 0..FILE_RETRIES {
+    let file = OpenOptions::new().read(true).open(&path).await?;
 
-        let hash = hash_and_send(file, peer, channel).await?;
+    let hash = hash_and_send(file, peer, channel).await?;
 
-        peer.write_ser_enc(&Hash(hash)).await?;
+    peer.write_ser_enc(&Hash(hash)).await?;
 
-        let response = peer.read_ser_enc::<TransferResponseCode>().await?;
+    // let response = peer.read_ser_enc::<TransferResponseCode>().await?;
 
-        match response {
-            TransferResponseCode::Ok => return Ok(()),
-            TransferResponseCode::HashMismatch => {
-                log::warn!("Hash mismatch in file transfer for {}, retrying...", path);
-            }
-        }
-    }
+    // match response {
+    // TransferResponseCode::Ok => return Ok(()),
+    // TransferResponseCode::HashMismatch => {
+    // log::warn!("Hash mismatch in file transfer for {}, retrying...", path);
+    // }
+    // }
+    // }
 
-    log::error!("Max retries reached for {}", path);
+    // log::error!("Max retries reached for {}", path);
 
-    Err(super::error::Send::HashMismatch)
+    // Err(super::error::Send::HashMismatch)
+
+    Ok(())
 }
 
 pub async fn receive<Ep>(
     dest: &Path,
     peer: &mut Ep,
     channel: Option<&Channel>,
-) -> Result<FileData, super::error::Receive>
+) -> Result<(FileData, bool), super::error::Receive>
 where
     Ep: EncryptedSerdeIO + Send,
 {
@@ -104,7 +107,7 @@ where
         if !file_data.is_file {
             tokio::fs::create_dir(&path).await?;
 
-            return Ok(file_data);
+            return Ok((file_data, false));
         }
 
         OpenOptions::new()
@@ -116,30 +119,23 @@ where
         OpenOptions::new().write(true).open(&path).await?
     };
 
-    for _ in 0..FILE_RETRIES {
-        log::info!("Receiving file {}", &received_path);
+    log::info!("Receiving file {}", &received_path);
 
-        let hash = hash_and_receive(&mut file, file_data.file_size, peer, channel).await?;
+    let hash = hash_and_receive(&mut file, file_data.file_size, peer, channel).await?;
 
-        log::info!("File received");
+    log::info!("File received");
 
-        let received_hash = peer.read_ser_enc::<Hash>().await?;
+    let received_hash = peer.read_ser_enc::<Hash>().await?;
 
-        if hash == received_hash.0 {
-            peer.write_ser_enc(&TransferResponseCode::Ok).await?;
-
-            return Ok(file_data);
-        }
-
-        log::warn!("Calculated hash and received hash do not match, retrying...");
-
-        peer.write_ser_enc(&TransferResponseCode::HashMismatch)
-            .await?;
+    if hash != received_hash.0 {
+        log::warn!(
+            "Calculated hash and received hash do not match for file {}, id {}",
+            file_data.file_name,
+            file_data.id,
+        );
     }
 
-    log::error!("Hash mismatch after retrying {FILE_RETRIES}");
-
-    Err(super::error::Receive::HashMismatch)
+    Ok((file_data, hash != received_hash.0))
 }
 
 async fn hash_and_send<Ep>(
