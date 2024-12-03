@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, path::PathBuf};
+use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand};
 
@@ -92,5 +92,5 @@ pub enum ContactCommand {
 #[derive(Debug, Subcommand)]
 pub enum ConfigCommand {
     Get,
-    Set { server_address: SocketAddr },
+    Set { server_address: String },
 }

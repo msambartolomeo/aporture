@@ -138,13 +138,11 @@ impl<K: Kind + Send> AporturePairingProtocol<Start<K>> {
     pub async fn connect(self) -> Result<AporturePairingProtocol<KeyExchange<K>>, error::Hello> {
         let config = Config::get().await;
 
-        log::info!(
-            "Connecting to server at {}:{}",
-            config.server_address,
-            config.server_port
-        );
+        let address = config.server_address();
 
-        let server = TcpStream::connect((config.server_address, config.server_port)).await?;
+        log::info!("Connecting to server at {address}");
+
+        let server = TcpStream::connect(address).await?;
         drop(config);
 
         log::info!("Connected to server");

@@ -1,5 +1,3 @@
-use std::net::SocketAddr;
-
 use adw::prelude::*;
 use aporture::fs::config::Config;
 use relm4::prelude::*;
@@ -31,7 +29,7 @@ impl Component for Preferences {
     type Init = ();
     type Input = Msg;
     type Output = ();
-    type CommandOutput = Option<Config>;
+    type CommandOutput = Option<String>;
 
     view! {
         dialog = adw::Window {
@@ -115,8 +113,8 @@ impl Component for Preferences {
         };
 
         sender.oneshot_command(async {
-            let config = *Config::get().await;
-            Some(config)
+            let config = Config::get().await;
+            Some(config.server_domain().to_owned())
         });
 
         let address = &model.server_address;
@@ -130,16 +128,12 @@ impl Component for Preferences {
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, _: &Self::Root) {
         match msg {
             Msg::Return => {
-                if let Ok(server_address) = self.server_address.text().parse::<SocketAddr>() {
-                    sender.oneshot_command(async move {
-                        let address = server_address.ip();
-                        let port = server_address.port();
-                        Config::update_address(address, port).await.ok()
-                    });
-                } else {
-                    sender.input(Msg::Error("Not a valid ip address"));
-                    self.server_address.add_css_class("error");
-                };
+                let address = self.server_address.text().to_string();
+                sender.oneshot_command(async move {
+                    let config = Config::update_address(address).await.ok()?;
+
+                    Some(config.server_domain().to_owned())
+                });
             }
 
             Msg::EditServerAddress => {
@@ -164,10 +158,9 @@ impl Component for Preferences {
         sender: ComponentSender<Self>,
         _: &Self::Root,
     ) {
-        if let Some(config) = message {
+        if let Some(address) = message {
             if self.server_address.text_length() == 0 {
-                self.server_address
-                    .set_text(&format!("{}:{}", config.server_address, config.server_port));
+                self.server_address.set_text(&address);
             } else {
                 emit!(() => sender);
                 self.visible = false;

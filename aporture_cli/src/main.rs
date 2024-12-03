@@ -101,15 +101,12 @@ async fn main() -> Result<()> {
                 let config = Config::get().await;
 
                 println!(
-                    "Current server address: {}:{}",
-                    config.server_address, config.server_port
+                    "Current configured server address: {}",
+                    config.server_domain()
                 );
             }
             ConfigCommand::Set { server_address } => {
-                let address = server_address.ip();
-                let port = server_address.port();
-
-                Config::update_address(address, port).await?;
+                let _ = Config::update_address(server_address).await?;
             }
         },
     };

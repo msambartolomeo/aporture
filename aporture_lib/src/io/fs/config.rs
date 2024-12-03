@@ -19,35 +19,39 @@ const DEFAULT_SERVER_PORT: u16 = 8765;
 
 static CONFIG: OnceCell<RwLock<Config>> = OnceCell::const_new();
 
-#[allow(clippy::unsafe_derive_deserialize)]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct Config {
-    pub server_address: IpAddr,
-    pub server_port: u16,
-    pub password_salt: Salt,
+    server_domain: String,
+    server_address: IpAddr,
+    server_port: u16,
+    password_salt: Salt,
 }
 
 parse!(Config);
 
-impl Default for Config {
-    fn default() -> Self {
+impl Config {
+    async fn default() -> Self {
         let mut salt = Salt::default();
 
         rand::thread_rng().fill_bytes(&mut salt);
 
+        let server_domain = DEFAULT_SERVER_ADDRESS
+            .unwrap_or("aporture.duckdns.org")
+            .to_string();
+
+        let address = lookup_host(&server_domain)
+            .await
+            .unwrap_or_else(|_| ([127, 0, 0, 1], DEFAULT_SERVER_PORT).into());
+
         Self {
-            server_address: DEFAULT_SERVER_ADDRESS
-                .unwrap_or("127.0.0.1")
-                .parse()
-                .unwrap_or_else(|_| IpAddr::from([127, 0, 0, 1])),
-            server_port: DEFAULT_SERVER_PORT,
+            server_domain,
+            server_address: address.ip(),
+            server_port: address.port(),
             password_salt: salt,
         }
     }
-}
 
-impl Config {
     pub async fn get() -> RwLockReadGuard<'static, Self> {
         if let Some(config) = CONFIG.get() {
             config.read().await
@@ -59,10 +63,12 @@ impl Config {
                     } else {
                         log::info!("Using default config");
                         log::warn!("Could not find config file, creating");
-                        Self::create_file()
-                            .await
-                            .inspect_err(|_| log::warn!("Error creating config file"))
-                            .unwrap_or_default()
+                        if let Ok(c) = Self::create_file().await {
+                            c
+                        } else {
+                            log::warn!("Error creating config file");
+                            Self::default().await
+                        }
                     };
 
                     RwLock::new(config)
@@ -76,6 +82,16 @@ impl Config {
     #[must_use]
     pub fn server_address(&self) -> SocketAddr {
         (self.server_address, self.server_port).into()
+    }
+
+    #[must_use]
+    pub const fn password_salt(&self) -> &[u8] {
+        &self.password_salt
+    }
+
+    #[must_use]
+    pub fn server_domain(&self) -> &str {
+        &self.server_domain
     }
 
     async fn from_file() -> Result<Self, crate::io::Error> {
@@ -99,7 +115,7 @@ impl Config {
 
         log::info!("Getting config from {}", config_dir.display());
 
-        let config = Self::default();
+        let config = Self::default().await;
 
         let mut manager = FileManager::new(config_dir);
 
@@ -108,19 +124,24 @@ impl Config {
         Ok(config)
     }
 
-    pub async fn update_address(address: IpAddr, port: u16) -> Result<Self, crate::io::Error> {
+    pub async fn update_address(
+        address: String,
+    ) -> Result<RwLockReadGuard<'static, Self>, crate::io::Error> {
         if !CONFIG.initialized() {
             let _ = Self::get().await;
         }
 
         let mut config = CONFIG.get().expect("Should be created above").write().await;
 
-        config.server_address = address;
-        config.server_port = port;
+        let server_address = lookup_host(&address).await?;
+
+        config.server_domain = address;
+        config.server_address = server_address.ip();
+        config.server_port = server_address.port();
 
         config.save().await?;
 
-        Ok(*config)
+        Ok(config.downgrade())
     }
 
     async fn save(&self) -> Result<(), crate::io::Error> {
@@ -142,4 +163,14 @@ impl Config {
 
         Ok(path)
     }
+}
+
+async fn lookup_host(address: &str) -> Result<SocketAddr, crate::io::Error> {
+    if let Ok(a) = tokio::net::lookup_host(address.to_owned()).await {
+        a
+    } else {
+        tokio::net::lookup_host(format!("{address}:{DEFAULT_SERVER_PORT}")).await?
+    }
+    .find(std::net::SocketAddr::is_ipv4)
+    .ok_or(crate::io::Error::Config)
 }

@@ -43,7 +43,7 @@ impl Contacts {
     pub async fn empty(password: &[u8]) -> Result<Self, crate::io::Error> {
         let path = path()?;
 
-        let key = Hasher::derive_key(password, &Config::get().await.password_salt);
+        let key = Hasher::derive_key(password, Config::get().await.password_salt());
 
         let cipher = Cipher::new(&key);
 
@@ -58,7 +58,7 @@ impl Contacts {
     pub async fn load(password: &[u8]) -> Result<Self, crate::io::Error> {
         let path = path()?;
 
-        let key = Hasher::derive_key(password, &Config::get().await.password_salt);
+        let key = Hasher::derive_key(password, Config::get().await.password_salt());
 
         let cipher = Cipher::new(&key);
 
