@@ -41,6 +41,12 @@ pub enum State {
 }
 
 #[derive(Debug)]
+pub enum TransferType {
+    Send(Params),
+    Receive(Params),
+}
+
+#[derive(Debug)]
 pub enum PassphraseMethod {
     Direct(Vec<u8>),
     Contact(String, Arc<Mutex<Contacts>>),
@@ -85,7 +91,7 @@ pub enum ContactAction {
 
 #[relm4::component(pub)]
 impl Component for Peer {
-    type Init = ();
+    type Init = TransferType;
     type Input = Msg;
     type Output = Result<ContactAction, Error>;
     type CommandOutput = Result<ContactAction, Error>;
@@ -146,9 +152,9 @@ impl Component for Peer {
     }
 
     fn init(
-        _init: Self::Init,
+        init: Self::Init,
         root: Self::Root,
-        _sender: ComponentSender<Self>,
+        sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let model = Self {
             visible: false,
@@ -164,6 +170,11 @@ impl Component for Peer {
         let pb = &model.progress_bar;
 
         let widgets = view_output!();
+
+        match init {
+            TransferType::Send(params) => sender.input(Msg::SendFile(params)),
+            TransferType::Receive(params) => sender.input(Msg::ReceiveFile(params)),
+        }
 
         ComponentParts { model, widgets }
     }

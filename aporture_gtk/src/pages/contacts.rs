@@ -12,7 +12,7 @@ use tokio::sync::Mutex;
 use crate::components::confirmation::Confirmation;
 use crate::components::file_chooser;
 use crate::components::modal::aporture::{ContactAction, Params, PassphraseMethod, Peer};
-use crate::components::modal::aporture::{Error as AportureError, Msg as AportureMsg};
+use crate::components::modal::aporture::{Error as AportureError, TransferType};
 use crate::components::toaster::Severity;
 use crate::{app, emit};
 
@@ -26,7 +26,6 @@ pub struct ContactPage {
     sender_picker_dialog: Controller<OpenDialog>,
     sender_dir_picker_dialog: Controller<OpenDialog>,
     receiver_picker_dialog: Controller<OpenDialog>,
-    aporture_dialog: Controller<Peer>,
 }
 
 impl ContactPage {
@@ -81,11 +80,6 @@ impl Component for ContactPage {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let aporture_dialog = Peer::builder()
-            .transient_for(&root)
-            .launch(())
-            .forward(sender.input_sender(), Msg::AportureFinished);
-
         let sender_picker_dialog = OpenDialog::builder()
             .transient_for_native(&root)
             .launch(OpenDialogSettings::default())
@@ -127,7 +121,6 @@ impl Component for ContactPage {
             sender_picker_dialog,
             sender_dir_picker_dialog,
             receiver_picker_dialog,
-            aporture_dialog,
         };
 
         let contacts_box = model.contacts_ui.widget();
@@ -172,21 +165,23 @@ impl Component for ContactPage {
 
                 log::info!("Starting sender worker");
 
-                self.aporture_dialog
-                    .emit(AportureMsg::SendFile(Params::new(passphrase, path, None)));
+                Peer::builder()
+                    .transient_for(root)
+                    .launch(TransferType::Send(Params::new(passphrase, path, None)))
+                    .forward(sender.input_sender(), Msg::AportureFinished)
+                    .detach_runtime();
             }
 
-            Msg::ReceiveFile(name, destination) => {
+            Msg::ReceiveFile(name, path) => {
                 let passphrase = PassphraseMethod::Contact(name, self.contacts());
 
                 log::info!("Starting sender worker");
 
-                self.aporture_dialog
-                    .emit(AportureMsg::ReceiveFile(Params::new(
-                        passphrase,
-                        destination,
-                        None,
-                    )));
+                Peer::builder()
+                    .transient_for(root)
+                    .launch(TransferType::Receive(Params::new(passphrase, path, None)))
+                    .forward(sender.input_sender(), Msg::AportureFinished)
+                    .detach_runtime();
             }
 
             Msg::SenderPickerOpen(index) => {

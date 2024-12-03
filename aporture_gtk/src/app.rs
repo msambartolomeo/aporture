@@ -221,7 +221,7 @@ impl Component for App {
 
             Msg::About => {
                 let about_dialog = adw::AboutDialog::builder()
-                    .application_icon("dev.msambartolomeo.aporture")
+                    // .application_icon("dev.msambartolomeo.aporture")
                     .website("https://github.com/msambartolomeo/aporture")
                     .developer_name("Mauro Sambartolomeo")
                     .application_name("Aporture")

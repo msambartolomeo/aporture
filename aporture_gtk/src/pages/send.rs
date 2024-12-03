@@ -15,7 +15,7 @@ use aporture::passphrase;
 
 use crate::components::file_chooser;
 use crate::components::modal::aporture::{ContactAction, Params, PassphraseMethod, Peer};
-use crate::components::modal::aporture::{Error as AportureError, Msg as AportureMsg};
+use crate::components::modal::aporture::{Error as AportureError, TransferType};
 use crate::components::toaster::Severity;
 use crate::{app, emit};
 
@@ -32,7 +32,6 @@ pub struct SenderPage {
     file_picker_dialog: Controller<OpenDialog>,
     directory_picker_dialog: Controller<OpenDialog>,
     contacts: Option<Arc<Mutex<Contacts>>>,
-    aporture_dialog: Controller<Peer>,
     form_disabled: bool,
 }
 
@@ -190,11 +189,6 @@ impl Component for SenderPage {
                 OpenDialogResponse::Cancel => Msg::Ignore,
             });
 
-        let aporture_dialog = Peer::builder()
-            .transient_for(&root)
-            .launch(())
-            .forward(sender.input_sender(), Msg::AportureFinished);
-
         let model = Self {
             passphrase_entry: adw::EntryRow::default(),
             file_entry: adw::ActionRow::default(),
@@ -205,7 +199,6 @@ impl Component for SenderPage {
             file_picker_dialog,
             directory_picker_dialog,
             contacts: None,
-            aporture_dialog,
             form_disabled: false,
         };
 
@@ -301,8 +294,11 @@ impl Component for SenderPage {
 
                 log::info!("Starting sender worker");
 
-                self.aporture_dialog
-                    .emit(AportureMsg::SendFile(Params::new(passphrase, path, save)));
+                Peer::builder()
+                    .transient_for(root)
+                    .launch(TransferType::Send(Params::new(passphrase, path, save)))
+                    .forward(sender.input_sender(), Msg::AportureFinished)
+                    .detach_runtime();
             }
 
             Msg::AportureFinished(result) => {

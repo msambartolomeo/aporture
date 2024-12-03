@@ -11,7 +11,7 @@ use tokio::sync::Mutex;
 use aporture::fs::contacts::Contacts;
 
 use crate::components::modal::aporture::{ContactAction, Params, PassphraseMethod, Peer};
-use crate::components::modal::aporture::{Error as AportureError, Msg as AportureMsg};
+use crate::components::modal::aporture::{Error as AportureError, TransferType};
 use crate::components::toaster::Severity;
 use crate::{app, emit};
 
@@ -25,7 +25,6 @@ pub struct ReceiverPage {
     destination: Option<PathBuf>,
     directory_picker_dialog: Controller<OpenDialog>,
     contacts: Option<Arc<Mutex<Contacts>>>,
-    aporture_dialog: Controller<Peer>,
     form_disabled: bool,
 }
 
@@ -42,10 +41,11 @@ pub enum Msg {
 }
 
 #[relm4::component(pub)]
-impl SimpleComponent for ReceiverPage {
+impl Component for ReceiverPage {
     type Init = ();
     type Input = Msg;
     type Output = app::Request;
+    type CommandOutput = ();
 
     view! {
         adw::PreferencesGroup {
@@ -132,11 +132,6 @@ impl SimpleComponent for ReceiverPage {
                 OpenDialogResponse::Cancel => Msg::Ignore,
             });
 
-        let aporture_dialog = Peer::builder()
-            .transient_for(&root)
-            .launch(())
-            .forward(sender.input_sender(), Msg::AportureFinished);
-
         let model = Self {
             passphrase_entry: adw::EntryRow::default(),
             file_entry: adw::ActionRow::default(),
@@ -146,7 +141,6 @@ impl SimpleComponent for ReceiverPage {
             destination: aporture::fs::downloads_directory(),
             directory_picker_dialog,
             contacts: None,
-            aporture_dialog,
             form_disabled: false,
         };
 
@@ -160,7 +154,7 @@ impl SimpleComponent for ReceiverPage {
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
+    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, root: &Self::Root) {
         match msg {
             Msg::ReceiveFile => {
                 self.form_disabled = true;
@@ -179,19 +173,18 @@ impl SimpleComponent for ReceiverPage {
 
                     (contact, contacts)
                 });
-                let destination = self
+                let path = self
                     .destination
                     .clone()
                     .expect("Should have destination to be able to call send");
 
                 log::info!("Starting receiver worker");
 
-                self.aporture_dialog
-                    .emit(AportureMsg::ReceiveFile(Params::new(
-                        passphrase,
-                        destination,
-                        save,
-                    )));
+                Peer::builder()
+                    .transient_for(root)
+                    .launch(TransferType::Receive(Params::new(passphrase, path, save)))
+                    .forward(sender.input_sender(), Msg::AportureFinished)
+                    .detach_runtime();
             }
 
             Msg::AportureFinished(result) => {
