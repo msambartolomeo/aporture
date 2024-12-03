@@ -116,8 +116,9 @@ impl QuicConnection {
     }
 
     fn transport_config() -> Arc<TransportConfig> {
-        let mut transport_config = TransportConfig::default();
-        transport_config.max_idle_timeout(None);
+        let transport_config = TransportConfig::default();
+        // NOTE: Keep default timeout
+        // transport_config.max_idle_timeout(None);
         Arc::new(transport_config)
     }
 
