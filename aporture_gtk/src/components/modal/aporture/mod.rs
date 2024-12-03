@@ -20,14 +20,11 @@ mod protocol;
 
 #[derive(Debug)]
 pub struct Peer {
-    visible: bool,
     pulser: Option<JoinHandle<()>>,
     progress_bar: gtk::ProgressBar,
     progress_text: String,
     total: usize,
     current: usize,
-    icon: &'static str,
-    title: String,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -44,6 +41,42 @@ pub enum State {
 pub enum TransferType {
     Send(Params),
     Receive(Params),
+}
+
+impl TransferType {
+    const fn icon(&self) -> &'static str {
+        match self {
+            Self::Send(_) => icon_names::SEND,
+            Self::Receive(_) => icon_names::INBOX,
+        }
+    }
+
+    fn title(&self) -> String {
+        match self {
+            Self::Send(params) => match params.passphrase {
+                PassphraseMethod::Direct(ref passphrase) => {
+                    let passphrase = String::from_utf8(passphrase.clone())
+                        .expect("Should have been created via ui");
+
+                    format!("Sending file with passphrase:\n{passphrase}")
+                }
+                PassphraseMethod::Contact(ref contact, ..) => {
+                    format!("Sending file to contact\n{contact}")
+                }
+            },
+            Self::Receive(params) => match params.passphrase {
+                PassphraseMethod::Direct(ref passphrase) => {
+                    let passphrase = String::from_utf8(passphrase.clone())
+                        .expect("Should have been created via ui");
+
+                    format!("Receiving file with passphrase:\n{passphrase}")
+                }
+                PassphraseMethod::Contact(ref contact, ..) => {
+                    format!("Receiving file from contact\n{contact}")
+                }
+            },
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -75,10 +108,9 @@ impl Params {
 
 #[derive(Debug)]
 pub enum Msg {
-    SendFile(Params),
-    ReceiveFile(Params),
-    UpdateState(State),
     Pulse,
+    Cancel,
+    UpdateState(State),
     Progress(usize),
 }
 
@@ -98,15 +130,14 @@ impl Component for Peer {
 
     view! {
         dialog = adw::Window {
-            #[watch]
-            set_visible: model.visible,
+            set_visible: true,
             set_modal: true,
             set_title: Some("Transferring file"),
 
             grab_focus: (),
 
             set_default_width: 250,
-            set_default_height: 300,
+            set_default_height: 350,
 
             adw::ToolbarView {
                 set_top_bar_style: adw::ToolbarStyle::Flat,
@@ -122,16 +153,21 @@ impl Component for Peer {
                     set_spacing: 25,
 
                     gtk::Image {
-                        #[watch]
-                        set_icon_name: Some(model.icon),
+                        set_icon_name: Some(icon),
                         add_css_class: "big-icon",
                     },
 
                     gtk::Label {
                         set_justify: gtk::Justification::Center,
 
-                        #[watch]
-                        set_text: &model.title,
+                        set_text: &title,
+                    },
+
+                    gtk::Button {
+                        add_css_class: "suggested-action",
+
+                        set_label: "Cancel",
+                        connect_clicked => Msg::Cancel,
                     },
 
                     #[local_ref]
@@ -144,10 +180,6 @@ impl Component for Peer {
                     },
                 },
             },
-
-            connect_close_request => |_| {
-                gtk::glib::Propagation::Stop
-            }
         }
     }
 
@@ -156,12 +188,13 @@ impl Component for Peer {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
+        let icon = init.icon();
+
+        let title = init.title();
+
         let model = Self {
-            visible: false,
             pulser: None,
             progress_bar: gtk::ProgressBar::default(),
-            icon: icon_names::SEND,
-            title: String::default(),
             progress_text: String::new(),
             total: 0,
             current: 0,
@@ -172,51 +205,19 @@ impl Component for Peer {
         let widgets = view_output!();
 
         match init {
-            TransferType::Send(params) => sender.input(Msg::SendFile(params)),
-            TransferType::Receive(params) => sender.input(Msg::ReceiveFile(params)),
+            TransferType::Send(params) => {
+                sender.oneshot_command(protocol::send(sender.clone(), params));
+            }
+            TransferType::Receive(params) => {
+                sender.oneshot_command(protocol::receive(sender.clone(), params));
+            }
         }
 
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, _: &Self::Root) {
+    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, root: &Self::Root) {
         match msg {
-            Msg::SendFile(params) => {
-                self.icon = icon_names::SEND;
-                self.title = match params.passphrase {
-                    PassphraseMethod::Direct(ref passphrase) => {
-                        let passphrase = String::from_utf8(passphrase.clone())
-                            .expect("Should have been created via ui");
-
-                        format!("Sending file with passphrase:\n{passphrase}")
-                    }
-                    PassphraseMethod::Contact(ref contact, ..) => {
-                        format!("Sending file to contact\n{contact}")
-                    }
-                };
-                self.visible = true;
-
-                sender.oneshot_command(protocol::send(sender.clone(), params));
-            }
-
-            Msg::ReceiveFile(params) => {
-                self.icon = icon_names::INBOX;
-                self.title = match params.passphrase {
-                    PassphraseMethod::Direct(ref passphrase) => {
-                        let passphrase = String::from_utf8(passphrase.clone())
-                            .expect("Should have been created via ui");
-
-                        format!("Receiving file with passphrase:\n{passphrase}")
-                    }
-                    PassphraseMethod::Contact(ref contact, ..) => {
-                        format!("Receiving file from contact\n{contact}")
-                    }
-                };
-                self.visible = true;
-
-                sender.oneshot_command(protocol::receive(sender.clone(), params));
-            }
-
             Msg::UpdateState(state) => {
                 self.progress_text = match state {
                     State::Initial => {
@@ -258,6 +259,8 @@ impl Component for Peer {
                 self.progress_bar.set_fraction(fraction);
                 self.progress_text = format!("{:.2}%", fraction * 100.0);
             }
+
+            Msg::Cancel => root.close(),
         }
     }
 
@@ -265,10 +268,10 @@ impl Component for Peer {
         &mut self,
         message: Self::CommandOutput,
         sender: ComponentSender<Self>,
-        _: &Self::Root,
+        root: &Self::Root,
     ) {
         emit!(message => sender);
         self.pulser.take().as_ref().map(JoinHandle::abort);
-        self.visible = false;
+        root.close();
     }
 }
