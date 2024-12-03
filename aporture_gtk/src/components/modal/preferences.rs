@@ -44,7 +44,7 @@ impl Component for Preferences {
             grab_focus: (),
 
             set_default_width: 400,
-            set_default_height: 500,
+            set_default_height: 450,
 
             adw::ToolbarView {
                 set_top_bar_style: adw::ToolbarStyle::Raised,

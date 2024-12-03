@@ -2,11 +2,9 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 
 use generic_array::GenericArray;
-use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{OnceCell, RwLock, RwLockReadGuard};
 
-use crate::crypto::hasher::Salt;
 use crate::parse;
 use crate::parser::{Parser, SerdeIO};
 
@@ -25,17 +23,12 @@ pub struct Config {
     server_domain: String,
     server_address: IpAddr,
     server_port: u16,
-    password_salt: Salt,
 }
 
 parse!(Config);
 
 impl Config {
     async fn default() -> Self {
-        let mut salt = Salt::default();
-
-        rand::thread_rng().fill_bytes(&mut salt);
-
         let server_domain = DEFAULT_SERVER_ADDRESS
             .unwrap_or("aporture.duckdns.org")
             .to_string();
@@ -48,7 +41,6 @@ impl Config {
             server_domain,
             server_address: address.ip(),
             server_port: address.port(),
-            password_salt: salt,
         }
     }
 
@@ -82,11 +74,6 @@ impl Config {
     #[must_use]
     pub fn server_address(&self) -> SocketAddr {
         (self.server_address, self.server_port).into()
-    }
-
-    #[must_use]
-    pub const fn password_salt(&self) -> &[u8] {
-        &self.password_salt
     }
 
     #[must_use]

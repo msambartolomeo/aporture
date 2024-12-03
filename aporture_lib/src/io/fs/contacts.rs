@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::crypto::cipher::Cipher;
 use crate::crypto::hasher::Hasher;
 use crate::crypto::Key;
-use crate::fs::config::Config;
+use crate::fs::salt::Salt;
 use crate::fs::EncryptedFileManager;
 use crate::parse;
 use crate::parser::{EncryptedSerdeIO, Parser};
@@ -43,7 +43,7 @@ impl Contacts {
     pub async fn empty(password: &[u8]) -> Result<Self, crate::io::Error> {
         let path = path()?;
 
-        let key = Hasher::derive_key(password, Config::get().await.password_salt());
+        let key = Hasher::derive_key(password, &Salt::get().await.0);
 
         let cipher = Cipher::new(&key);
 
@@ -58,7 +58,7 @@ impl Contacts {
     pub async fn load(password: &[u8]) -> Result<Self, crate::io::Error> {
         let path = path()?;
 
-        let key = Hasher::derive_key(password, Config::get().await.password_salt());
+        let key = Hasher::derive_key(password, &Salt::get().await.0);
 
         let cipher = Cipher::new(&key);
 

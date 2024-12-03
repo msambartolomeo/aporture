@@ -9,6 +9,7 @@ use crate::parser::{EncryptedSerdeIO, Parser, SerdeIO};
 
 pub mod config;
 pub mod contacts;
+pub mod salt;
 
 #[derive(Debug)]
 struct FileManager {
