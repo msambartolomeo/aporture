@@ -1,7 +1,7 @@
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
-use typed_path::Utf8NativePathBuf;
+use typed_path::Utf8PlatformPathBuf;
 
 pub async fn non_existant(mut path: PathBuf) -> PathBuf {
     let mut suffix = 0;
@@ -59,8 +59,8 @@ pub fn sanitize(path: &Path) -> Result<PathBuf, std::io::Error> {
     Ok(sanitized)
 }
 
-pub fn native(path: &Path) -> Utf8NativePathBuf {
-    Utf8NativePathBuf::from(
+pub fn platform(path: &Path) -> Utf8PlatformPathBuf {
+    Utf8PlatformPathBuf::from(
         path.as_os_str()
             .to_str()
             .expect("Should be valid utf8 as path was sanitized"),

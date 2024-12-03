@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
-use typed_path::Utf8NativePathBuf;
+use typed_path::Utf8UnixPathBuf;
 use walkdir::WalkDir;
 
 use self::channel::{Channel, Message};
@@ -83,7 +83,7 @@ impl<'a> AportureTransferProtocol<'a, Sender> {
         let progress_len = transfer_data.total_size as usize;
         channel::send(self.channel.as_ref(), Message::ProgressSize(progress_len)).await;
 
-        let base = path::native(&path);
+        let base = path::platform(&path);
         let is_dir = transfer_data.total_files > 1;
 
         log::info!("Sending files...");
@@ -254,9 +254,11 @@ where
     channel::send(channel, Message::Finished).await;
 
     if dest.is_dir() {
-        let path = Utf8NativePathBuf::from(&transfer_data.root_name);
+        let path = Utf8UnixPathBuf::from(&transfer_data.root_name)
+            .normalize()
+            .with_platform_encoding();
 
-        dest.push(path.normalize());
+        dest.push(path);
     }
 
     let dest = path::non_existant(dest).await;
@@ -332,9 +334,11 @@ where
     channel::send(channel, Message::Finished).await;
 
     if dest.is_dir() {
-        let path = Utf8NativePathBuf::from(&transfer_data.root_name);
+        let path = Utf8UnixPathBuf::from(&transfer_data.root_name)
+            .normalize()
+            .with_platform_encoding();
 
-        dest.push(path.normalize());
+        dest.push(path);
     }
 
     let dest = path::non_existant(dest).await;

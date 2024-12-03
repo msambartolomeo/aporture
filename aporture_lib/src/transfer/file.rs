@@ -2,7 +2,7 @@ use std::path::Path;
 
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
-use typed_path::{Utf8NativePath, Utf8UnixPathBuf};
+use typed_path::{Utf8PlatformPath, Utf8UnixPathBuf};
 
 use crate::crypto;
 use crate::crypto::hasher::Hasher;
@@ -17,7 +17,7 @@ pub async fn send<Ep>(
     peer: &mut Ep,
     id: usize,
     path: &Path,
-    base: &Utf8NativePath,
+    base: &Utf8PlatformPath,
     channel: Option<&Channel>,
 ) -> Result<(), super::error::Send>
 where
@@ -26,7 +26,7 @@ where
     let is_file = path.is_file();
     let file_size = if is_file { path.metadata()?.len() } else { 0 };
 
-    let path = path::native(path);
+    let path = path::platform(path);
 
     let file_name = path
         .strip_prefix(base)
@@ -68,13 +68,12 @@ where
     Ep: EncryptedSerdeIO + Send,
 {
     let file_data = peer.read_ser_enc::<FileData>().await?;
-    let received_path = Utf8UnixPathBuf::from(&file_data.file_name).normalize();
-    let mut path = path::native(dest);
+    let received_path = Utf8UnixPathBuf::from(&file_data.file_name)
+        .normalize()
+        .with_platform_encoding();
+    let mut path = path::platform(dest);
 
     let mut file = if dest.is_dir() {
-        #[cfg(target_os = "windows")]
-        path.push(received_path.with_windows_encoding());
-        #[cfg(not(target_os = "windows"))]
         path.push(&received_path);
 
         if !file_data.is_file {
