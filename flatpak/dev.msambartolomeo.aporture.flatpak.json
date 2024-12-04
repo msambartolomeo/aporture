@@ -32,12 +32,10 @@
             "buildsystem": "simple",
             "build-options": {
                 "env": {
-                    "CARGO_HOME": "/run/build/aporture/cargo",
-                    "SERVER_ADDRESS": "${SERVER_ADDRESS}"
+                    "CARGO_HOME": "/run/build/aporture/cargo"
                 }
             },
             "build-commands": [
-                "echo SERVER_ADDRESS is set to: $SERVER_ADDRESS",
                 "cargo --offline fetch --manifest-path Cargo.toml --verbose",
                 "cargo --offline build --release --verbose",
                 "install -Dm755 ./target/release/aporture_gtk -t /app/bin/"

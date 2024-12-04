@@ -24,11 +24,8 @@ Requires `flatpak` and `flatpak-builder` to be installed, and `envsubst` to set 
 To build the app as flatpak run the following commands in the `../flatpak` folder
 
 ```bash
-# Replace server address
-SERVER_ADDRESS=<SERVER_ADDRESS> envsubst < dev.msambartolomeo.aporture.flatpak.json > flatpak.json
-
 # Build and install
-flatpak-builder --force-clean --user --install-deps-from=flathub --repo=repo --install builddir flatpak.json
+flatpak-builder --force-clean --user --install-deps-from=flathub --repo=repo --install builddir dev.msambartolomeo.aporture.flatpak.json
 
 # Produce .flatpak to share
 flatpak build-bundle repo aporture.flatpak dev.msambartolomeo.aporture --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo
