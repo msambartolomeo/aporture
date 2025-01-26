@@ -75,10 +75,10 @@ fn handle_sender(
     drop(map);
 }
 
-async fn handle_receiver<'a>(
+async fn handle_receiver(
     connection: Connection,
     id: &[u8],
-    mut map: MutexGuard<'a, HashMap<[u8; 32], Connection>>,
+    mut map: MutexGuard<'_, HashMap<[u8; 32], Connection>>,
 ) {
     log::info!("received hello from receiver from {}", connection.address);
     let mut receiver = connection;

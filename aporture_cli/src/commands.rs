@@ -137,7 +137,7 @@ pub async fn delete_contact(contacts: &mut Holder, name: String) -> Result<()> {
 
     let confirmation = tokio::io::stdin().read_u8().await? as char;
 
-    if confirmation.to_ascii_lowercase() == 'y' {
+    if confirmation.eq_ignore_ascii_case(&'y') {
         let deleted = contacts.delete(&name);
         if deleted {
             println!("Contact deleted");
