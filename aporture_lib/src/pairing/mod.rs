@@ -330,12 +330,14 @@ impl AporturePairingProtocol<Negotiation<Receiver>> {
 
 impl<K: Kind + Send> AporturePairingProtocol<Negotiation<K>> {
     pub async fn enable_upnp(&mut self) -> Result<(), upnp::Error> {
-        let mut gateway = upnp::Gateway::new().await?;
+        let mut gateway =
+            tokio::time::timeout(Duration::from_secs(2), upnp::Gateway::new()).await??;
 
         let socket = UdpSocket::bind(ANY_ADDR)?;
         let local_port = socket.local_addr()?.port();
 
-        let external_address = gateway.open_port(local_port).await?;
+        let external_address =
+            tokio::time::timeout(Duration::from_secs(2), gateway.open_port(local_port)).await??;
 
         let socket = UdpSocketAddr {
             socket,
@@ -445,13 +447,13 @@ async fn get_external_socket() -> Result<UdpSocketAddr, crate::io::Error> {
 
     let mut address = None;
 
-    for _ in 0..15 {
+    for _ in 0..5 {
         socket.send_to(&request, server_address).await?;
 
         let mut buf = vec![0; 32];
 
         if let Ok(Ok((len, from))) =
-            tokio::time::timeout(Duration::from_secs(2), socket.recv_from(&mut buf)).await
+            tokio::time::timeout(Duration::from_millis(500), socket.recv_from(&mut buf)).await
         {
             if from != server_address {
                 continue;

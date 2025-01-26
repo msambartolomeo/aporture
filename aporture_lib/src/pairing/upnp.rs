@@ -92,6 +92,8 @@ pub enum Error {
     ClosePort,
     #[error("Could not perform operation on gateway")]
     UPnP,
+    #[error("Timeout")]
+    Timeout(#[from] tokio::time::error::Elapsed),
 }
 
 impl From<igd::RemovePortError> for Error {
