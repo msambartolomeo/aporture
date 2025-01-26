@@ -43,6 +43,12 @@ async fn main() -> Result<()> {
     match args.command {
         Commands::Send { path, method, save } => {
             let passphrase_method = if let Some(passphrase) = method.passphrase {
+                println!("Your passphrase is '{}'", passphrase.green().bold());
+
+                println!(
+                    "Share it with your {}",
+                    "peer".bright_cyan().bold().underline()
+                );
                 Method::Direct(passphrase)
             } else if let Some(ref name) = method.contact {
                 let contacts = contacts_holder.get_or_init().await?;
@@ -60,6 +66,8 @@ async fn main() -> Result<()> {
             save,
         } => {
             let passphrase_method = if let Some(passphrase) = method.passphrase {
+                println!("Your passphrase is '{}'", passphrase.green().bold());
+
                 Method::Direct(passphrase)
             } else if let Some(ref name) = method.contact {
                 let contacts = contacts_holder.get_or_init().await?;

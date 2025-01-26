@@ -12,16 +12,7 @@ pub enum Method<'a> {
 
 pub fn get(method: Method) -> Result<Vec<u8>> {
     match method {
-        Method::Direct(passphrase) => {
-            println!("Your passphrase is '{}'", passphrase.green().bold());
-
-            // println!(
-            //     "Share it with your {}",
-            //     "peer".bright_cyan().bold().underline()
-            // );
-
-            Ok(passphrase.into_bytes())
-        }
+        Method::Direct(passphrase) => Ok(passphrase.into_bytes()),
         Method::Generate => {
             let passphrase = aporture::passphrase::generate(3);
 
