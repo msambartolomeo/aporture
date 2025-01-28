@@ -9,7 +9,7 @@ use crate::crypto::cipher::Cipher;
 use crate::net::quic::QuicConnection;
 use crate::pairing::PairInfo;
 
-const RETRIES: usize = 10;
+const RETRIES: usize = 5;
 
 type AddressError = (crate::io::Error, SocketAddr);
 
@@ -94,7 +94,7 @@ pub async fn bind(
     let handle = keepalive(s, destination);
 
     let timeout = tokio::time::timeout(
-        Duration::from_secs(10),
+        Duration::from_secs(15),
         QuicConnection::server(destination, socket, cipher, certificate, handle),
     );
 
@@ -123,7 +123,7 @@ pub async fn connect(
     let handle = keepalive(s, a);
 
     let timeout = tokio::time::timeout(
-        Duration::from_secs(10),
+        Duration::from_secs(15),
         QuicConnection::client(a, socket, cipher, certificate, handle),
     );
 
@@ -137,6 +137,11 @@ pub async fn connect(
 
 fn keepalive(socket: UdpSocket, peer: SocketAddr) -> JoinHandle<()> {
     tokio::spawn(async move {
+        let _ = socket.send_to(b"ka", peer);
+        let _ = socket.send_to(b"ka", peer);
+        let _ = socket.send_to(b"ka", peer);
+        let _ = socket.send_to(b"ka", peer);
+
         loop {
             let _ = socket.send_to(b"ka", peer);
             tokio::time::sleep(Duration::from_secs(10)).await;
