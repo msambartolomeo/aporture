@@ -73,7 +73,7 @@ where
         .with_platform_encoding();
     let mut path = path::platform(dest);
 
-    let mut file = if dest.is_dir() {
+    let file = if dest.is_dir() {
         path.push(&received_path);
 
         if !file_data.is_file {
@@ -93,7 +93,7 @@ where
 
     log::info!("Receiving file {}", &received_path);
 
-    let hash = hash_and_receive(&mut file, file_data.file_size, peer, channel).await?;
+    let hash = hash_and_receive(file, file_data.file_size, peer, channel).await?;
 
     log::info!("File received");
 
@@ -118,7 +118,7 @@ async fn hash_and_send<Ep>(
 where
     Ep: EncryptedSerdeIO + Send,
 {
-    let mut reader = BufReader::new(file);
+    let mut reader = BufReader::with_capacity(10 * BUFFER_SIZE, file);
     let mut hasher = Hasher::default();
     let mut buffer = vec![0; BUFFER_SIZE];
 
@@ -138,7 +138,7 @@ where
 }
 
 async fn hash_and_receive<Ep>(
-    file: &mut File,
+    file: File,
     file_size: u64,
     receiver: &mut Ep,
     channel: Option<&Channel>,
@@ -146,7 +146,7 @@ async fn hash_and_receive<Ep>(
 where
     Ep: EncryptedSerdeIO + Send,
 {
-    let mut writer = BufWriter::new(file);
+    let mut writer = BufWriter::with_capacity(10 * BUFFER_SIZE, file);
     let mut hasher = Hasher::default();
     let mut buffer = vec![0; BUFFER_SIZE];
 
