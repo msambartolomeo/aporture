@@ -1,4 +1,5 @@
 use std::fmt::Display;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -8,6 +9,7 @@ use crate::parser::{EncryptedSerdeIO, Parser, SerdeIO};
 
 pub mod config;
 pub mod contacts;
+pub mod salt;
 
 #[derive(Debug)]
 struct FileManager {
@@ -45,9 +47,22 @@ struct EncryptedFileManager {
 }
 
 impl EncryptedFileManager {
-    pub fn new(path: PathBuf, cipher: Cipher) -> Self {
+    pub const fn new(path: PathBuf, cipher: Cipher) -> Self {
         let manager = FileManager::new(path);
         Self { manager, cipher }
+    }
+
+    fn write_ser_enc_blocking<P: Parser + Sync>(&self, input: &P) -> Result<(), crate::io::Error> {
+        let mut input = input.serialize_to();
+
+        let (nonce, tag) = self.cipher.encrypt(&mut input);
+
+        let mut file = std::fs::File::create(&self.manager.path)?;
+        file.write_all(&nonce)?;
+        file.write_all(&input)?;
+        file.write_all(&tag)?;
+
+        Ok(())
     }
 }
 
@@ -95,7 +110,7 @@ impl EncryptedSerdeIO for EncryptedFileManager {
         Ok(deserialized)
     }
 
-    async fn read_enc(&mut self, buffer: &mut [u8]) -> Result<(), crate::io::Error> {
+    async fn read_enc(&mut self, buffer: &mut [u8]) -> Result<usize, crate::io::Error> {
         let mut nonce = [0; 12];
         let mut tag = [0; 16];
 
@@ -107,7 +122,7 @@ impl EncryptedSerdeIO for EncryptedFileManager {
 
         self.cipher.decrypt(buffer, &nonce, &tag)?;
 
-        Ok(())
+        Ok(buffer.len())
     }
 }
 

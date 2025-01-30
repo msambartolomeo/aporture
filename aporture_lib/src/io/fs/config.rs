@@ -1,11 +1,11 @@
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
-use std::sync::OnceLock;
 
-use rand::RngCore;
+use generic_array::GenericArray;
 use serde::{Deserialize, Serialize};
+use tokio::sync::{OnceCell, RwLock, RwLockReadGuard};
 
-use crate::crypto::hasher::Salt;
+use crate::parse;
 use crate::parser::{Parser, SerdeIO};
 
 use crate::fs::FileManager;
@@ -15,54 +15,70 @@ const CONFIG_FILE_NAME: &str = "config.app";
 const DEFAULT_SERVER_ADDRESS: Option<&str> = option_env!("SERVER_ADDRESS");
 const DEFAULT_SERVER_PORT: u16 = 8765;
 
-static CONFIG: OnceLock<Config> = OnceLock::new();
+static CONFIG: OnceCell<RwLock<Config>> = OnceCell::const_new();
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Config {
-    pub server_address: IpAddr,
-    pub server_port: u16,
-    pub password_salt: Salt,
+    server_domain: String,
+    server_address: IpAddr,
+    server_port: u16,
 }
 
-impl Parser for Config {
-    type MinimumSerializedSize = generic_array::typenum::U0;
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        let mut salt = Salt::default();
-
-        rand::thread_rng().fill_bytes(&mut salt);
-
-        Self {
-            server_address: DEFAULT_SERVER_ADDRESS
-                .unwrap_or("127.0.0.1")
-                .parse()
-                .unwrap_or_else(|_| IpAddr::from([127, 0, 0, 1])),
-            server_port: DEFAULT_SERVER_PORT,
-            password_salt: salt,
-        }
-    }
-}
+parse!(Config);
 
 impl Config {
-    pub async fn get() -> &'static Self {
-        if let Some(config) = CONFIG.get() {
-            config
-        } else {
-            let config = if let Ok(config) = Self::from_file().await {
-                config
-            } else {
-                log::info!("Using default config");
-                log::warn!("Could not find config file, creating");
-                Self::create_file().await.unwrap_or_else(|_| {
-                    log::warn!("Error creating config file");
-                    Self::default()
-                })
-            };
+    async fn default() -> Self {
+        let server_domain = DEFAULT_SERVER_ADDRESS
+            .unwrap_or("aporture.duckdns.org")
+            .to_string();
 
-            CONFIG.get_or_init(|| config)
+        let address = lookup_host(&server_domain)
+            .await
+            .unwrap_or_else(|_| ([127, 0, 0, 1], DEFAULT_SERVER_PORT).into());
+
+        Self {
+            server_domain,
+            server_address: address.ip(),
+            server_port: address.port(),
         }
+    }
+
+    pub async fn get() -> RwLockReadGuard<'static, Self> {
+        if let Some(config) = CONFIG.get() {
+            config.read().await
+        } else {
+            CONFIG
+                .get_or_init(|| async {
+                    let config = if let Ok(config) = Self::from_file().await {
+                        config
+                    } else {
+                        log::info!("Using default config");
+                        log::warn!("Could not find config file, creating");
+                        if let Ok(c) = Self::create_file().await {
+                            c
+                        } else {
+                            log::warn!("Error creating config file");
+                            Self::default().await
+                        }
+                    };
+
+                    RwLock::new(config)
+                })
+                .await
+                .read()
+                .await
+        }
+    }
+
+    #[must_use]
+    pub fn server_address(&self) -> SocketAddr {
+        (self.server_address, self.server_port).into()
+    }
+
+    #[must_use]
+    pub fn server_domain(&self) -> &str {
+        &self.server_domain
     }
 
     async fn from_file() -> Result<Self, crate::io::Error> {
@@ -86,13 +102,45 @@ impl Config {
 
         log::info!("Getting config from {}", config_dir.display());
 
-        let config = Self::default();
+        let config = Self::default().await;
 
         let mut manager = FileManager::new(config_dir);
 
         manager.write_ser(&config).await.ok();
 
         Ok(config)
+    }
+
+    pub async fn update_address(
+        address: String,
+    ) -> Result<RwLockReadGuard<'static, Self>, crate::io::Error> {
+        if !CONFIG.initialized() {
+            let _ = Self::get().await;
+        }
+
+        let mut config = CONFIG.get().expect("Should be created above").write().await;
+
+        let server_address = lookup_host(&address).await?;
+
+        config.server_domain = address;
+        config.server_address = server_address.ip();
+        config.server_port = server_address.port();
+
+        config.save().await?;
+
+        Ok(config.downgrade())
+    }
+
+    async fn save(&self) -> Result<(), crate::io::Error> {
+        let path = Self::path()?;
+
+        log::info!("Saving config to {}", path.display());
+
+        let mut manager = FileManager::new(path);
+
+        manager.write_ser(self).await?;
+
+        Ok(())
     }
 
     fn path() -> Result<PathBuf, crate::io::Error> {
@@ -102,4 +150,14 @@ impl Config {
 
         Ok(path)
     }
+}
+
+async fn lookup_host(address: &str) -> Result<SocketAddr, crate::io::Error> {
+    if let Ok(a) = tokio::net::lookup_host(address.to_owned()).await {
+        a
+    } else {
+        tokio::net::lookup_host(format!("{address}:{DEFAULT_SERVER_PORT}")).await?
+    }
+    .find(std::net::SocketAddr::is_ipv4)
+    .ok_or(crate::io::Error::Config)
 }

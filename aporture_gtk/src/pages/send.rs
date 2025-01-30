@@ -1,18 +1,23 @@
+use std::ffi::OsStr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use adw::prelude::*;
+use gtk::gdk::Display;
+use open_dialog::{OpenDialog, OpenDialogResponse, OpenDialogSettings};
 use relm4::prelude::*;
-use relm4_components::open_dialog::{
-    OpenDialog, OpenDialogMsg, OpenDialogResponse, OpenDialogSettings,
-};
+use relm4_components::open_dialog;
 use relm4_icons::icon_names;
-use tokio::sync::RwLock;
+use tokio::sync::Mutex;
 
-use crate::app;
-use crate::components::dialog::peer::{self, PassphraseMethod, Peer};
 use aporture::fs::contacts::Contacts;
 use aporture::passphrase;
+
+use crate::components::file_chooser;
+use crate::components::modal::aporture::{ContactAction, Params, PassphraseMethod, Peer};
+use crate::components::modal::aporture::{Error as AportureError, TransferType};
+use crate::components::toaster::Severity;
+use crate::{app, emit};
 
 const PASSPHRASE_WORD_COUNT: usize = 3;
 
@@ -25,8 +30,8 @@ pub struct SenderPage {
     passphrase_length: u32,
     file_path: Option<PathBuf>,
     file_picker_dialog: Controller<OpenDialog>,
-    contacts: Option<Arc<RwLock<Contacts>>>,
-    aporture_dialog: Controller<Peer>,
+    directory_picker_dialog: Controller<OpenDialog>,
+    contacts: Option<Arc<Mutex<Contacts>>>,
     form_disabled: bool,
 }
 
@@ -34,20 +39,23 @@ pub struct SenderPage {
 pub enum Msg {
     GeneratePassphrase,
     PassphraseChanged,
+    FocusEditPassword,
+    CopyPassword,
     SaveContact,
-    ContactsReady(Option<Arc<RwLock<Contacts>>>),
+    ContactsReady(Option<Arc<Mutex<Contacts>>>),
     FilePickerOpen,
     FilePickerResponse(PathBuf),
     SendFile,
-    SendFileFinished,
+    AportureFinished(Result<ContactAction, AportureError>),
     Ignore,
 }
 
 #[relm4::component(pub)]
-impl SimpleComponent for SenderPage {
+impl Component for SenderPage {
     type Init = ();
     type Input = Msg;
     type Output = app::Request;
+    type CommandOutput = ();
 
     view! {
         adw::PreferencesGroup {
@@ -73,26 +81,60 @@ impl SimpleComponent for SenderPage {
                 #[watch]
                 set_sensitive: !model.form_disabled,
 
+                add_css_class: "no-edit-button",
+
                 set_can_focus: false,
 
                 connect_changed => Msg::PassphraseChanged,
 
+                #[name = "random"]
                 add_suffix = &gtk::Button {
                     set_icon_name: icon_names::UPDATE,
+
+                    set_tooltip_text: Some("Generate passphrase"),
 
                     add_css_class: "flat",
                     add_css_class: "circular",
 
                     connect_clicked => Msg::GeneratePassphrase,
+
+                },
+
+                #[name = "edit"]
+                add_suffix = &gtk::Button {
+                    set_icon_name: icon_names::EDIT,
+
+                    set_tooltip_text: Some("Edit manually"),
+
+                    add_css_class: "flat",
+                    add_css_class: "circular",
+
+                    connect_clicked => Msg::FocusEditPassword,
+                },
+
+                #[name = "copy"]
+                add_suffix = &gtk::Button {
+                    set_icon_name: icon_names::COPY,
+
+                    set_tooltip_text: Some("Copy"),
+
+                    add_css_class: "flat",
+                    add_css_class: "circular",
+
+                    connect_clicked => Msg::CopyPassword,
                 },
             },
 
             #[local_ref]
             file_path_entry -> adw::ActionRow {
                 set_title: "File",
+                #[watch]
+                set_subtitle: &model.file_path.as_ref().map_or("Select file to send".to_owned(), |p| p.display().to_string()),
 
                 add_suffix = &gtk::Button {
                     set_icon_name: icon_names::SEARCH_FOLDER,
+
+                    set_tooltip_text: Some("Select files to send"),
 
                     add_css_class: "flat",
                     add_css_class: "circular",
@@ -136,10 +178,16 @@ impl SimpleComponent for SenderPage {
                 OpenDialogResponse::Cancel => Msg::Ignore,
             });
 
-        let aporture_dialog = Peer::builder()
-            .transient_for(&root)
-            .launch(())
-            .forward(sender.input_sender(), |_| Msg::SendFileFinished); // TODO: Handle Errors
+        let directory_picker_dialog = OpenDialog::builder()
+            .transient_for_native(&root)
+            .launch(OpenDialogSettings {
+                folder_mode: true,
+                ..Default::default()
+            })
+            .forward(sender.input_sender(), |response| match response {
+                OpenDialogResponse::Accept(path) => Msg::FilePickerResponse(path),
+                OpenDialogResponse::Cancel => Msg::Ignore,
+            });
 
         let model = Self {
             passphrase_entry: adw::EntryRow::default(),
@@ -149,8 +197,8 @@ impl SimpleComponent for SenderPage {
             passphrase_length: 1,
             file_path: None,
             file_picker_dialog,
+            directory_picker_dialog,
             contacts: None,
-            aporture_dialog,
             form_disabled: false,
         };
 
@@ -164,7 +212,7 @@ impl SimpleComponent for SenderPage {
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
+    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, root: &Self::Root) {
         match msg {
             Msg::GeneratePassphrase => self
                 .passphrase_entry
@@ -172,26 +220,51 @@ impl SimpleComponent for SenderPage {
 
             Msg::PassphraseChanged => self.passphrase_length = self.passphrase_entry.text_length(),
 
+            Msg::FocusEditPassword => {
+                self.passphrase_entry.grab_focus_without_selecting();
+            }
+
+            Msg::CopyPassword => {
+                let Some(clipboard) = Display::default().as_ref().map(DisplayExt::clipboard) else {
+                    emit!(app::Request::ToastS("Could not copy to clipboard", Severity::Error) => sender);
+
+                    return;
+                };
+
+                let text = self.passphrase_entry.text().to_string();
+
+                clipboard.set_text(&text);
+
+                emit!(app::Request::ToastS("Coppied passphrase to clipboard", Severity::Info) => sender);
+            }
+
             Msg::SaveContact => {
                 if self.contacts.is_none() && self.save_contact.is_active() {
-                    sender
-                        .output_sender()
-                        .send(app::Request::Contacts)
-                        .expect("Controller not dropped");
+                    emit!(app::Request::Contacts => sender);
                 }
             }
 
             Msg::ContactsReady(contacts) => {
-                if contacts.is_none() {
-                    self.save_contact.set_active(false);
+                if self.contacts.is_none() {
+                    if let Some(contacts) = contacts {
+                        self.contacts = Some(contacts);
+                    } else {
+                        self.save_contact.set_active(false);
+                    }
                 }
-                self.contacts = contacts;
             }
 
-            Msg::FilePickerOpen => self.file_picker_dialog.emit(OpenDialogMsg::Open),
+            Msg::FilePickerOpen => file_chooser::choose(
+                root,
+                self.file_picker_dialog.sender().clone(),
+                self.directory_picker_dialog.sender().clone(),
+            ),
 
             Msg::FilePickerResponse(path) => {
-                let name = path.file_name().expect("Must be a file").to_string_lossy();
+                let name = path
+                    .file_name()
+                    .unwrap_or_else(|| OsStr::new("/"))
+                    .to_string_lossy();
                 self.file_entry.set_subtitle(&name);
 
                 self.file_path = Some(path);
@@ -205,32 +278,40 @@ impl SimpleComponent for SenderPage {
                 log::info!("Selected passphrase is {}", passphrase);
 
                 let passphrase = PassphraseMethod::Direct(passphrase.into_bytes());
-
                 let save = self.save_contact.is_active().then(|| {
-                    (
-                        self.contact_entry.text().to_string(),
-                        self.contacts
-                            .clone()
-                            .expect("Must exist if contact was filled"),
-                    )
+                    let contact = self.contact_entry.text().to_string();
+                    let contacts = self
+                        .contacts
+                        .clone()
+                        .expect("Should be loaded as save contact is true");
+
+                    (contact, contacts)
                 });
+                let path = self
+                    .file_path
+                    .clone()
+                    .expect("Should have file to be able to call send");
 
                 log::info!("Starting sender worker");
 
-                self.aporture_dialog.emit(peer::Msg::SendFile {
-                    passphrase,
-                    path: self.file_path.clone().expect("Button disabled if None"),
-                    save,
-                });
-
-                sender
-                    .output_sender()
-                    .send(app::Request::Contacts)
-                    .expect("Controller not dropped");
+                Peer::builder()
+                    .transient_for(root)
+                    .launch(TransferType::Send(Params::new(passphrase, path, save)))
+                    .forward(sender.input_sender(), Msg::AportureFinished)
+                    .detach_runtime();
             }
 
-            Msg::SendFileFinished => {
+            Msg::AportureFinished(result) => {
                 log::info!("Finished sender worker");
+
+                match result {
+                    Ok(ContactAction::Added) => emit!(app::Request::Contacts => sender),
+                    Ok(ContactAction::PeerRefused) => {
+                        emit!(app::Request::ToastS("Peer refused to save contact", Severity::Warn) => sender);
+                    }
+                    Ok(ContactAction::NoOp) => {}
+                    Err(e) => emit!(app::Request::Toast(e.to_string(), Severity::Error) => sender),
+                }
 
                 self.form_disabled = false;
             }

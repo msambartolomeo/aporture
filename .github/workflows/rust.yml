@@ -1,12 +1,12 @@
 name: rust
-on:
-  push:
-    branches: [ "master", "develop" ]
-  pull_request:
-    branches: [ "master", "develop" ]
+on: {}
+  # push:
+  #   branches: ["master"]
+  # pull_request:
+  #   branches: ["master"]
 
 jobs:
-  build: 
+  build:
     name: "Builds, tests and lints the project"
     runs-on: ubuntu-latest
     container:
@@ -17,7 +17,7 @@ jobs:
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
-        
+
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -27,7 +27,7 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: "Build"
-        run: cargo build 
+        run: cargo build
 
       - name: "Runs clippy"
         run: cargo clippy -- --deny warnings

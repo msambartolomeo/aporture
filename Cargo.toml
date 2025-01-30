@@ -4,16 +4,18 @@ resolver = "2"
 members = ["aporture_lib", "aporture_cli", "aporture_server", "aporture_gtk"]
 
 [workspace.lints.clippy]
-pedantic = "deny"
-nursery = "deny"
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
 unwrap_used = "deny"
-# TODO: Remove when adding docs
 missing_panics_doc = "allow"
 missing_errors_doc = "allow"
 
 [workspace.dependencies]
 aporture = { path = "./aporture_lib", package = "aporture_lib", default-features = false }
-tokio = { version = "1.40.0", features = ["full"] }
-log = "0.4.22"
-env_logger = "0.11.5"
-thiserror = "1.0.63"
+tokio = { version = "1.43.0", features = ["full"] }
+log = "0.4.25"
+env_logger = "0.11.6"
+thiserror = "2.0.11"
+
+[profile.release]
+lto = true

@@ -2,13 +2,15 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use chrono::{DateTime, Local};
+use generic_array::GenericArray;
 use serde::{Deserialize, Serialize};
 
 use crate::crypto::cipher::Cipher;
 use crate::crypto::hasher::Hasher;
 use crate::crypto::Key;
-use crate::fs::config::Config;
+use crate::fs::salt::Salt;
 use crate::fs::EncryptedFileManager;
+use crate::parse;
 use crate::parser::{EncryptedSerdeIO, Parser};
 
 const CONTACTS_FILE_NAME: &str = "contacts.app";
@@ -30,9 +32,7 @@ pub struct Content {
     map: HashMap<String, Contact>,
 }
 
-impl Parser for Content {
-    type MinimumSerializedSize = generic_array::typenum::U0;
-}
+parse!(Content);
 
 impl Contacts {
     #[must_use]
@@ -43,7 +43,7 @@ impl Contacts {
     pub async fn empty(password: &[u8]) -> Result<Self, crate::io::Error> {
         let path = path()?;
 
-        let key = Hasher::derive_key(password, &Config::get().await.password_salt);
+        let key = Hasher::derive_key(password, &Salt::get().await.0);
 
         let cipher = Cipher::new(&key);
 
@@ -58,7 +58,7 @@ impl Contacts {
     pub async fn load(password: &[u8]) -> Result<Self, crate::io::Error> {
         let path = path()?;
 
-        let key = Hasher::derive_key(password, &Config::get().await.password_salt);
+        let key = Hasher::derive_key(password, &Salt::get().await.0);
 
         let cipher = Cipher::new(&key);
 
@@ -77,7 +77,15 @@ impl Contacts {
     pub async fn save(&mut self) -> Result<(), crate::io::Error> {
         log::info!("Saving contacts to {}", self.manager);
 
-        self.manager.write_ser_enc(&self.content).await.ok();
+        self.manager.write_ser_enc(&self.content).await?;
+
+        Ok(())
+    }
+
+    pub fn save_blocking(&mut self) -> Result<(), crate::io::Error> {
+        log::info!("Saving contacts to {}", self.manager);
+
+        self.manager.write_ser_enc_blocking(&self.content)?;
 
         Ok(())
     }
@@ -103,8 +111,8 @@ impl Contacts {
         self.add(new_name, key);
     }
 
-    pub fn delete(&mut self, name: &str) {
-        self.content.map.remove(name);
+    pub fn delete(&mut self, name: &str) -> bool {
+        self.content.map.remove(name).is_some()
     }
 
     pub fn list(&self) -> impl Iterator<Item = (&String, DateTime<Local>)> {

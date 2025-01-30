@@ -69,18 +69,18 @@ fn handle_sender(
     id: [u8; 32],
     mut map: MutexGuard<'_, HashMap<[u8; 32], Connection>>,
 ) {
-    log::info!("received hello from sender");
+    log::info!("received hello from sender from {}", connection.address);
     map.insert(id, connection);
 
     drop(map);
 }
 
-async fn handle_receiver<'a>(
+async fn handle_receiver(
     connection: Connection,
     id: &[u8],
-    mut map: MutexGuard<'a, HashMap<[u8; 32], Connection>>,
+    mut map: MutexGuard<'_, HashMap<[u8; 32], Connection>>,
 ) {
-    log::info!("received hello from receiver");
+    log::info!("received hello from receiver from {}", connection.address);
     let mut receiver = connection;
     let Some(mut sender) = map.remove(id) else {
         drop(map);

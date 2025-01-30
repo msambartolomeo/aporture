@@ -41,5 +41,15 @@ impl From<spake2::Error> for KeyExchange {
 }
 
 #[derive(Debug, Error)]
-#[error("Error exchanging defined addresses with peer: {0}")]
-pub struct Negotiation(#[from] crate::io::Error);
+pub enum Negotiation {
+    #[error("Error exchanging defined addresses with peer: {0}")]
+    Network(#[from] crate::io::Error),
+    #[error("Invalid key derivation")]
+    CertificateCreation,
+}
+
+impl From<crate::crypto::Error> for Negotiation {
+    fn from(_: crate::crypto::Error) -> Self {
+        Self::CertificateCreation
+    }
+}

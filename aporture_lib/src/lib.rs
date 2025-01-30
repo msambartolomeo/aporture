@@ -2,7 +2,7 @@ pub mod io;
 pub mod protocol;
 
 pub use io::net;
-pub use io::parser;
+pub use protocol::parser;
 
 #[cfg(feature = "full")]
 pub use io::fs;
@@ -15,3 +15,9 @@ pub mod pairing;
 pub mod passphrase;
 #[cfg(feature = "full")]
 pub mod transfer;
+
+pub trait State {}
+pub struct Sender {}
+impl State for Sender {}
+pub struct Receiver {}
+impl State for Receiver {}

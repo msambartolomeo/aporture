@@ -1,10 +1,16 @@
+#![allow(clippy::similar_names)]
+
 use std::path::PathBuf;
 
 use anyhow::{bail, Result};
 use colored::Colorize;
+use tokio::io::AsyncReadExt;
 
 use crate::contacts::Holder;
-use aporture::pairing::{AporturePairingProtocol, Receiver, Sender};
+use crate::progress;
+use aporture::pairing::AporturePairingProtocol;
+use aporture::transfer::AportureTransferProtocol;
+use aporture::{Receiver, Sender};
 
 pub async fn send(
     passphrase: Vec<u8>,
@@ -24,7 +30,14 @@ pub async fn send(
         "peer".bright_cyan().bold().underline()
     );
 
-    aporture::transfer::send_file(&path, &mut pair_info).await?;
+    let mut atp = AportureTransferProtocol::<Sender>::new(&mut pair_info, &path);
+
+    let (snd, rcv) = tokio::sync::mpsc::channel(64);
+
+    atp.add_progress_notifier(snd);
+    progress::init_progress_bar(rcv);
+
+    atp.transfer().await?;
 
     let save_confirmation = pair_info.save_contact;
 
@@ -36,7 +49,7 @@ pub async fn send(
         if save_confirmation {
             println!("Saving key for contact {}...", name.bright_blue().bold());
 
-            let contacts = contacts.get_or_init().await?;
+            let contacts = contacts.get_mut_or_init().await?;
 
             contacts.replace(name, old_contact, key);
         } else {
@@ -66,7 +79,18 @@ pub async fn receive(
         "peer".bright_cyan().bold().underline()
     );
 
-    let path = aporture::transfer::receive_file(destination, &mut pair_info).await?;
+    let Some(destination) = destination.or_else(aporture::fs::downloads_directory) else {
+        bail!("Could not find destination directory");
+    };
+
+    let mut atp = AportureTransferProtocol::<Receiver>::new(&mut pair_info, &destination);
+
+    let (snd, rcv) = tokio::sync::mpsc::channel(64);
+
+    atp.add_progress_notifier(snd);
+    progress::init_progress_bar(rcv);
+
+    let path = atp.transfer().await?;
 
     let accepted_save_contact = pair_info.save_contact;
 
@@ -79,7 +103,7 @@ pub async fn receive(
         if accepted_save_contact {
             println!("Saving key for contact {}...", name.bright_blue().bold());
 
-            let contacts = contacts.get_or_init().await?;
+            let contacts = contacts.get_mut_or_init().await?;
 
             contacts.replace(name, old_contact, key);
         } else {
@@ -91,7 +115,7 @@ pub async fn receive(
     Ok(())
 }
 
-pub async fn list_contacts(contacts: &mut Holder) -> Result<()> {
+pub async fn list_contacts(contacts: &Holder) -> Result<()> {
     let contacts = contacts.get_or_init().await?;
 
     let mut builder = tabled::builder::Builder::new();
@@ -102,6 +126,28 @@ pub async fn list_contacts(contacts: &mut Holder) -> Result<()> {
     let mut table = builder.build();
     table.with(tabled::settings::Style::markdown());
     println!("\n{table}\n");
+
+    Ok(())
+}
+
+pub async fn delete_contact(contacts: &mut Holder, name: String) -> Result<()> {
+    let contacts = contacts.get_mut_or_init().await?;
+
+    println!("Delete contact {}? y/N", name.red());
+
+    let confirmation = tokio::io::stdin().read_u8().await? as char;
+
+    if confirmation.eq_ignore_ascii_case(&'y') {
+        let deleted = contacts.delete(&name);
+        if deleted {
+            println!("Contact deleted");
+            contacts.save().await?;
+        } else {
+            println!("Contact not found");
+        }
+    } else {
+        println!("Canceled");
+    }
 
     Ok(())
 }
@@ -123,7 +169,7 @@ pub async fn pair_start(passphrase: Vec<u8>, name: String, contacts: &mut Holder
         name.bright_blue().bold().underline()
     );
 
-    let contacts = contacts.get_or_init().await?;
+    let contacts = contacts.get_mut_or_init().await?;
     contacts.add(name, key);
 
     Ok(())
@@ -146,7 +192,7 @@ pub async fn pair_complete(passphrase: Vec<u8>, name: String, contacts: &mut Hol
         name.bright_blue().bold().underline()
     );
 
-    let contacts = contacts.get_or_init().await?;
+    let contacts = contacts.get_mut_or_init().await?;
     contacts.add(name, key);
 
     Ok(())

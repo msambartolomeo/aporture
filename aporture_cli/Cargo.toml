@@ -1,6 +1,6 @@
 [package]
 name = "aporture_cli"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -9,11 +9,12 @@ edition = "2021"
 workspace = true
 
 [dependencies]
-clap = { version = "4.5.17", features = ["derive"] }
-tabled = { version = "0.16.0", default-features = false, features = ["std"] }
-anyhow = "1.0.87"
+clap = { version = "4.5.27", features = ["derive"] }
+tabled = { version = "0.17.0", default-features = false, features = ["std"] }
+anyhow = "1.0.95"
 rpassword = "7.3.1"
-colored = "2.1.0"
+colored = "3.0.0"
+indicatif = "0.17.9"
 
 # NOTE: Shared dependencies
 aporture = { workspace = true, features = ["full"] }

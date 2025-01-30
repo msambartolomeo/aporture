@@ -1,15 +1,16 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
 use clap::Parser;
 use colored::Colorize;
 
-use aporture::fs::contacts::Contacts;
-use args::{Cli, Commands, PairCommand};
+use aporture::fs::{config::Config, contacts::Contacts};
+use args::{Cli, Commands, ConfigCommand, ContactCommand, PairCommand};
 use passphrase::Method;
 
 mod args;
 mod commands;
 mod contacts;
 mod passphrase;
+mod progress;
 
 fn init_logger() {
     use std::io::Write;
@@ -41,11 +42,13 @@ async fn main() -> Result<()> {
 
     match args.command {
         Commands::Send { path, method, save } => {
-            if !path.is_file() {
-                bail!("{} is not a valid file", path.display())
-            }
-
             let passphrase_method = if let Some(passphrase) = method.passphrase {
+                println!("Your passphrase is '{}'", passphrase.green().bold());
+
+                println!(
+                    "Share it with your {}",
+                    "peer".bright_cyan().bold().underline()
+                );
                 Method::Direct(passphrase)
             } else if let Some(ref name) = method.contact {
                 let contacts = contacts_holder.get_or_init().await?;
@@ -63,6 +66,8 @@ async fn main() -> Result<()> {
             save,
         } => {
             let passphrase_method = if let Some(passphrase) = method.passphrase {
+                println!("Your passphrase is '{}'", passphrase.green().bold());
+
                 Method::Direct(passphrase)
             } else if let Some(ref name) = method.contact {
                 let contacts = contacts_holder.get_or_init().await?;
@@ -74,9 +79,14 @@ async fn main() -> Result<()> {
 
             commands::receive(passphrase, save, method.contact, &mut contacts_holder, path).await?;
         }
-        Commands::Contacts => {
+        Commands::Contacts { command } => {
             if Contacts::exists() {
-                commands::list_contacts(&mut contacts_holder).await?;
+                match command {
+                    ContactCommand::List => commands::list_contacts(&contacts_holder).await?,
+                    ContactCommand::Delete { name } => {
+                        commands::delete_contact(&mut contacts_holder, name).await?;
+                    }
+                }
             } else {
                 println!("No contacts found");
             }
@@ -92,6 +102,19 @@ async fn main() -> Result<()> {
                 let passphrase = passphrase::get(Method::Direct(passphrase))?;
 
                 commands::pair_complete(passphrase, name, &mut contacts_holder).await?;
+            }
+        },
+        Commands::Config { command } => match command {
+            ConfigCommand::Get => {
+                let config = Config::get().await;
+
+                println!(
+                    "Current configured server address: {}",
+                    config.server_domain()
+                );
+            }
+            ConfigCommand::Set { server_address } => {
+                let _ = Config::update_address(server_address).await?;
             }
         },
     };

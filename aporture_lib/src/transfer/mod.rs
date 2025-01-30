@@ -1,197 +1,352 @@
-use std::net::SocketAddr;
+use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::time::Duration;
 
-use tokio::net::{TcpListener, TcpStream};
-use tokio::task::JoinSet;
+use typed_path::Utf8UnixPathBuf;
+use walkdir::WalkDir;
 
-use crate::crypto::cipher::Cipher;
-use crate::net::EncryptedNetworkPeer;
+use self::channel::{Channel, Message};
+use crate::net::peer::{Encryptable, Peer};
 use crate::pairing::PairInfo;
 use crate::parser::EncryptedSerdeIO;
-use crate::protocol::{FileData, TransferHello, TransferResponseCode};
+use crate::protocol::{FileData, TransferData, TransferResponseCode};
+use crate::{Receiver, Sender, State};
 
+mod channel;
+mod connection;
+mod deflate;
 mod error;
+mod file;
+mod path;
+
+pub use channel::Message as ChannelMessage;
 pub use error::{Receive as ReceiveError, Send as SendError};
 
-pub async fn send_file(path: &Path, pair_info: &mut PairInfo) -> Result<(), error::Send> {
-    let Some(file_name) = path.file_name() else {
-        return Err(error::Send::Path);
-    };
+pub struct AportureTransferProtocol<'a, S: State> {
+    pair_info: &'a mut PairInfo,
+    path: &'a Path,
+    channel: Option<Channel>,
+    _phantom: PhantomData<S>,
+}
 
-    // TODO: Find better alternative
-    // NOTE: Sleep to give time to receiver to bind
-    tokio::time::sleep(Duration::from_secs(1)).await;
-
-    let options = pair_info
-        .addresses()
-        .into_iter()
-        .fold(JoinSet::new(), |mut set, a| {
-            set.spawn(connect(a, pair_info.cipher()));
-            set
-        });
-
-    let mut peer = find_peer(options, pair_info).await;
-
-    // TODO: Buffer file
-    let mut file = tokio::fs::read(path).await?;
-
-    let hash = blake3::hash(&file);
-
-    let file_data = FileData {
-        hash: *hash.as_bytes(),
-        file_size: file.len().to_be_bytes(),
-        // TODO: Test if this works cross platform (test also file_name.to_string_lossy())
-        file_name: file_name.to_owned(),
-    };
-
-    peer.write_ser_enc(&file_data).await?;
-    peer.write_enc(&mut file).await?;
-
-    let response = peer.read_ser_enc::<TransferResponseCode>().await?;
-
-    match response {
-        TransferResponseCode::Ok => {
-            log::info!("File transferred correctly");
-            Ok(())
-        }
-        TransferResponseCode::HashMismatch => {
-            log::error!("Hash mismatch in file transfer");
-            Err(error::Send::HashMismatch)
-        }
+impl<S: State> AportureTransferProtocol<'_, S> {
+    pub fn add_progress_notifier(&mut self, channel: Channel) {
+        self.channel = Some(channel);
     }
 }
 
-pub async fn receive_file(
-    dest: Option<PathBuf>,
-    pair_info: &mut PairInfo,
-) -> Result<PathBuf, error::Receive> {
-    let mut dest = dest
-        .or_else(crate::fs::downloads_directory)
-        .ok_or(ReceiveError::Directory)?;
-
-    let options = pair_info
-        .bind_addresses()
-        .into_iter()
-        .fold(JoinSet::new(), |mut set, (b, a)| {
-            set.spawn(bind(b, a, pair_info.cipher()));
-            set
-        });
-
-    let mut peer = find_peer(options, pair_info).await;
-
-    let file_data = peer.read_ser_enc::<FileData>().await?;
-
-    if dest.is_dir() {
-        dest.push(file_data.file_name);
+impl<'a> AportureTransferProtocol<'a, Sender> {
+    pub fn new(pair_info: &'a mut PairInfo, path: &'a Path) -> Self {
+        AportureTransferProtocol {
+            pair_info,
+            path,
+            channel: None,
+            _phantom: PhantomData,
+        }
     }
 
-    let mut file = vec![0; usize::from_be_bytes(file_data.file_size)];
+    pub async fn transfer(self) -> Result<(), error::Send> {
+        let connection = connection::find(self.pair_info).await;
 
-    peer.read_enc(&mut file).await?;
+        if let Some(connection) = connection {
+            let peer = connection.new_stream().await?;
 
-    let hash = blake3::hash(&file);
+            self.transfer_peer(peer).await?;
 
-    let response = if hash == file_data.hash {
-        TransferResponseCode::Ok
+            connection.finish().await;
+        } else {
+            log::info!("Timeout waiting for peer connection, using server fallback");
+            let peer = self
+                .pair_info
+                .fallback()
+                .expect("Connection to server must exist")
+                .add_cipher(self.pair_info.cipher());
+
+            self.transfer_peer(peer).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn transfer_peer<Ep>(self, mut peer: Ep) -> Result<(), error::Send>
+    where
+        Ep: Encryptable + Peer + Send,
+    {
+        let path = path::sanitize(self.path).map_err(|_| error::Send::Path)?;
+
+        log::info!("Sending file {}", path.display());
+        let transfer_data = get_transfer_data(&path)?;
+
+        log::info!("Sending transfer data information {transfer_data:?}");
+        peer.write_ser_enc(&transfer_data).await?;
+
+        #[allow(clippy::cast_possible_truncation)]
+        let progress_len = transfer_data.total_size as usize;
+        channel::send(self.channel.as_ref(), Message::ProgressSize(progress_len)).await;
+
+        let base = path::platform(&path);
+        let is_dir = transfer_data.total_files > 1;
+
+        log::info!("Sending files...");
+
+        for (id, entry) in WalkDir::new(&path)
+            .follow_links(true)
+            .sort_by_file_name()
+            .into_iter()
+            .enumerate()
+            .filter(|(id, _)| !is_dir || *id != 0)
+        {
+            file::send(&mut peer, id, entry?.path(), &base, self.channel.as_ref()).await?;
+        }
+
+        loop {
+            let res = peer.read_ser_enc::<TransferResponseCode>().await?;
+
+            match res {
+                TransferResponseCode::Ok => break,
+                TransferResponseCode::HashMismatch => {
+                    let res = peer.read_ser_enc::<FileData>().await?;
+
+                    #[allow(clippy::cast_possible_truncation)]
+                    let id = res.id as usize;
+
+                    let Some(entry) = WalkDir::new(&path)
+                        .follow_links(true)
+                        .sort_by_file_name()
+                        .into_iter()
+                        .nth(id)
+                    else {
+                        return Err(error::Send::HashMismatch);
+                    };
+
+                    file::send(&mut peer, id, entry?.path(), &base, self.channel.as_ref()).await?;
+                }
+                TransferResponseCode::TransferFail => return Err(error::Send::HashMismatch),
+            }
+        }
+
+        channel::send(self.channel.as_ref(), Message::Finished).await;
+
+        Ok(())
+    }
+}
+
+impl<'a> AportureTransferProtocol<'a, Receiver> {
+    pub fn new(pair_info: &'a mut PairInfo, dest: &'a Path) -> Self {
+        AportureTransferProtocol {
+            pair_info,
+            path: dest,
+            channel: None,
+            _phantom: PhantomData,
+        }
+    }
+
+    pub async fn transfer(self) -> Result<PathBuf, error::Receive> {
+        let connection = connection::find(self.pair_info).await;
+
+        let destination = if let Some(connection) = connection {
+            let peer = connection.new_stream().await?;
+
+            let destination = self.transfer_peer(peer).await?;
+
+            connection.finish().await;
+
+            destination
+        } else {
+            log::info!("Timeout waiting for peer connection, using server fallback");
+            let peer = self
+                .pair_info
+                .fallback()
+                .expect("Connection to server must exist")
+                .add_cipher(self.pair_info.cipher());
+
+            self.transfer_peer(peer).await?
+        };
+
+        Ok(destination)
+    }
+
+    async fn transfer_peer<Ep>(self, mut peer: Ep) -> Result<PathBuf, error::Receive>
+    where
+        Ep: Encryptable + Peer + Send,
+    {
+        let dest = path::sanitize(self.path).map_err(|_| error::Receive::Destination)?;
+
+        log::info!("File will try to be saved to {}", dest.display());
+
+        log::info!("Receiving Transfer information");
+        let transfer_data = peer.read_ser_enc::<TransferData>().await?;
+        log::info!("Transfer data received: {transfer_data:?}");
+
+        #[allow(clippy::cast_possible_truncation)]
+        let progress_len = transfer_data.total_size as usize;
+        channel::send(self.channel.as_ref(), Message::ProgressSize(progress_len)).await;
+
+        let dest = if transfer_data.total_files == 1 {
+            receive_file(dest, &transfer_data, &mut peer, self.channel.as_ref()).await?
+        } else {
+            receive_folder(dest, transfer_data, &mut peer, self.channel.as_ref()).await?
+        };
+
+        Ok(dest)
+    }
+}
+
+fn get_transfer_data(path: &Path) -> Result<TransferData, error::Send> {
+    let mut transfer_data = WalkDir::new(path).follow_links(true).into_iter().try_fold(
+        TransferData::default(),
+        |mut data, entry| -> Result<TransferData, error::Send> {
+            let metadata = entry?.metadata()?;
+
+            if metadata.is_file() {
+                let file_length = metadata.len();
+
+                data.total_files += 1;
+                data.total_size += file_length;
+            }
+            Ok(data)
+        },
+    )?;
+
+    path.file_name()
+        .expect("Should have a File Name as path it was sanitized")
+        .to_str()
+        .expect("Should be valid utf8 as it was santized")
+        .clone_into(&mut transfer_data.root_name);
+
+    Ok(transfer_data)
+}
+
+async fn receive_file<Ep>(
+    mut dest: PathBuf,
+    transfer_data: &TransferData,
+    peer: &mut Ep,
+    channel: Option<&Channel>,
+) -> Result<PathBuf, error::Receive>
+where
+    Ep: EncryptedSerdeIO + Send,
+{
+    let file = if dest.is_dir() {
+        tempfile::NamedTempFile::new_in(&dest)?
     } else {
-        TransferResponseCode::HashMismatch
+        let parent_path = dest
+            .parent()
+            .expect("Parent must exist as path is sanitized");
+
+        tempfile::NamedTempFile::new_in(parent_path)?
     };
 
-    peer.write_ser_enc(&response).await?;
+    let (data, retry) = file::receive(file.path(), peer, channel).await?;
+    if retry {
+        peer.write_ser_enc(&TransferResponseCode::HashMismatch)
+            .await?;
+        peer.write_ser_enc(&data).await?;
 
-    tokio::fs::write(&dest, file).await?;
+        let (_, mismatch) = file::receive(file.path(), peer, channel).await?;
+
+        if mismatch {
+            peer.write_ser_enc(&TransferResponseCode::TransferFail)
+                .await?;
+
+            return Err(error::Receive::HashMismatch);
+        }
+    }
+
+    channel::send(channel, Message::Finished).await;
+
+    if dest.is_dir() {
+        let path = Utf8UnixPathBuf::from(&transfer_data.root_name)
+            .normalize()
+            .with_platform_encoding();
+
+        dest.push(path);
+    }
+
+    let dest = path::non_existant(dest).await;
+
+    log::info!("Persisting file to path {}", dest.display());
+
+    file.persist(&dest)
+        .map_err(|_| error::Receive::Destination)?;
+
+    peer.write_ser_enc(&TransferResponseCode::Ok).await?;
 
     Ok(dest)
 }
 
-async fn find_peer(
-    mut options: JoinSet<Result<EncryptedNetworkPeer, (crate::io::Error, SocketAddr)>>,
-    pair_info: &mut PairInfo,
-) -> EncryptedNetworkPeer {
-    loop {
-        match options.join_next().await {
-            Some(Ok(Ok(peer))) => {
-                // NOTE: Drop fallback if unused
-                drop(pair_info.fallback());
+async fn receive_folder<Ep>(
+    mut dest: PathBuf,
+    transfer_data: TransferData,
+    peer: &mut Ep,
+    channel: Option<&Channel>,
+) -> Result<PathBuf, error::Receive>
+where
+    Ep: EncryptedSerdeIO + Send,
+{
+    let parent = dest
+        .parent()
+        .expect("Parent must exist as path is sanitized");
 
-                break peer;
-            }
-            Some(Ok(Err((e, a)))) => {
-                log::warn!("Could not connect to peer from ip {a}: {e}");
-                continue;
-            }
-            Some(_) => continue,
-            None => {
-                log::info!("Timeout waiting for peer connection, using server fallback");
-                break pair_info
-                    .fallback()
-                    .expect("Connection to server must exist")
-                    .add_cipher(pair_info.cipher());
-            }
+    if dest.is_file() || !parent.exists() {
+        return Err(error::Receive::Destination);
+    }
+
+    let base_path = if tokio::fs::try_exists(&dest)
+        .await
+        .map_err(|_| error::Receive::Destination)?
+    {
+        &dest
+    } else {
+        parent
+    };
+
+    let dir = tempfile::tempdir_in(base_path)?;
+
+    let mut files = 0;
+
+    let mut retries = Vec::new();
+
+    while files < transfer_data.total_files {
+        let (file_data, retry) = file::receive(dir.path(), peer, channel).await?;
+
+        if file_data.is_file {
+            files += 1;
+        }
+
+        if retry {
+            retries.push(file_data);
         }
     }
-}
 
-async fn bind(
-    bind_address: SocketAddr,
-    a: SocketAddr,
-    cipher: Arc<Cipher>,
-) -> Result<EncryptedNetworkPeer, (crate::io::Error, SocketAddr)> {
-    log::info!("Waiting for peer on {}, port {}", a.ip(), a.port(),);
+    for data in retries {
+        peer.write_ser_enc(&TransferResponseCode::HashMismatch)
+            .await?;
+        peer.write_ser_enc(&data).await?;
 
-    let listener = TcpListener::bind(bind_address)
-        .await
-        .map_err(|e| (e.into(), a))?;
+        let (_, mismatch) = file::receive(dir.path(), peer, channel).await?;
 
-    let timeout = tokio::time::timeout(Duration::from_secs(10), listener.accept());
-
-    let (stream, _) = timeout
-        .await
-        .map_err(|e| (std::io::Error::from(e).into(), a))?
-        .map_err(|e| (e.into(), a))?;
-
-    let peer = EncryptedNetworkPeer::new(stream, cipher);
-
-    exchange_hello(peer, a).await
-}
-
-async fn connect(
-    a: SocketAddr,
-    cipher: Arc<Cipher>,
-) -> Result<EncryptedNetworkPeer, (crate::io::Error, SocketAddr)> {
-    log::info!("Trying to connect to peer on {}, port {}", a.ip(), a.port());
-
-    let stream = TcpStream::connect(a).await.map_err(|e| (e.into(), a))?;
-
-    let peer = EncryptedNetworkPeer::new(stream, cipher);
-
-    exchange_hello(peer, a).await
-}
-
-async fn exchange_hello(
-    mut peer: EncryptedNetworkPeer,
-    a: SocketAddr,
-) -> Result<EncryptedNetworkPeer, (crate::io::Error, SocketAddr)> {
-    let hello = TransferHello::default();
-
-    peer.write_ser_enc(&hello).await.map_err(|e| (e, a))?;
-
-    let peer_hello = peer
-        .read_ser_enc::<TransferHello>()
-        .await
-        .map_err(|e| (e, a))?;
-
-    let difference = std::time::SystemTime::now()
-        .duration_since(std::time::SystemTime::UNIX_EPOCH)
-        .expect("Now is after unix epoch")
-        .checked_sub(peer_hello.timestamp);
-
-    if &peer_hello.tag == b"aporture" && difference.is_some_and(|s| s.as_secs() < 11) {
-        log::info!("Connected to peer on {}", a);
-        Ok(peer)
-    } else {
-        Err((crate::io::Error::Custom("Invalid tag and timestamp"), a))
+        if mismatch {
+            peer.write_ser_enc(&TransferResponseCode::TransferFail)
+                .await?;
+            return Err(error::Receive::HashMismatch);
+        }
     }
+
+    channel::send(channel, Message::Finished).await;
+
+    if dest.is_dir() {
+        let path = Utf8UnixPathBuf::from(&transfer_data.root_name)
+            .normalize()
+            .with_platform_encoding();
+
+        dest.push(path);
+    }
+
+    let dest = path::non_existant(dest).await;
+
+    let tmp = dir.into_path();
+    tokio::fs::rename(tmp, &dest).await?;
+
+    peer.write_ser_enc(&TransferResponseCode::Ok).await?;
+
+    Ok(dest)
 }

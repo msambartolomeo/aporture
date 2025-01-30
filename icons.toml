@@ -1,1 +1,15 @@
-icons = ["send", "inbox", "update", "search-folder", "address-book"]
+icons = [
+    "send",
+    "inbox",
+    "update",
+    "search-folder",
+    "address-book",
+    "edit",
+    "user-trash",
+    "warning-outline",
+    "minus-circle-outline",
+    "info-outline",
+    "success-small",
+    "copy",
+    "menu",
+]
