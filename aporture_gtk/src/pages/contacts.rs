@@ -26,6 +26,7 @@ pub struct ContactPage {
     sender_picker_dialog: Controller<OpenDialog>,
     sender_dir_picker_dialog: Controller<OpenDialog>,
     receiver_picker_dialog: Controller<OpenDialog>,
+    peer: Option<Controller<Peer>>,
 }
 
 impl ContactPage {
@@ -121,6 +122,7 @@ impl Component for ContactPage {
             sender_picker_dialog,
             sender_dir_picker_dialog,
             receiver_picker_dialog,
+            peer: None,
         };
 
         let contacts_box = model.contacts_ui.widget();
@@ -165,11 +167,12 @@ impl Component for ContactPage {
 
                 log::info!("Starting sender worker");
 
-                Peer::builder()
+                let controller = Peer::builder()
                     .transient_for(root)
                     .launch(TransferType::Send(Params::new(passphrase, path, None)))
-                    .forward(sender.input_sender(), Msg::AportureFinished)
-                    .detach_runtime();
+                    .forward(sender.input_sender(), Msg::AportureFinished);
+
+                self.peer = Some(controller);
             }
 
             Msg::ReceiveFile(name, path) => {
@@ -177,11 +180,12 @@ impl Component for ContactPage {
 
                 log::info!("Starting sender worker");
 
-                Peer::builder()
+                let controller = Peer::builder()
                     .transient_for(root)
                     .launch(TransferType::Receive(Params::new(passphrase, path, None)))
-                    .forward(sender.input_sender(), Msg::AportureFinished)
-                    .detach_runtime();
+                    .forward(sender.input_sender(), Msg::AportureFinished);
+
+                self.peer = Some(controller);
             }
 
             Msg::SenderPickerOpen(index) => {
@@ -244,15 +248,22 @@ impl Component for ContactPage {
             Msg::AportureFinished(result) => {
                 log::info!("Finished contact worker");
 
+                drop(self.peer.take());
+
+                if result.is_ok() {
+                    emit!(app::Request::ToastS("Transfer completed!", Severity::Success) => sender)
+                }
+
                 match result {
                     Ok(ContactAction::Added) => emit!(app::Request::Contacts => sender),
                     Ok(ContactAction::PeerRefused) => {
                         emit!(app::Request::ToastS("Peer refused to save contact", Severity::Warn) => sender);
                     }
                     Ok(ContactAction::NoOp) => {}
-                    Err(e) => {
-                        emit!(app::Request::Toast(e.to_string(), Severity::Error) => sender);
+                    Err(e @ AportureError::Cancel) => {
+                        emit!(app::Request::Toast(e.to_string(), Severity::Warn) => sender)
                     }
+                    Err(e) => emit!(app::Request::Toast(e.to_string(), Severity::Error) => sender),
                 }
             }
 

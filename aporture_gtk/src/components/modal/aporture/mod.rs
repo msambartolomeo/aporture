@@ -260,7 +260,12 @@ impl Component for Peer {
                 self.progress_text = format!("{:.2}%", fraction * 100.0);
             }
 
-            Msg::Cancel => root.close(),
+            Msg::Cancel => {
+                self.pulser.take().as_ref().map(JoinHandle::abort);
+                root.close();
+
+                emit!(Err(Error::Cancel) => sender);
+            }
         }
     }
 
@@ -271,6 +276,7 @@ impl Component for Peer {
         root: &Self::Root,
     ) {
         emit!(message => sender);
+
         self.pulser.take().as_ref().map(JoinHandle::abort);
         root.close();
     }

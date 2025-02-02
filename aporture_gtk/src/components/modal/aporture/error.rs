@@ -27,6 +27,8 @@ pub enum Error {
     NoContact,
     #[error("Could not save the contact")]
     ContactSaving,
+    #[error("Transfer cancelled")]
+    Cancel,
 }
 
 impl From<PairingError> for Error {

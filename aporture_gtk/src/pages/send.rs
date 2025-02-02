@@ -33,6 +33,7 @@ pub struct SenderPage {
     directory_picker_dialog: Controller<OpenDialog>,
     contacts: Option<Arc<Mutex<Contacts>>>,
     form_disabled: bool,
+    peer: Option<Controller<Peer>>,
 }
 
 #[derive(Debug)]
@@ -200,6 +201,7 @@ impl Component for SenderPage {
             directory_picker_dialog,
             contacts: None,
             form_disabled: false,
+            peer: None,
         };
 
         let passphrase_entry = &model.passphrase_entry;
@@ -294,15 +296,22 @@ impl Component for SenderPage {
 
                 log::info!("Starting sender worker");
 
-                Peer::builder()
+                let controller = Peer::builder()
                     .transient_for(root)
                     .launch(TransferType::Send(Params::new(passphrase, path, save)))
-                    .forward(sender.input_sender(), Msg::AportureFinished)
-                    .detach_runtime();
+                    .forward(sender.input_sender(), Msg::AportureFinished);
+
+                self.peer = Some(controller);
             }
 
             Msg::AportureFinished(result) => {
                 log::info!("Finished sender worker");
+
+                drop(self.peer.take());
+
+                if result.is_ok() {
+                    emit!(app::Request::ToastS("Transfer completed!", Severity::Success) => sender)
+                }
 
                 match result {
                     Ok(ContactAction::Added) => emit!(app::Request::Contacts => sender),
@@ -310,6 +319,9 @@ impl Component for SenderPage {
                         emit!(app::Request::ToastS("Peer refused to save contact", Severity::Warn) => sender);
                     }
                     Ok(ContactAction::NoOp) => {}
+                    Err(e @ AportureError::Cancel) => {
+                        emit!(app::Request::Toast(e.to_string(), Severity::Warn) => sender)
+                    }
                     Err(e) => emit!(app::Request::Toast(e.to_string(), Severity::Error) => sender),
                 }
 
