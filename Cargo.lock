@@ -135,7 +135,7 @@ checksum = "34ac096ce696dc2fcabef30516bb13c0a68a11d30131d3df6f04711467681b04"
 
 [[package]]
 name = "aporture_cli"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "aporture_lib",
@@ -151,7 +151,7 @@ dependencies = [
 
 [[package]]
 name = "aporture_gtk"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "aporture_lib",
  "env_logger",
@@ -165,7 +165,7 @@ dependencies = [
 
 [[package]]
 name = "aporture_lib"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "aes-gcm-siv",
  "argon2",
@@ -198,7 +198,7 @@ dependencies = [
 
 [[package]]
 name = "aporture_server"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "aporture_lib",
  "env_logger",
