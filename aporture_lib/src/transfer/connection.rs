@@ -9,7 +9,7 @@ use crate::crypto::cipher::Cipher;
 use crate::net::quic::QuicConnection;
 use crate::pairing::PairInfo;
 
-const RETRIES: usize = 5;
+const RETRIES: usize = 15;
 
 type AddressError = (crate::io::Error, SocketAddr);
 
@@ -94,7 +94,7 @@ pub async fn bind(
     let handle = keepalive(s, destination);
 
     let timeout = tokio::time::timeout(
-        Duration::from_secs(15),
+        Duration::from_secs(5),
         QuicConnection::server(destination, socket, cipher, certificate, handle),
     );
 
@@ -123,7 +123,7 @@ pub async fn connect(
     let handle = keepalive(s, a);
 
     let timeout = tokio::time::timeout(
-        Duration::from_secs(15),
+        Duration::from_secs(5),
         QuicConnection::client(a, socket, cipher, certificate, handle),
     );
 

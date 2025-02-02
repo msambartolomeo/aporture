@@ -2,6 +2,7 @@
 
 use std::net::{SocketAddr, UdpSocket};
 use std::sync::Arc;
+use std::time::Duration;
 
 use quinn::crypto::rustls::QuicClientConfig;
 use quinn::{ClientConfig, ServerConfig, TokioRuntime, TransportConfig};
@@ -63,11 +64,28 @@ impl QuicConnection {
         .inspect_err(|_| keepalive_handle.abort())?;
         endpoint.set_default_client_config(config);
 
-        let connection = endpoint
-            .connect(server_address, &server_address.ip().to_string())
-            .expect("Valid quinn endpoint configuration")
+        let mut connection = Err(quinn::ConnectionError::TimedOut);
+
+        for _ in 0..2 {
+            log::info!("Trying connection");
+
+            if let Ok(c) = tokio::time::timeout(
+                Duration::from_secs(2),
+                endpoint
+                    .connect(server_address, &server_address.ip().to_string())
+                    .expect("Valid quinn endpoint configuration"),
+            )
             .await
-            .inspect_err(|_| keepalive_handle.abort())?;
+            {
+                connection = c;
+
+                if connection.is_ok() {
+                    break;
+                }
+            }
+        }
+
+        let connection = connection.inspect_err(|_| keepalive_handle.abort())?;
 
         Ok(Self {
             connection_address: server_address,
