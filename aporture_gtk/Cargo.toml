@@ -9,6 +9,7 @@ edition = "2021"
 workspace = true
 
 [dependencies]
+relm4 = { version = "0.9.1", features = ["libadwaita", "gnome_47"] }
 relm4-components = "0.9.1"
 relm4-icons = "0.9.0"
 # NOTE: Shared dependencies
@@ -17,10 +18,3 @@ tokio = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }
 thiserror = { workspace = true }
-
-[target.'cfg(not(target_os = "windows"))'.dependencies]
-relm4 = { version = "0.9.1", features = ["libadwaita", "gnome_47"] }
-
-# NOTE: Windows support could not be made for gnome_47, version will be downgraded until a later date
-[target.'cfg(target_os = "windows")'.dependencies]
-relm4 = { version = "0.9.1", features = ["libadwaita", "gnome_46"] }
