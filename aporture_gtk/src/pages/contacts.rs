@@ -132,6 +132,7 @@ impl Component for ContactPage {
         ComponentParts { model, widgets }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, root: &Self::Root) {
         match msg {
             Msg::ContactsReady(contacts) => {
@@ -145,7 +146,7 @@ impl Component for ContactPage {
                     if destination.is_none() {
                         let toast = app::Request::ToastS(
                             "Could not find default receive directory, please pick one before sending",
-                            Severity::Warn
+                            Severity::Warn,
                         );
 
                         emit!(toast => sender);
@@ -251,7 +252,7 @@ impl Component for ContactPage {
                 drop(self.peer.take());
 
                 if result.is_ok() {
-                    emit!(app::Request::ToastS("Transfer completed!", Severity::Success) => sender)
+                    emit!(app::Request::ToastS("Transfer completed!", Severity::Success) => sender);
                 }
 
                 match result {
@@ -261,7 +262,7 @@ impl Component for ContactPage {
                     }
                     Ok(ContactAction::NoOp) => {}
                     Err(e @ AportureError::Cancel) => {
-                        emit!(app::Request::Toast(e.to_string(), Severity::Warn) => sender)
+                        emit!(app::Request::Toast(e.to_string(), Severity::Warn) => sender);
                     }
                     Err(e) => emit!(app::Request::Toast(e.to_string(), Severity::Error) => sender),
                 }

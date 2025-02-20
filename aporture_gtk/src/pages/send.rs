@@ -310,7 +310,7 @@ impl Component for SenderPage {
                 drop(self.peer.take());
 
                 if result.is_ok() {
-                    emit!(app::Request::ToastS("Transfer completed!", Severity::Success) => sender)
+                    emit!(app::Request::ToastS("Transfer completed!", Severity::Success) => sender);
                 }
 
                 match result {
@@ -320,7 +320,7 @@ impl Component for SenderPage {
                     }
                     Ok(ContactAction::NoOp) => {}
                     Err(e @ AportureError::Cancel) => {
-                        emit!(app::Request::Toast(e.to_string(), Severity::Warn) => sender)
+                        emit!(app::Request::Toast(e.to_string(), Severity::Warn) => sender);
                     }
                     Err(e) => emit!(app::Request::Toast(e.to_string(), Severity::Error) => sender),
                 }
