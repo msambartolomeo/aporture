@@ -1,4 +1,4 @@
-use rand::distributions::{Distribution, Uniform};
+use rand::distr::{Distribution, Uniform};
 
 mod wordlist;
 use wordlist::WORDLIST;
@@ -6,7 +6,8 @@ use wordlist::WORDLIST;
 #[must_use]
 pub fn generate(word_count: usize) -> String {
     Uniform::new(0, WORDLIST.len())
-        .sample_iter(rand::thread_rng())
+        .expect("Word List has more than 0 entries")
+        .sample_iter(rand::rng())
         .take(word_count)
         .map(|i| WORDLIST[i])
         .collect::<Vec<&str>>()

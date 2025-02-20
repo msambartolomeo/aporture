@@ -24,7 +24,7 @@ impl Default for Salt {
     fn default() -> Self {
         let mut salt = hasher::Salt::default();
 
-        rand::thread_rng().fill_bytes(&mut salt);
+        rand::rng().fill_bytes(&mut salt);
 
         Self(salt)
     }

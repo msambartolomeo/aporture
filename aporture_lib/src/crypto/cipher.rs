@@ -1,5 +1,6 @@
 use aes_gcm_siv::aead::AeadInPlace;
-use aes_gcm_siv::{AeadCore, Aes256GcmSiv, KeyInit};
+use aes_gcm_siv::{Aes256GcmSiv, KeyInit};
+use rand::RngCore;
 
 pub use super::Error;
 use super::Key;
@@ -39,14 +40,15 @@ impl Cipher {
 
     #[must_use]
     pub fn encrypt(&self, plain: &mut [u8]) -> ([u8; 12], [u8; 16]) {
-        let nonce = Aes256GcmSiv::generate_nonce(rand::thread_rng());
+        let mut nonce = Nonce::default();
+        rand::rng().fill_bytes(&mut nonce);
 
         let tag = self
             .aead
-            .encrypt_in_place_detached(&nonce, &self.associated_data, plain)
+            .encrypt_in_place_detached(&nonce.into(), &self.associated_data, plain)
             .expect("Associated data an plan are not bigger than expected in aes_gcm");
 
-        (nonce.into(), tag.into())
+        (nonce, tag.into())
     }
 
     pub fn decrypt(&self, cipher: &mut [u8], nonce: &Nonce, tag: &Tag) -> Result<(), Error> {
