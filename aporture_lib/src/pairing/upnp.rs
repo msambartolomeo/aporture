@@ -1,8 +1,8 @@
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 
-use igd::aio::tokio::Tokio;
 use igd::aio::Gateway as IgdGateway;
+use igd::aio::tokio::Tokio;
 use igd::{PortMappingProtocol, SearchOptions};
 use thiserror::Error;
 

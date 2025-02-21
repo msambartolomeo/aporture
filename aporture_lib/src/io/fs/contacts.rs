@@ -5,11 +5,11 @@ use chrono::{DateTime, Local};
 use generic_array::GenericArray;
 use serde::{Deserialize, Serialize};
 
+use crate::crypto::Key;
 use crate::crypto::cipher::Cipher;
 use crate::crypto::hasher::Hasher;
-use crate::crypto::Key;
-use crate::fs::salt::Salt;
 use crate::fs::EncryptedFileManager;
+use crate::fs::salt::Salt;
 use crate::parse;
 use crate::parser::{EncryptedSerdeIO, Parser};
 

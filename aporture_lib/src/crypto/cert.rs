@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use quinn::rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use quinn::rustls::RootCertStore;
+use quinn::rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 
 #[derive(Debug)]
 pub struct CertificateKey {

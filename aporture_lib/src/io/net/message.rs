@@ -177,7 +177,7 @@ impl<'a> MessageBuffer<'a> {
         match &self.message.encrypted {
             EncryptedContent::Plain { .. } => (),
             EncryptedContent::Encrypted { .. } => {
-                return Err(Error(ErrorKind::CipherExpected, self))
+                return Err(Error(ErrorKind::CipherExpected, self));
             }
         }
 

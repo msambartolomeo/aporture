@@ -3,7 +3,7 @@ use std::sync::Arc;
 use adw::prelude::*;
 use aporture::fs::contacts::Contacts;
 use relm4::actions::{RelmAction, RelmActionGroup};
-use relm4::gtk::glib::{clone, GString};
+use relm4::gtk::glib::{GString, clone};
 use relm4::prelude::*;
 use relm4_icons::icon_names;
 use tokio::sync::Mutex;
@@ -13,7 +13,7 @@ use crate::components::modal::contacts::{
 };
 use crate::components::modal::preferences::{self, Preferences};
 use crate::components::toaster::{Severity, Toaster};
-use crate::pages::{contacts, receive, send, ContactPage, ReceiverPage, SenderPage};
+use crate::pages::{ContactPage, ReceiverPage, SenderPage, contacts, receive, send};
 
 #[derive(Debug)]
 pub struct App {

@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use adw::prelude::*;
 use channel::handle_pulse;
-use relm4::prelude::*;
 use relm4::JoinHandle;
+use relm4::prelude::*;
 use relm4_icons::icon_names;
 use tokio::sync::Mutex;
 

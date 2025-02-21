@@ -1,10 +1,10 @@
 use std::net::SocketAddr;
 
 use generic_array::typenum as n;
-use generic_array::{typenum::Unsigned, GenericArray};
+use generic_array::{GenericArray, typenum::Unsigned};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use serde_with::{serde_as, Bytes, DisplayFromStr};
+use serde_with::{Bytes, DisplayFromStr, serde_as};
 
 #[macro_use]
 pub mod parser;

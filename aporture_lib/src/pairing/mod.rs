@@ -8,10 +8,10 @@ use spake2::{Ed25519Group, Identity, Password, Spake2};
 use tokio::net::TcpStream;
 use tokio::task::JoinHandle;
 
+use crate::crypto::Key;
 use crate::crypto::cert::{Certificate, CertificateKey};
 use crate::crypto::cipher::Cipher;
 use crate::crypto::hasher::Hasher;
-use crate::crypto::Key;
 use crate::fs::config::Config;
 use crate::net::{EncryptedNetworkPeer, NetworkPeer};
 use crate::parser::{EncryptedSerdeIO, Parser, SerdeIO};

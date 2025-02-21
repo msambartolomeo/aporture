@@ -1,6 +1,6 @@
 use adw::prelude::*;
 use gtk::gio::Cancellable;
-use relm4::{prelude::*, Sender};
+use relm4::{Sender, prelude::*};
 use relm4_components::open_dialog::OpenDialogMsg;
 
 pub fn choose(
