@@ -9,9 +9,9 @@ edition = "2024"
 workspace = true
 
 [dependencies]
-clap = { version = "4.5.30", features = ["derive"] }
+clap = { version = "4.5.32", features = ["derive"] }
 tabled = { version = "0.18.0", default-features = false, features = ["std"] }
-anyhow = "1.0.96"
+anyhow = "1.0.97"
 rpassword = "7.3.1"
 colored = "3.0.0"
 indicatif = "0.17.11"

@@ -1,5 +1,5 @@
 [workspace]
-resolver = "2"
+resolver = "3"
 
 members = ["aporture_lib", "aporture_cli", "aporture_server", "aporture_gtk"]
 
@@ -12,10 +12,10 @@ missing_errors_doc = "allow"
 
 [workspace.dependencies]
 aporture = { path = "./aporture_lib", package = "aporture_lib", default-features = false }
-tokio = { version = "1.43.0", features = ["full"] }
-log = "0.4.25"
-env_logger = "0.11.6"
-thiserror = "2.0.11"
+tokio = { version = "1.44.0", features = ["full"] }
+log = "0.4.26"
+env_logger = "0.11.7"
+thiserror = "2.0.12"
 
 [profile.release]
 lto = true
